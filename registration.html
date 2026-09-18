@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F2F0EE">
+  <title>Клуб гостей — Восемь утра</title>
+  <meta name="description" content="Регистрация в клубе гостей кофейни «Восемь утра»: 5% бонусами с каждого заказа и возможность оплатить бонусами до 30% покупки.">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/Lato-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="registration.css?v=brandbook-1">
+  <script src="registration.js?v=captcha-auto-11" defer></script>
+</head>
+<body>
+  <aside class="brand-panel" aria-label="Условия клуба гостей">
+    <div class="brand-rays" aria-hidden="true"></div>
+    <a class="brand-logo" href="index.html" aria-label="Восемь утра — на главную"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"></a>
+    <div class="brand-message">
+      <p class="eyebrow">КЛУБ ГОСТЕЙ</p>
+      <h2>Возвращаться<br><em>приятнее</em></h2>
+      <p>Назовите номер телефона при заказе — бонусы начислятся автоматически.</p>
+    </div>
+    <div class="loyalty-summary">
+      <div><strong>5%</strong><span>с каждого заказа<br>возвращаем бонусами</span></div>
+      <div><strong>до 30%</strong><span>суммы заказа можно<br>оплатить бонусами</span></div>
+    </div>
+    <p class="brand-quote">«В простом всегда прячется самое нужное»</p>
+  </aside>
+  <main class="form-panel">
+    <div class="registration">
+      <a class="back-link" href="index.html">← На главную</a>
+      <p class="eyebrow">ВОСЕМЬ УТРА · КЛУБ ГОСТЕЙ</p>
+      <h1>Давайте<br><em>знакомиться</em></h1>
+      <p class="intro">Заполните короткую анкету, чтобы участвовать в программе лояльности.</p>
+      <form id="registration-form" action="api/register.php" method="post">
+        <div class="fields">
+          <div class="field full"><label for="last-name">Фамилия <span class="required-mark" aria-hidden="true">*</span></label><input id="last-name" name="LastName" autocomplete="family-name" placeholder="Ваша фамилия" maxlength="100" required></div>
+          <div class="field"><label for="first-name">Имя <span class="required-mark" aria-hidden="true">*</span></label><input id="first-name" name="FirstName" autocomplete="given-name" placeholder="Ваше имя" maxlength="100" required></div>
+          <div class="field"><label for="middle-name">Отчество <small>если есть</small></label><input id="middle-name" name="MiddleName" autocomplete="additional-name" placeholder="Ваше отчество" maxlength="100"></div>
+          <div class="field"><label for="birth-date">Дата рождения <span class="required-mark" aria-hidden="true">*</span></label><input id="birth-date" name="BirthDate" type="date" autocomplete="bday" min="1900-01-01" required></div>
+          <div class="field"><label for="phone">Номер телефона <span class="required-mark" aria-hidden="true">*</span></label><input id="phone" name="Phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="25" required></div>
+          <div class="field full"><label for="guest-comment">Комментарий <small>необязательно</small></label><textarea id="guest-comment" name="Comment" rows="4" maxlength="500" aria-describedby="guest-comment-help" placeholder="Любимые напитки, предпочтения или аллергии"></textarea><p id="guest-comment-help" class="field-help">Эта информация будет доступна сотрудникам кафе и поможет сделать обслуживание внимательнее.</p></div>
+        </div>
+        <label class="consent" for="consent"><input id="consent" name="Consent" type="checkbox" required><span>Я даю <a href="consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных</a> для участия в программе лояльности. <span class="required-mark" aria-hidden="true">*</span></span></label>
+        <p class="legal-note"><a href="privacy.html" target="_blank" rel="noopener">Политика обработки персональных данных</a></p>
+        <p id="form-message" class="message" role="alert" hidden></p>
+        <div class="registration-actions">
+          <div class="captcha-block"><div id="recaptcha-widget"></div><p id="captcha-status" role="status">Загружаем проверку «Я не робот»…</p></div>
+          <button id="submit-button" type="submit">Зарегистрироваться <span aria-hidden="true">↗</span></button>
+        </div>
+        <noscript><p class="message">Для регистрации включите JavaScript в браузере.</p></noscript>
+      </form>
+      <section id="registration-success" class="success" tabindex="-1" aria-live="polite" hidden><h2>Добро пожаловать!</h2><p>Рады видеть вас в клубе гостей «Восемь утра».</p><a href="index.html">Вернуться на главную</a></section>
+    </div>
+  </main>
+</body>
+</html>
