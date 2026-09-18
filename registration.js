@@ -120,6 +120,10 @@ async function getToken() {
 }
 form.addEventListener('submit', async event => {
   event.preventDefault();
+  if (form.dataset.preview === 'true') {
+    showMessage('Онлайн-регистрация пока недоступна. Присоединиться к клубу можно у команды кофейни.');
+    return;
+  }
   if (sending) return;
   for (const name of ['LastName','FirstName']) {
     const field = form.elements.namedItem(name);
@@ -163,6 +167,7 @@ form.addEventListener('submit', async event => {
     sending = false; submit.disabled = false; submit.textContent = 'Зарегистрироваться'; form.removeAttribute('aria-busy');
   }
 });
-document.getElementById('captcha-status').textContent = 'Это публичный предпросмотр. Отправка формы будет подключена после переноса серверной части.';
-submit.disabled = true;
-submit.textContent = 'Регистрация временно недоступна';
+if (form.dataset.preview === 'true') {
+  submit.disabled = true;
+  submit.textContent = 'Регистрация скоро откроется';
+}

@@ -1,0 +1,25 @@
+{
+  "name": "github-preview",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/general-fox/vosem-utra-preview.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/general-fox/vosem-utra-preview/issues"
+  },
+  "homepage": "https://github.com/general-fox/vosem-utra-preview#readme",
+  "description": "Кофейня «Восемь утра» — статическая демоверсия сайта",
+  "devDependencies": {
+    "vite": "^8.3.0"
+  }
+}
