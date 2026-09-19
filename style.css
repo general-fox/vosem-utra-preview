@@ -50,8 +50,10 @@
 .intro-logo{width:min(300px,65vw);height:auto;opacity:.82}
 .intro-caption{margin-top:2px;font-size:12px;letter-spacing:.08em;color:#827B6C}
 @media(max-width:650px){.intro-brand{gap:20px;padding:24px}.intro-sun{width:150px;height:100px}.intro-caption{font-size:10px;letter-spacing:.06em}}
+/* Straighten the cup's axis; overscan keeps rotated corners outside the frame. */
+.hero-photo{transform:rotate(2deg) scale(1.08)}
 /* A fixed crop brings the dishes closer without changing their scroll speed. */
-.menu-image img[data-depth-framing="full"]{scale:1.2}
+.menu-image img[data-depth-framing="full"]{scale:1.4}
 /* Extra image height supplies real travel, without enlarging its width. */
 img[data-depth-ready]{position:absolute;top:calc(-1 * var(--depth-bleed,0px));left:0;width:100%;height:calc(100% + 2 * var(--depth-bleed,0px));transform:translate3d(0,var(--depth-y,0px),0)!important;backface-visibility:hidden;transition:none}
 img[data-depth-active]{will-change:transform}

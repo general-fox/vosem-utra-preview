@@ -56,12 +56,14 @@ assert.doesNotMatch(css, /\.about-detail|\.about-images/, 'No leftover offsets f
 const hero = html.match(/<img class="hero-photo"[^>]+>/)[0];
 assert.match(hero, /src="assets\/hero-coffee-1600.webp"/);
 assert.doesNotMatch(hero, /data-depth|loading="lazy"/, 'Hero remains prioritized and without parallax');
+assert.match(css, /\.hero-photo\{transform:rotate\(2deg\) scale\(1\.08\)\}/,
+  'Hero cup has a static upright correction with corner overscan');
 const preload = html.match(/<link rel="preload" as="image"[^>]+>/)[0];
 assert.equal(preload.match(/imagesrcset="([^"]+)"/)[1], hero.match(/srcset="([^"]+)"/)[1]);
 assert.equal(preload.match(/imagesizes="([^"]+)"/)[1], hero.match(/sizes="([^"]+)"/)[1]);
 assert.match(css, /\.coffee-image img\{object-position:50% 25%\}/);
-assert.match(css, /\.menu-image img\[data-depth-framing="full"\]\{scale:1\.2\}/,
-  'Only the two dish photos use the closer, fixed 20% framing');
+assert.match(css, /\.menu-image img\[data-depth-framing="full"\]\{scale:1\.4\}/,
+  'Only the two dish photos use the closer, fixed 40% framing');
 
 // Measured safe box of the complete wordmark in the expanded 1254px photograph.
 // Test the two scroll extremes while the whole card is visible, plus reduced motion.
