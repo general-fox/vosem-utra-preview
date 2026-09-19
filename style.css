@@ -50,8 +50,9 @@
 .intro-logo{width:min(300px,65vw);height:auto;opacity:.82}
 .intro-caption{margin-top:2px;font-size:12px;letter-spacing:.08em;color:#827B6C}
 @media(max-width:650px){.intro-brand{gap:20px;padding:24px}.intro-sun{width:150px;height:100px}.intro-caption{font-size:10px;letter-spacing:.06em}}
-/* Straighten the cup's axis; overscan keeps rotated corners outside the frame. */
-.hero-photo{transform:rotate(2deg) scale(1.08)}
+/* Keep the two-cup composition upright with the original overlaid hours card. */
+.hero-photo{object-position:50% 75%;transform:none}
+.coffee-image img{object-position:50% 78%}
 /* A fixed crop brings the dishes closer without changing their scroll speed. */
 .menu-image img[data-depth-framing="full"]{scale:1.4}
 /* Extra image height supplies real travel, without enlarging its width. */

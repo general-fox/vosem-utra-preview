@@ -20,8 +20,8 @@ function webpSize(file) {
 }
 
 for (const [file, width, height] of [
-  ['hero-coffee-960.webp', 960, 1440], ['hero-coffee-1600.webp', 1600, 2400],
-  ['coffee-menu-720.webp', 720, 720], ['coffee-menu-1254.webp', 1254, 1254],
+  ['hero-two-cups-720.webp', 720, 720], ['hero-two-cups-1254.webp', 1254, 1254],
+  ['coffee-soft-720.webp', 720, 1080], ['coffee-soft-853.webp', 853, 1280],
   ['syrniki-800.webp', 800, 533], ['syrniki-1280.webp', 1280, 853],
   ['breakfast-plate-800.webp', 800, 533], ['breakfast-plate-1280.webp', 1280, 853],
   ['breakfast-wide-720.webp', 720, 720], ['breakfast-wide-1254.webp', 1254, 1254],
@@ -31,7 +31,7 @@ for (const [file, width, height] of [
   assert.deepEqual(webpSize('assets/' + file), [width, height]);
   assert.ok(fs.statSync(path.join(root, 'assets', file)).size < 450 * 1024, 'Photo weight is bounded');
 }
-const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-menu|syrniki|breakfast-wide|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
+const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-soft|syrniki|breakfast-wide|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
 assert.equal(updatedImages.length, 4);
 assert.match(html, /data-depth="breakfast" data-depth-framing="full" src="assets\/breakfast-wide-1254.webp"/, 'Breakfast uses the wider framing');
 assert.match(html, /data-depth="pastry" data-depth-framing="full" src="assets\/syrniki-wide-1254.webp"/, 'Tea card uses wider syrniki framing');
@@ -54,18 +54,19 @@ assert.match(about, /<figcaption class="about-caption"/);
 assert.doesNotMatch(about, /cafe-friends|about-detail|about-images|data-depth/);
 assert.doesNotMatch(css, /\.about-detail|\.about-images/, 'No leftover offsets for the removed inset');
 const hero = html.match(/<img class="hero-photo"[^>]+>/)[0];
-assert.match(hero, /src="assets\/hero-coffee-1600.webp"/);
+assert.match(hero, /src="assets\/hero-two-cups-1254.webp"/);
 assert.doesNotMatch(hero, /data-depth|loading="lazy"/, 'Hero remains prioritized and without parallax');
-assert.match(css, /\.hero-photo\{transform:rotate\(2deg\) scale\(1\.08\)\}/,
-  'Hero cup has a static upright correction with corner overscan');
+assert.match(css, /\.hero-photo\{object-position:50% 75%;transform:none\}/,
+  'Two-cup hero is not tilted');
+assert.doesNotMatch(css, /\.hero-visual \.hours-note/, 'Original overlaid hours card is retained');
 const preload = html.match(/<link rel="preload" as="image"[^>]+>/)[0];
 assert.equal(preload.match(/imagesrcset="([^"]+)"/)[1], hero.match(/srcset="([^"]+)"/)[1]);
 assert.equal(preload.match(/imagesizes="([^"]+)"/)[1], hero.match(/sizes="([^"]+)"/)[1]);
-assert.match(css, /\.coffee-image img\{object-position:50% 25%\}/);
+assert.match(css, /\.coffee-image img\{object-position:50% 78%\}/);
 assert.match(css, /\.menu-image img\[data-depth-framing="full"\]\{scale:1\.4\}/,
   'Only the two dish photos use the closer, fixed 40% framing');
 
-// Measured safe box of the complete wordmark in the expanded 1254px photograph.
+// Measured vertical bounds of both cups in the 853 x 1280 portrait.
 // Test the two scroll extremes while the whole card is visible, plus reduced motion.
 for (const viewport of [320, 375, 390, 430, 650, 768, 900, 1024, 1150, 1280, 1440]) {
   const mobile = viewport <= 650, viewportHeight = mobile ? 844 : 900;
@@ -73,18 +74,18 @@ for (const viewport of [320, 375, 390, 430, 650, 768, 900, 1024, 1150, 1280, 144
     viewport <= 1150 ? (viewport - 112) / 3 : (Math.min(1200, viewport - 96) - 48) / 3;
   const height = mobile ? Math.min(480, Math.max(310, viewport * .8)) : viewport <= 900 ? 265 : viewport <= 1150 ? 300 : 344;
   for (const motion of [false, true]) {
-    const travel = motion ? Math.min(mobile ? 22 : 64, height * .18) : 0;
+    const travel = motion ? Math.min(12, height * .18) : 0;
     const bleed = motion ? Math.ceil(travel + 3) : 0;
     const boxHeight = height + bleed * 2;
-    const scale = Math.max(width, boxHeight) / 1254;
-    const cropTop = (1254 * scale - boxHeight) * .25;
+    const scale = Math.max(width / 853, boxHeight / 1280);
+    const cropTop = (1280 * scale - boxHeight) * .78;
     for (const top of [0, viewportHeight - height]) {
       const offset = travel * (viewportHeight / 2 - top - height / 2) / ((viewportHeight + height) / 2);
-      const wordmarkTop = 316 * scale - cropTop - bleed + offset;
-      const wordmarkBottom = 470 * scale - cropTop - bleed + offset;
-      assert.ok(wordmarkTop >= 8 && wordmarkBottom < height - 8,
-        `Wordmark remains inside the photo: ${viewport}px, motion=${motion}, top=${top}`);
+      const cupsTop = 650 * scale - cropTop - bleed + offset;
+      const cupsBottom = 1055 * scale - cropTop - bleed + offset;
+      assert.ok(cupsTop >= 8 && cupsBottom < height - 8,
+        `Both cups remain inside the photo: ${viewport}px, motion=${motion}, top=${top}`);
     }
   }
 }
-console.log('PASS: responsive photo assets, dimensions/weights, single high-resolution barista, prioritized hero/preload, and coffee wordmark crop through visible scroll range.');
+console.log('PASS: responsive photo assets, dimensions/weights, single high-resolution barista, prioritized hero/preload, and two-cup portrait crop through visible scroll range.');
