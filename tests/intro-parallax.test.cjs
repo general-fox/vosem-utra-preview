@@ -8,7 +8,7 @@ const clubHtml = fs.readFileSync(path + '/registration.html', 'utf8');
 const css = fs.readFileSync(path + '/style.css', 'utf8');
 const bootstrap = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const clubBootstrap = clubHtml.match(/<script>([\s\S]*?)<\/script>/)[1];
-const controllers = script.slice(script.indexOf('function curtainPath('), script.indexOf('function initReveals()'));
+const controllers = script.slice(script.indexOf('function initIntro()'), script.indexOf('function initReveals()'));
 
 function events(target = {}) {
   const listeners = new Map();
@@ -41,7 +41,23 @@ function harness(options = {}) {
     else this.removeAttribute(name);
   } });
   const preference = events({ matches: !!options.reduce });
-  const curtainEdge = { setAttribute(name, value) { this[name] = value; } };
+  const animations = [];
+  const sheet = { animate: options.noAnimate ? undefined : (keyframes, timing) => {
+    if (options.animateThrows) throw new Error('Animation unavailable');
+    let complete, reject;
+    const animation = { keyframes, timing,
+      finished: new Promise((resolve, fail) => { complete = resolve; reject = fail; }),
+      complete: () => complete(),
+      fail: () => reject(new Error('Animation cancelled')),
+      cancel() {
+        this.cancelled = true;
+        this.hiddenAtCancel = root.dataset.intro === undefined;
+        reject(new Error('Animation cancelled'));
+      },
+    };
+    animations.push(animation);
+    return animation;
+  } };
   const photos = [0, 1, 2].map(index => {
     const values = new Map();
     const parentElement = { top: 100 + index * 1000, height: 400,
@@ -56,8 +72,7 @@ function harness(options = {}) {
   });
   const document = events({ documentElement: root, hidden: !!options.hidden,
     referrer: options.referrer || '', fonts: { ready: Promise.resolve() },
-    getElementById: () => curtainEdge,
-    querySelector: () => options.noSun ? null : sun,
+    querySelector: selector => selector === '.intro-sheet' ? (options.noSheet ? null : sheet) : (options.noSun ? null : sun),
     querySelectorAll: selector => selector === 'img[data-depth]' ? photos : photos.slice(0, 1),
   });
   class Observer {
@@ -82,13 +97,12 @@ function harness(options = {}) {
   });
   vm.runInContext(options.club ? clubBootstrap : bootstrap, context);
   vm.runInContext(controllers, context);
-  return { root, sun, photos, document, window, preference, observers, frames, timers, curtainEdge,
+  return { root, sun, photos, document, window, preference, observers, frames, timers, animations,
     intro: () => vm.runInContext('initIntro()', context),
     depth: () => vm.runInContext('initPhotoDepth()', context),
     rotateSun: () => vm.runInContext('initSunRotation()', context),
     paint() { now += 16; const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(cb => cb(now)); },
     settle() { let count = 0; while (frames.size && count++ < 240) this.paint(); assert.equal(frames.size, 0, 'Finite ease-out reaches rest'); },
-    shape: (progress, bend = 0.58) => vm.runInContext(`curtainPath(${progress}, ${bend})`, context),
     async tick(ms) {
       await flush();
       const end = now + ms;
@@ -104,31 +118,35 @@ function harness(options = {}) {
 
 (async () => {
   let h = harness();
-  const pathValues = progress => h.shape(progress).match(/-?\d*\.?\d+/g).map(Number);
-  assert.equal(pathValues(0)[3], 1, 'Curtain initially covers the full viewport');
-  const halfway = pathValues(0.5);
-  assert.ok(halfway[3] > 0.4, 'Corners trail behind the centre');
-  assert.ok(halfway[3] * 0.25 + halfway[5] * 0.75 < 0.1, 'Curved centre is already pulled high');
-  const mobileCurve = h.shape(0.5, 0.16).match(/-?\d*\.?\d+/g).map(Number);
-  assert.equal(mobileCurve[3], halfway[3], 'Corners retain the same opening rhythm on mobile');
-  assert.ok(mobileCurve[3] - mobileCurve[5] < (halfway[3] - halfway[5]) * 0.3, 'Mobile arc is much shallower');
-  assert.ok(mobileCurve[3] > mobileCurve[5], 'Mobile hem still has a flexible curve');
-  assert.ok(pathValues(1)[3] < 0, 'The whole hem clears the viewport');
-  assert.equal(h.shape(-1), h.shape(0)); assert.equal(h.shape(2), h.shape(1));
   assert.equal(h.root.dataset.intro, 'waiting', 'Direct homepage visit is armed before paint');
   let revealed = false;
   let ready;
   h.intro().then(() => { revealed = true; });
   await h.tick(199); assert.equal(revealed, false);
   await h.tick(1); assert.equal(h.root.dataset.intro, 'leaving'); assert.equal(revealed, true);
-  const initialPath = h.curtainEdge.d;
-  h.paint(); assert.notEqual(h.curtainEdge.d, initialPath, 'The visible SVG path moves, not an external HTML clip');
-  await h.tick(1024); assert.equal(h.root.dataset.intro, 'settling', 'Unblur starts only after the whole hem clears');
-  assert.equal(h.curtainEdge.d, h.shape(1), 'Final path is completely outside the viewport');
-  await h.tick(239); assert.equal(h.root.dataset.intro, 'settling', 'Blur has time to fade gently');
-  await h.tick(1); assert.equal(h.root.dataset.intro, undefined);
-  assert.equal(h.frames.size, 0, 'Curtain animation frames are cancelled when finished');
+  assert.equal(h.animations.length, 1);
+  const lift = h.animations[0];
+  assert.deepEqual(JSON.parse(JSON.stringify(lift.keyframes)), [
+    { transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(0,-101%,0)' },
+  ], 'Only the pre-painted sheet transform is animated; final frame fully clears it');
+  assert.deepEqual(JSON.parse(JSON.stringify(lift.timing)), {
+    duration: 1100, easing: 'cubic-bezier(.45,0,.25,1)', fill: 'forwards',
+  });
+  assert.equal(h.frames.size, 0, 'Native intro needs no JavaScript frame loop');
+  await h.tick(500); assert.equal(h.root.dataset.intro, 'leaving');
+  lift.complete(); await flush();
+  assert.equal(h.root.dataset.intro, undefined, 'Native completion dismisses the sheet without a blur phase');
+  assert.ok(lift.cancelled && lift.hiddenAtCancel, 'Hide before cancelling so the first frame cannot flash');
   assert.equal(h.document.count('wheel'), 0, 'Intro input listeners are removed');
+  assert.equal(h.preference.count('change'), 0);
+
+  for (const option of [{ noSheet: true }, { noAnimate: true }, { animateThrows: true }]) {
+    h = harness(option); h.intro(); await h.tick(350);
+    assert.equal(h.root.dataset.intro, undefined, 'Unavailable animation fails open');
+    assert.equal(h.document.count('touchstart'), 0);
+  }
+  h = harness(); h.intro(); await h.tick(200); h.animations[0].fail(); await flush();
+  assert.equal(h.root.dataset.intro, undefined, 'Interrupted native animation fails open');
   assert.equal(h.preference.count('change'), 0);
 
   for (const option of [{ slowAssets: true }, { brokenAssets: true }]) {
@@ -172,8 +190,9 @@ function harness(options = {}) {
     h.window.scrollY = 80;
     await h.tick(300); h.document.emit(type);
     assert.equal(h.root.dataset.intro, 'leaving', 'Repeated touches and delayed asset callbacks cannot cut the animation short');
-    await h.tick(820); assert.equal(h.root.dataset.intro, 'settling');
-    await h.tick(240); assert.equal(h.root.dataset.intro, undefined);
+    assert.equal(h.animations.length, 1, 'Repeated input never restarts the native animation');
+    await h.tick(949); assert.equal(h.root.dataset.intro, 'leaving');
+    await h.tick(1); assert.equal(h.root.dataset.intro, undefined, 'Fallback handles a missing native completion event');
     assert.equal(h.document.count(type), 0, 'Gentle input listeners are cleaned up');
   }
   for (const type of ['pagehide', 'hashchange']) {
@@ -276,14 +295,26 @@ function harness(options = {}) {
   assert.match(clubHtml, /data-intro-entry="club"/);
   assert.match(clubHtml, /data-preview="true"/);
   assert.match(clubHtml, /id="submit-button"[^>]*disabled/);
-  assert.doesNotMatch(css + html + clubHtml, /intro-clip|intro-defs|>✳<|>☀</);
+  assert.doesNotMatch(css + html + clubHtml, /intro-clip|intro-defs|intro-veil|data-intro=settling|>✳<|>☀</);
   assert.match(html, /class="intro-surface" viewBox="0 0 1 1"/);
-  assert.match(html, /id="intro-edge"[^>]+fill="url\(#intro-paper\)"/);
-  assert.match(html, /-webkit-backdrop-filter:blur\(8px\)/);
-  assert.match(css, /html\[data-intro=settling\] \.intro-veil\{animation:intro-veil-clear 240ms/);
+  const criticalStyle = html.match(/<style>[\s\S]*?<\/style>/)[0];
+  assert.doesNotMatch(criticalStyle, /blur|filter|clip-path/);
+  assert.match(criticalStyle, /height:100vh;height:100lvh/, 'Stable height avoids Safari address-bar resizing during the lift');
+  const curves = ['desktop', 'mobile'].map(device => {
+    const d = html.match(new RegExp(`class="intro-edge-${device}" d="([^"]+)"`))[1];
+    const values = d.match(/-?\d*\.?\d+/g).map(Number);
+    const scale = Number(criticalStyle.match(new RegExp(device === 'desktop' ? 'height:(114)%' : 'height:(106)%'))[1]) / 100;
+    const centre = values[3] * 0.25 + values[5] * 0.75;
+    assert.ok(scale * centre > 1, device + ' curved hem fully covers the initial viewport');
+    return 1 - centre;
+  });
+  assert.ok(curves[1] > 0 && curves[1] < curves[0] * 0.4, 'Mobile keeps a gentle, much shallower arc');
+  const introSource = script.slice(script.indexOf('function initIntro()'), script.indexOf('function initPhotoDepth()'));
+  assert.doesNotMatch(introSource, /requestAnimationFrame|setAttribute|curtainPath/, 'No per-frame SVG redraws');
+  assert.match(introSource, /sheet\.animate\(/);
   assert.equal((html.match(/class="brand-mark"/g) || []).length, 7, 'All home-page sun/star symbols are SVG');
   assert.equal((clubHtml.match(/class="brand-mark"/g) || []).length, 1, 'Club symbol is also SVG');
   assert.match(css, /prefers-reduced-motion:reduce\)\{img\[data-depth-ready\]/);
   assert.doesNotMatch(script + bootstrap, /sessionStorage|localStorage|document\.cookie/);
-  console.log('PASS: curved curtain, intro timing, asset failures, missing/late JS, direct links, history, keyboard/touch skip, reduced motion, depth bounds and finite inertia, mobile, idle/background work and listener cleanup.');
+  console.log('PASS: native transform-only curtain, static mobile curve, no blur, native completion/fallbacks, intro timing, asset failures, missing/late JS, direct links, history, keyboard/touch skip, reduced motion, depth bounds and finite inertia, mobile, idle/background work and listener cleanup.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

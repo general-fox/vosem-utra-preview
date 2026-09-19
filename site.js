@@ -24,20 +24,11 @@ document.querySelectorAll('[data-year]').forEach((element) => {
  * Decorative, bounded intro. Never locks scrolling, focus or pointer input.
  * The head watchdog independently removes it if this module cannot run.
  */
-function curtainPath(progress, bend = 0.58) {
-  const t = Math.max(0, Math.min(1, progress));
-  // A broad, even lift: no sudden acceleration halfway through a phone viewport.
-  const eased = (1 - Math.cos(Math.PI * t)) / 2;
-  const edge = 1 - eased * 1.08;
-  // The centre leads the corners; a cubic curve keeps the hem smooth at any size.
-  const control = edge - Math.sin(Math.PI * t) * bend;
-  return `M0 0H1V${edge.toFixed(4)}C.75 ${control.toFixed(4)} .25 ${control.toFixed(4)} 0 ${edge.toFixed(4)}Z`;
-}
-
 function initIntro() {
   const root = document.documentElement;
   const preference = matchMedia('(prefers-reduced-motion: reduce)');
-  if (root.dataset.intro !== 'waiting' || preference.matches || document.hidden) {
+  const sheet = document.querySelector('.intro-sheet');
+  if (root.dataset.intro !== 'waiting' || preference.matches || document.hidden || !sheet?.animate) {
     root.removeAttribute('data-intro');
     return Promise.resolve();
   }
@@ -45,8 +36,7 @@ function initIntro() {
   return new Promise((resolve) => {
     const started = performance.now();
     const timers = new Set();
-    const curtainEdge = document.getElementById('intro-edge');
-    let curtainFrame = 0;
+    let lift;
     const immediateInputs = ['keydown', 'focusin'];
     const gentleInputs = ['touchstart', 'wheel'];
     let finished = false;
@@ -58,8 +48,9 @@ function initIntro() {
       if (finished) return;
       finished = true;
       timers.forEach(clearTimeout);
-      cancelAnimationFrame(curtainFrame);
+      // Hide first: cancelling a forwards-filled animation must not flash its first frame.
       root.removeAttribute('data-intro');
+      lift?.cancel();
       immediateInputs.forEach((type) => document.removeEventListener(type, finish, true));
       gentleInputs.forEach((type) => document.removeEventListener(type, open, true));
       document.removeEventListener('pointerdown', onPointer, true);
@@ -83,29 +74,22 @@ function initIntro() {
         return;
       }
       root.dataset.intro = 'leaving';
-      const openingAt = performance.now();
-      const mobile = window.innerWidth <= 650;
-      const duration = mobile ? 1080 : 1000;
-      const curtainBend = mobile ? 0.16 : 0.58;
-      const clearCurtain = () => {
-        if (finished || root.dataset.intro !== 'leaving') return;
-        cancelAnimationFrame(curtainFrame);
-        curtainEdge?.setAttribute('d', curtainPath(1, curtainBend));
-        // Keep the site blurred until the entire curved hem has left the viewport.
-        root.dataset.intro = 'settling';
-        later(finish, 240);
-      };
-      const drawCurtain = () => {
-        if (finished || root.dataset.intro !== 'leaving') return;
-        const progress = Math.min(1, (performance.now() - openingAt) / duration);
-        curtainEdge?.setAttribute('d', curtainPath(progress, curtainBend));
-        if (progress < 1) curtainFrame = requestAnimationFrame(drawCurtain);
-        else clearCurtain();
-      };
-      drawCurtain();
+      const duration = 1100;
+      try {
+        // Native transform-only animation lets the compositor move an already-painted
+        // sheet. No frame-by-frame SVG writes, blur, morphing, or layout measurements.
+        lift = sheet.animate([
+          { transform: 'translate3d(0,0,0)' },
+          { transform: 'translate3d(0,-101%,0)' },
+        ], { duration, easing: 'cubic-bezier(.45,0,.25,1)', fill: 'forwards' });
+        lift.finished.then(finish, finish);
+      } catch {
+        finish();
+        return;
+      }
       // Start the first-screen reveals as the curtain begins to lift.
       resolve();
-      later(clearCurtain, duration + 40);
+      later(finish, duration + 150);
     };
     immediateInputs.forEach((type) => document.addEventListener(type, finish, { capture: true, passive: true }));
     gentleInputs.forEach((type) => document.addEventListener(type, open, { capture: true, passive: true }));
