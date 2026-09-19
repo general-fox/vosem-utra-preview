@@ -24,23 +24,37 @@
       setTimeout(() => {
         if (root.dataset.motion === 'boot') root.removeAttribute('data-motion');
         root.removeAttribute('data-intro');
-      }, 1600);
+      }, 2300);
     })();
   </script>
   <style>
-    /* No flash before the stylesheet; no JavaScript means no curtain. */
-    .intro-curtain{display:none}
-    html[data-intro] .intro-curtain{display:grid;position:fixed;inset:0;z-index:1000;overflow:hidden;place-items:center;background:#F9F7F1;pointer-events:none}
-    .intro-defs{position:absolute;width:0;height:0;pointer-events:none}
-    @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain{display:none}}
-    @media print{html[data-intro] .intro-curtain{display:none}}
+    /* Pre-paint curtain and blur; no JavaScript means neither layer is shown. */
+    .intro-curtain,.intro-veil{display:none}
+    html[data-intro] .intro-curtain{display:grid;position:fixed;inset:0;z-index:1000;overflow:hidden;place-items:center;isolation:isolate;pointer-events:none}
+    .intro-surface{position:absolute;inset:0;width:100%;height:100%;z-index:-1}
+    html[data-intro] .intro-veil{display:block;position:fixed;inset:0;z-index:999;background:rgb(249 247 241 / 12%);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);pointer-events:none}
+    html[data-intro=settling] .intro-curtain{display:none}
+    @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain,html[data-intro] .intro-veil{display:none}}
+    @media print{html[data-intro] .intro-curtain,html[data-intro] .intro-veil{display:none}}
   </style>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="site.js"></script>
 </head>
 <body>
-  <svg class="intro-defs" aria-hidden="true" focusable="false"><defs><clipPath id="intro-clip" clipPathUnits="objectBoundingBox"><path id="intro-edge" d="M0 0H1V1C.75 1 .25 1 0 1Z"/></clipPath></defs></svg>
+  <div class="intro-veil" aria-hidden="true"></div>
   <div class="intro-curtain" aria-hidden="true">
+    <svg class="intro-surface" viewBox="0 0 1 1" preserveAspectRatio="none" focusable="false">
+      <defs>
+        <pattern id="intro-paper" width="1" height="1" patternUnits="userSpaceOnUse">
+          <rect width="1" height="1" fill="#F9F7F1"/>
+          <path d="M0 0H.5V1H.325L0 .43Z" fill="#F3EFE4"/>
+          <path d="M.5 0H1V.43L.675 1H.5Z" fill="#EEE8D6"/>
+          <path d="M1 .43V1H.675Z" fill="#F2EDDD"/>
+          <circle cx=".5" cy="1.35" r=".66" fill="#EAE1C5" opacity=".3"/>
+        </pattern>
+      </defs>
+      <path id="intro-edge" d="M0 0H1V1C.75 1 .25 1 0 1Z" fill="url(#intro-paper)"/>
+    </svg>
     <div class="intro-brand">
       <svg class="intro-sun" viewBox="0 0 240 160" fill="none" focusable="false">
         <g class="intro-rays" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
@@ -68,7 +82,7 @@
   <main id="main">
     <section class="hero shell" id="top" aria-labelledby="hero-title" data-reveal-group>
       <div class="hero-copy">
-        <p class="eyebrow" data-reveal="text"><span class="little-sun" aria-hidden="true">✳</span> КОФЕ И ЗАВТРАКИ РЯДОМ С ДОМОМ</p>
+        <p class="eyebrow" data-reveal="text"><span class="little-sun" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span> КОФЕ И ЗАВТРАКИ РЯДОМ С ДОМОМ</p>
         <h1 id="hero-title" data-reveal="text">Территория утра <span>без спешки</span></h1>
         <p class="hero-lead" data-reveal="text">Любимый кофе, тёплый завтрак<br> и немного времени для себя.</p>
         <div class="hero-actions" data-reveal="text"><a class="button button-dark" href="#menu">Что у нас вкусного <span aria-hidden="true">↗</span></a><a class="text-link" href="#visit">Заглянуть в гости <span aria-hidden="true">↓</span></a></div>
@@ -77,10 +91,10 @@
       <figure class="hero-visual" data-reveal="visual">
         <img class="hero-photo" src="assets/coffee.webp" width="1440" height="960" alt="Чашка кофе с молочной пенкой в мягком утреннем свете" fetchpriority="high">
         <span class="hero-stamp" aria-hidden="true">маленькие<br>радости<br><span>каждый день</span></span>
-        <figcaption class="hours-note"><span class="sun-icon" aria-hidden="true">☀</span><span>Ждём вас каждый день<strong>8:00 — 20:00</strong></span><span class="note-arrow" aria-hidden="true">↗</span></figcaption>
+        <figcaption class="hours-note"><span class="sun-icon" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.58 4.58l2.12 2.12M17.3 17.3l2.12 2.12M4.58 19.42l2.12-2.12M17.3 6.7l2.12-2.12"/></svg></span><span>Ждём вас каждый день<strong>8:00 — 20:00</strong></span><span class="note-arrow" aria-hidden="true">↗</span></figcaption>
       </figure>
     </section>
-    <div class="morning-line wrap" aria-label="Простые радости" data-reveal="fade"><span>Кофе с собой и для неспешных встреч</span><span class="line-sun" aria-hidden="true">✳</span><span>Завтраки и тёплая выпечка</span><span class="line-sun" aria-hidden="true">✳</span><span>Хорошо быть здесь</span></div>
+    <div class="morning-line wrap" aria-label="Простые радости" data-reveal="fade"><span>Кофе с собой и для неспешных встреч</span><span class="line-sun" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><span>Завтраки и тёплая выпечка</span><span class="line-sun" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><span>Хорошо быть здесь</span></div>
 
     <section class="menu-section section wrap" id="menu" aria-labelledby="menu-title" data-reveal-group>
       <div class="section-top"><div data-reveal="text"><p class="eyebrow">ПРОСТЫЕ РАДОСТИ</p><h2 id="menu-title">У каждого утра<br>свой вкус</h2></div><div class="section-intro" data-reveal="text"><p>Начать с чашки кофе. Добавить любимый завтрак.<br> И оставить место для чего-нибудь сладкого.</p><a class="text-link" href="https://t.me/vosemutracafe" target="_blank" rel="noopener">Меню и доставка в Telegram <span aria-hidden="true">↗</span></a></div></div>
@@ -96,15 +110,15 @@
       <div class="about-copy"><p class="eyebrow" data-reveal="text">ВАША КОФЕЙНЯ ПО СОСЕДСТВУ</p><h2 id="about-title" data-reveal="text">Можно просто<br>быть собой</h2><p class="lead" data-reveal="text">Забежать за кофе по дороге.<br>Встретиться с близкими. Выдохнуть.</p><p data-reveal="text">В «Восемь утра» есть время для простых вещей. Для тёплой чашки в ладонях, любимого завтрака и разговора, который не хочется заканчивать.</p><p data-reveal="text">Мы рядом, когда хочется немного замедлиться и почувствовать себя на своём месте.</p><a class="button button-outline" href="#visit" data-reveal="text">До встречи за кофе <span aria-hidden="true">↗</span></a></div>
     </section>
 
-    <section class="quote-section shell" aria-label="Философия кофейни" data-reveal="visual"><div class="sunrise" aria-hidden="true"></div><span class="quote-sun" aria-hidden="true">✳</span><blockquote>В простом всегда прячется<br>самое нужное</blockquote><p>Чашка кофе. Близкие рядом. Хорошее утро.</p></section>
+    <section class="quote-section shell" aria-label="Философия кофейни" data-reveal="visual"><div class="sunrise" aria-hidden="true"></div><span class="quote-sun" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><blockquote>В простом всегда прячется<br>самое нужное</blockquote><p>Чашка кофе. Близкие рядом. Хорошее утро.</p></section>
 
     <section class="club-section section wrap" id="club" aria-labelledby="club-title" data-reveal-group>
       <div class="club-copy"><p class="eyebrow" data-reveal="text">КЛУБ ГОСТЕЙ «ВОСЕМЬ УТРА»</p><h2 id="club-title" data-reveal="text">Хорошие привычки<br>дарят больше</h2><p class="lead" data-reveal="text">Заходите за любимым.<br>А мы добавим немного приятного.</p><p data-reveal="text">Присоединяйтесь к клубу гостей: копите бонусы с каждого заказа и возвращайтесь за новыми маленькими радостями.</p><a class="button button-dark" href="registration.html" data-reveal="text">Стать участником <span aria-hidden="true">↗</span></a><p class="club-fineprint" data-reveal="text">Подробности программы можно уточнить<br>у команды кофейни.</p></div>
-      <div class="club-visual"><div class="loyalty-card" data-reveal="visual"><div class="loyalty-card-head"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"><span>КАРТА ГОСТЯ</span></div><div class="loyalty-card-value"><span>5<small>%</small></span><p>возвращаем бонусами<br>с каждого заказа</p></div><div class="loyalty-card-bottom"><span>Ваш повод вернуться</span><span aria-hidden="true">✳</span></div></div><div class="bonus-note" data-reveal="visual"><strong>до 30%</strong><span>стоимости заказа<br>можно оплатить бонусами</span></div><ol class="club-steps"><li data-reveal="text"><span>1</span>Заполните короткую анкету</li><li data-reveal="text"><span>2</span>Назовите номер телефона при заказе</li><li data-reveal="text"><span>3</span>Копите бонусы и оплачивайте ими покупки</li></ol></div>
+      <div class="club-visual"><div class="loyalty-card" data-reveal="visual"><div class="loyalty-card-head"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"><span>КАРТА ГОСТЯ</span></div><div class="loyalty-card-value"><span>5<small>%</small></span><p>возвращаем бонусами<br>с каждого заказа</p></div><div class="loyalty-card-bottom"><span>Ваш повод вернуться</span><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span></div></div><div class="bonus-note" data-reveal="visual"><strong>до 30%</strong><span>стоимости заказа<br>можно оплатить бонусами</span></div><ol class="club-steps"><li data-reveal="text"><span>1</span>Заполните короткую анкету</li><li data-reveal="text"><span>2</span>Назовите номер телефона при заказе</li><li data-reveal="text"><span>3</span>Копите бонусы и оплачивайте ими покупки</li></ol></div>
     </section>
 
     <section class="visit-section shell" id="visit" aria-labelledby="visit-title" data-reveal-group>
-      <div class="visit-copy"><p class="eyebrow" data-reveal="text">МЫ БЛИЖЕ, ЧЕМ КАЖЕТСЯ</p><h2 id="visit-title" data-reveal="text">Ваше утро<br>ждёт вас здесь</h2><address data-reveal="text">Москва, Шелепихинская набережная,<br>д. 34, корп. 6 <span>ЖК «Сердце Столицы»</span></address><p class="visit-hours" data-reveal="text"><span aria-hidden="true">☀</span> Ежедневно, 8:00 — 20:00</p><a class="button button-dark" href="https://yandex.ru/maps/?text=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0%2C%20%D0%A8%D0%B5%D0%BB%D0%B5%D0%BF%D0%B8%D1%85%D0%B8%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%20%D0%BD%D0%B0%D0%B1%D0%B5%D1%80%D0%B5%D0%B6%D0%BD%D0%B0%D1%8F%2C%2034%2C%20%D0%BA%D0%BE%D1%80%D0%BF%D1%83%D1%81%206%2C%20%D0%BA%D0%BE%D1%84%D0%B5%D0%B9%D0%BD%D1%8F%20%D0%92%D0%BE%D1%81%D0%B5%D0%BC%D1%8C%20%D1%83%D1%82%D1%80%D0%B0" target="_blank" rel="noopener" data-reveal="text">Построить маршрут <span aria-hidden="true">↗</span></a><div class="visit-contacts" data-reveal="text"><a href="tel:+79851308106">+7 (985) 130-81-06</a><a href="https://t.me/vosemutracafe" target="_blank" rel="noopener">Написать в Telegram ↗</a></div></div>
+      <div class="visit-copy"><p class="eyebrow" data-reveal="text">МЫ БЛИЖЕ, ЧЕМ КАЖЕТСЯ</p><h2 id="visit-title" data-reveal="text">Ваше утро<br>ждёт вас здесь</h2><address data-reveal="text">Москва, Шелепихинская набережная,<br>д. 34, корп. 6 <span>ЖК «Сердце Столицы»</span></address><p class="visit-hours" data-reveal="text"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.58 4.58l2.12 2.12M17.3 17.3l2.12 2.12M4.58 19.42l2.12-2.12M17.3 6.7l2.12-2.12"/></svg></span> Ежедневно, 8:00 — 20:00</p><a class="button button-dark" href="https://yandex.ru/maps/?text=%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0%2C%20%D0%A8%D0%B5%D0%BB%D0%B5%D0%BF%D0%B8%D1%85%D0%B8%D0%BD%D1%81%D0%BA%D0%B0%D1%8F%20%D0%BD%D0%B0%D0%B1%D0%B5%D1%80%D0%B5%D0%B6%D0%BD%D0%B0%D1%8F%2C%2034%2C%20%D0%BA%D0%BE%D1%80%D0%BF%D1%83%D1%81%206%2C%20%D0%BA%D0%BE%D1%84%D0%B5%D0%B9%D0%BD%D1%8F%20%D0%92%D0%BE%D1%81%D0%B5%D0%BC%D1%8C%20%D1%83%D1%82%D1%80%D0%B0" target="_blank" rel="noopener" data-reveal="text">Построить маршрут <span aria-hidden="true">↗</span></a><div class="visit-contacts" data-reveal="text"><a href="tel:+79851308106">+7 (985) 130-81-06</a><a href="https://t.me/vosemutracafe" target="_blank" rel="noopener">Написать в Telegram ↗</a></div></div>
       <figure class="visit-image" data-reveal="visual"><img src="assets/cafe-sign-enhanced.webp" srcset="assets/cafe-sign-enhanced-720.webp 720w, assets/cafe-sign-enhanced.webp 1254w" sizes="(max-width: 650px) calc(100vw - 64px), (max-width: 900px) calc(50vw - 61px), (max-width: 1150px) calc(50vw - 70px), (max-width: 1408px) calc(50vw - 96px), 608px" width="1254" height="1254" alt="Иллюстрация: светлая вывеска «Восемь утра» на кирпичной стене" loading="lazy" decoding="async"><figcaption>До встречи. И хорошего вам дня ♡</figcaption></figure>
     </section>
   </main>

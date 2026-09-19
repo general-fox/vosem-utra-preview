@@ -26,7 +26,8 @@ document.querySelectorAll('[data-year]').forEach((element) => {
  */
 function curtainPath(progress, bend = 0.58) {
   const t = Math.max(0, Math.min(1, progress));
-  const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+  // A broad, even lift: no sudden acceleration halfway through a phone viewport.
+  const eased = (1 - Math.cos(Math.PI * t)) / 2;
   const edge = 1 - eased * 1.08;
   // The centre leads the corners; a cubic curve keeps the hem smooth at any size.
   const control = edge - Math.sin(Math.PI * t) * bend;
@@ -46,7 +47,8 @@ function initIntro() {
     const timers = new Set();
     const curtainEdge = document.getElementById('intro-edge');
     let curtainFrame = 0;
-    const inputs = ['pointerdown', 'touchstart', 'wheel', 'keydown', 'focusin'];
+    const immediateInputs = ['keydown', 'focusin'];
+    const gentleInputs = ['touchstart', 'wheel'];
     let finished = false;
     const later = (callback, delay) => {
       const timer = setTimeout(() => { timers.delete(timer); callback(); }, delay);
@@ -58,7 +60,9 @@ function initIntro() {
       timers.forEach(clearTimeout);
       cancelAnimationFrame(curtainFrame);
       root.removeAttribute('data-intro');
-      inputs.forEach((type) => document.removeEventListener(type, finish, true));
+      immediateInputs.forEach((type) => document.removeEventListener(type, finish, true));
+      gentleInputs.forEach((type) => document.removeEventListener(type, open, true));
+      document.removeEventListener('pointerdown', onPointer, true);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', finish);
       window.removeEventListener('hashchange', finish);
@@ -67,32 +71,50 @@ function initIntro() {
     };
     const onVisibility = () => { if (document.hidden) finish(); };
     const onPreference = (event) => { if (event.matches) finish(); };
+    const onPointer = (event) => {
+      // Links and fields respond immediately; a swipe on the page never tears off the curtain.
+      if (event.target?.closest?.('a,button,input,textarea,select,summary,[tabindex]')) finish();
+      else open();
+    };
     const open = () => {
-      if (finished) return;
-      if (root.dataset.intro !== 'waiting' || preference.matches || document.hidden || window.scrollY > 0) {
+      if (finished || root.dataset.intro !== 'waiting') return;
+      if (preference.matches || document.hidden) {
         finish();
         return;
       }
       root.dataset.intro = 'leaving';
       const openingAt = performance.now();
-      const curtainBend = window.innerWidth <= 650 ? 0.16 : 0.58;
+      const mobile = window.innerWidth <= 650;
+      const duration = mobile ? 1080 : 1000;
+      const curtainBend = mobile ? 0.16 : 0.58;
+      const clearCurtain = () => {
+        if (finished || root.dataset.intro !== 'leaving') return;
+        cancelAnimationFrame(curtainFrame);
+        curtainEdge?.setAttribute('d', curtainPath(1, curtainBend));
+        // Keep the site blurred until the entire curved hem has left the viewport.
+        root.dataset.intro = 'settling';
+        later(finish, 240);
+      };
       const drawCurtain = () => {
         if (finished || root.dataset.intro !== 'leaving') return;
-        const progress = Math.min(1, (performance.now() - openingAt) / 820);
+        const progress = Math.min(1, (performance.now() - openingAt) / duration);
         curtainEdge?.setAttribute('d', curtainPath(progress, curtainBend));
         if (progress < 1) curtainFrame = requestAnimationFrame(drawCurtain);
+        else clearCurtain();
       };
       drawCurtain();
       // Start the first-screen reveals as the curtain begins to lift.
       resolve();
-      later(finish, 850);
+      later(clearCurtain, duration + 40);
     };
-    inputs.forEach((type) => document.addEventListener(type, finish, { capture: true, passive: true }));
+    immediateInputs.forEach((type) => document.addEventListener(type, finish, { capture: true, passive: true }));
+    gentleInputs.forEach((type) => document.addEventListener(type, open, { capture: true, passive: true }));
+    document.addEventListener('pointerdown', onPointer, { capture: true, passive: true });
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', finish);
     window.addEventListener('hashchange', finish);
     preference.addEventListener('change', onPreference);
-    later(finish, 1350);
+    later(finish, 2000);
 
     // Give the logo/font and hero a brief chance to decode, never wait for lazy images.
     const assets = [...document.querySelectorAll('.hero-photo, .intro-logo')].map((img) => {
@@ -102,9 +124,9 @@ function initIntro() {
     if (document.fonts?.ready) assets.push(document.fonts.ready);
     Promise.race([
       Promise.all(assets),
-      new Promise((ready) => later(ready, 450)),
+      new Promise((ready) => later(ready, 350)),
     ]).then(() => {
-      if (!finished) later(open, Math.max(0, 360 - (performance.now() - started)));
+      if (!finished) later(open, Math.max(0, 200 - (performance.now() - started)));
     }, finish);
   });
 }
@@ -120,9 +142,9 @@ function initPhotoDepth() {
   const active = new Set();
   const frames = new Map(photos.map((img) => [img.parentElement, img]));
   const profiles = {
-    coffee: { strength: 1, smoothing: 75 },
-    breakfast: { strength: 0.65, smoothing: 115 },
-    pastry: { strength: 1.12, smoothing: 60 },
+    coffee: { strength: 1, smoothing: 125 },
+    breakfast: { strength: 0.65, smoothing: 180 },
+    pastry: { strength: 1.12, smoothing: 105 },
   };
   const states = new Map(photos.map((img) => [img, {
     current: null, target: 0, travel: 0, bleed: 0,
@@ -138,10 +160,11 @@ function initPhotoDepth() {
     frame = 0;
     if (!enabled || document.hidden) return;
     const step = previousTime ? Math.min(32, Math.max(1, time - previousTime)) : 16;
+    const mobile = window.innerWidth <= 650;
     previousTime = time;
     if (dirty) {
       const viewportHeight = window.innerHeight;
-      const maxTravel = window.innerWidth <= 650 ? 52 : 84;
+      const maxTravel = mobile ? 22 : 64;
       // Read all visible geometry before writing any image styles.
       const positions = [...active].map((img) => {
         const box = img.parentElement.getBoundingClientRect();
@@ -167,9 +190,12 @@ function initPhotoDepth() {
     let moving = false;
     active.forEach((img) => {
       const state = states.get(img);
-      const blend = 1 - Math.exp(-step / state.smoothing);
+      const blend = 1 - Math.exp(-step / (state.smoothing * (mobile ? 1.7 : 1)));
       if (state.current === null) state.current = state.target;
-      state.current += (state.target - state.current) * blend;
+      // A fast flick must not turn into a one-frame jump inside the photo.
+      const maxStep = step * (mobile ? 0.085 : 0.3);
+      const delta = (state.target - state.current) * blend;
+      state.current += Math.max(-maxStep, Math.min(maxStep, delta));
       state.current = Math.max(-state.travel, Math.min(state.travel, state.current));
       if (Math.abs(state.target - state.current) <= 0.05) state.current = state.target;
       else moving = true;

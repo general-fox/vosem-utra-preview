@@ -23,16 +23,18 @@
       setTimeout(() => {
         if (root.dataset.motion === 'boot') root.removeAttribute('data-motion');
         root.removeAttribute('data-intro');
-      }, 1600);
+      }, 2300);
     })();
   </script>
   <style>
-    /* No flash before the stylesheet; no JavaScript means no curtain. */
-    .intro-curtain{display:none}
-    html[data-intro] .intro-curtain{display:grid;position:fixed;inset:0;z-index:1000;overflow:hidden;place-items:center;background:#F9F7F1;pointer-events:none}
-    .intro-defs{position:absolute;width:0;height:0;pointer-events:none}
-    @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain{display:none}}
-    @media print{html[data-intro] .intro-curtain{display:none}}
+    /* Pre-paint curtain and blur; no JavaScript means neither layer is shown. */
+    .intro-curtain,.intro-veil{display:none}
+    html[data-intro] .intro-curtain{display:grid;position:fixed;inset:0;z-index:1000;overflow:hidden;place-items:center;isolation:isolate;pointer-events:none}
+    .intro-surface{position:absolute;inset:0;width:100%;height:100%;z-index:-1}
+    html[data-intro] .intro-veil{display:block;position:fixed;inset:0;z-index:999;background:rgb(249 247 241 / 12%);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);pointer-events:none}
+    html[data-intro=settling] .intro-curtain{display:none}
+    @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain,html[data-intro] .intro-veil{display:none}}
+    @media print{html[data-intro] .intro-curtain,html[data-intro] .intro-veil{display:none}}
   </style>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="registration.css">
@@ -40,8 +42,20 @@
   <script type="module" src="registration.js"></script>
 </head>
 <body>
-  <svg class="intro-defs" aria-hidden="true" focusable="false"><defs><clipPath id="intro-clip" clipPathUnits="objectBoundingBox"><path id="intro-edge" d="M0 0H1V1C.75 1 .25 1 0 1Z"/></clipPath></defs></svg>
+  <div class="intro-veil" aria-hidden="true"></div>
   <div class="intro-curtain" aria-hidden="true">
+    <svg class="intro-surface" viewBox="0 0 1 1" preserveAspectRatio="none" focusable="false">
+      <defs>
+        <pattern id="intro-paper" width="1" height="1" patternUnits="userSpaceOnUse">
+          <rect width="1" height="1" fill="#F9F7F1"/>
+          <path d="M0 0H.5V1H.325L0 .43Z" fill="#F3EFE4"/>
+          <path d="M.5 0H1V.43L.675 1H.5Z" fill="#EEE8D6"/>
+          <path d="M1 .43V1H.675Z" fill="#F2EDDD"/>
+          <circle cx=".5" cy="1.35" r=".66" fill="#EAE1C5" opacity=".3"/>
+        </pattern>
+      </defs>
+      <path id="intro-edge" d="M0 0H1V1C.75 1 .25 1 0 1Z" fill="url(#intro-paper)"/>
+    </svg>
     <div class="intro-brand">
       <svg class="intro-sun" viewBox="0 0 240 160" fill="none" focusable="false">
         <g class="intro-rays" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
@@ -67,7 +81,7 @@
       <div><strong>5%</strong><span>с каждого заказа<br>возвращаем бонусами</span></div>
       <div><strong>до 30%</strong><span>суммы заказа можно<br>оплатить бонусами</span></div>
     </div>
-    <p class="brand-quote"><span aria-hidden="true">✳</span> Хорошие привычки дарят больше.</p>
+    <p class="brand-quote"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span> Хорошие привычки дарят больше.</p>
   </aside>
   <main class="form-panel">
     <div class="registration" data-reveal-group>

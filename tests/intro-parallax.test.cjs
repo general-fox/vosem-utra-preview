@@ -41,6 +41,7 @@ function harness(options = {}) {
     else this.removeAttribute(name);
   } });
   const preference = events({ matches: !!options.reduce });
+  const curtainEdge = { setAttribute(name, value) { this[name] = value; } };
   const photos = [0, 1, 2].map(index => {
     const values = new Map();
     const parentElement = { top: 100 + index * 1000, height: 400,
@@ -55,7 +56,7 @@ function harness(options = {}) {
   });
   const document = events({ documentElement: root, hidden: !!options.hidden,
     referrer: options.referrer || '', fonts: { ready: Promise.resolve() },
-    getElementById: () => ({ setAttribute() {} }),
+    getElementById: () => curtainEdge,
     querySelector: () => options.noSun ? null : sun,
     querySelectorAll: selector => selector === 'img[data-depth]' ? photos : photos.slice(0, 1),
   });
@@ -81,12 +82,12 @@ function harness(options = {}) {
   });
   vm.runInContext(options.club ? clubBootstrap : bootstrap, context);
   vm.runInContext(controllers, context);
-  return { root, sun, photos, document, window, preference, observers, frames, timers,
+  return { root, sun, photos, document, window, preference, observers, frames, timers, curtainEdge,
     intro: () => vm.runInContext('initIntro()', context),
     depth: () => vm.runInContext('initPhotoDepth()', context),
     rotateSun: () => vm.runInContext('initSunRotation()', context),
     paint() { now += 16; const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(cb => cb(now)); },
-    settle() { let count = 0; while (frames.size && count++ < 120) this.paint(); assert.equal(frames.size, 0, 'Finite ease-out reaches rest'); },
+    settle() { let count = 0; while (frames.size && count++ < 240) this.paint(); assert.equal(frames.size, 0, 'Finite ease-out reaches rest'); },
     shape: (progress, bend = 0.58) => vm.runInContext(`curtainPath(${progress}, ${bend})`, context),
     async tick(ms) {
       await flush();
@@ -116,19 +117,25 @@ function harness(options = {}) {
   assert.equal(h.shape(-1), h.shape(0)); assert.equal(h.shape(2), h.shape(1));
   assert.equal(h.root.dataset.intro, 'waiting', 'Direct homepage visit is armed before paint');
   let revealed = false;
+  let ready;
   h.intro().then(() => { revealed = true; });
-  await h.tick(359); assert.equal(revealed, false);
+  await h.tick(199); assert.equal(revealed, false);
   await h.tick(1); assert.equal(h.root.dataset.intro, 'leaving'); assert.equal(revealed, true);
-  await h.tick(850); assert.equal(h.root.dataset.intro, undefined);
+  const initialPath = h.curtainEdge.d;
+  h.paint(); assert.notEqual(h.curtainEdge.d, initialPath, 'The visible SVG path moves, not an external HTML clip');
+  await h.tick(1024); assert.equal(h.root.dataset.intro, 'settling', 'Unblur starts only after the whole hem clears');
+  assert.equal(h.curtainEdge.d, h.shape(1), 'Final path is completely outside the viewport');
+  await h.tick(239); assert.equal(h.root.dataset.intro, 'settling', 'Blur has time to fade gently');
+  await h.tick(1); assert.equal(h.root.dataset.intro, undefined);
   assert.equal(h.frames.size, 0, 'Curtain animation frames are cancelled when finished');
   assert.equal(h.document.count('wheel'), 0, 'Intro input listeners are removed');
   assert.equal(h.preference.count('change'), 0);
 
   for (const option of [{ slowAssets: true }, { brokenAssets: true }]) {
-    h = harness(option); h.intro(); await h.tick(1300);
+    h = harness(option); h.intro(); await h.tick(1800);
     assert.equal(h.root.dataset.intro, undefined, 'Broken/slow assets cannot leave a curtain');
   }
-  h = harness(); await h.tick(1600);
+  h = harness(); await h.tick(2300);
   assert.equal(h.root.dataset.intro, undefined, 'Independent watchdog handles a missing module');
   assert.equal(h.root.dataset.motion, undefined);
   await h.intro(); assert.equal(h.root.dataset.intro, undefined, 'Late module cannot re-arm intro');
@@ -144,23 +151,36 @@ function harness(options = {}) {
   for (const option of [{}, { referrer: 'https://vosem-utra.ru/index.html' }, { mobile: true }]) {
     h = harness({ club: true, ...option });
     assert.equal(h.root.dataset.intro, 'waiting', 'Club entry also shows the curtain from internal navigation');
-    h.intro(); await h.tick(1300); assert.equal(h.root.dataset.intro, undefined);
+    h.intro(); await h.tick(1800); assert.equal(h.root.dataset.intro, undefined);
   }
   for (const option of [{ navigation: 'back_forward' }, { hash: '#registration-title' },
     { scrollY: 300 }, { reduce: true }, { hidden: true }]) {
     h = harness({ club: true, ...option });
     assert.equal(h.root.dataset.intro, undefined, 'Club form history, focus routes and accessibility skip the intro');
   }
-  for (const type of ['pointerdown', 'touchstart', 'wheel', 'keydown', 'focusin']) {
+  for (const type of ['keydown', 'focusin']) {
     h = harness(); const ready = h.intro(); h.document.emit(type); await ready;
     assert.equal(h.root.dataset.intro, undefined, type + ' immediately dismisses the curtain');
-    await h.tick(1600); assert.equal(h.root.dataset.intro, undefined, 'No delayed replay');
+    await h.tick(2300); assert.equal(h.root.dataset.intro, undefined, 'No delayed replay');
+  }
+  h = harness(); ready = h.intro();
+  h.document.emit('pointerdown', { target: { closest: () => ({}) } });
+  await ready; assert.equal(h.root.dataset.intro, undefined, 'Actual links and fields stay immediately usable');
+  for (const type of ['pointerdown', 'touchstart', 'wheel']) {
+    h = harness({ mobile: true }); h.intro(); h.document.emit(type);
+    assert.equal(h.root.dataset.intro, 'leaving', type + ' starts a gentle lift instead of abruptly removing it');
+    h.window.scrollY = 80;
+    await h.tick(300); h.document.emit(type);
+    assert.equal(h.root.dataset.intro, 'leaving', 'Repeated touches and delayed asset callbacks cannot cut the animation short');
+    await h.tick(820); assert.equal(h.root.dataset.intro, 'settling');
+    await h.tick(240); assert.equal(h.root.dataset.intro, undefined);
+    assert.equal(h.document.count(type), 0, 'Gentle input listeners are cleaned up');
   }
   for (const type of ['pagehide', 'hashchange']) {
     h = harness(); const ready = h.intro(); h.window.emit(type); await ready;
     assert.equal(h.root.dataset.intro, undefined);
   }
-  h = harness(); let ready = h.intro(); h.document.hidden = true; h.document.emit('visibilitychange');
+  h = harness(); ready = h.intro(); h.document.hidden = true; h.document.emit('visibilitychange');
   await ready; assert.equal(h.root.dataset.intro, undefined);
   h = harness(); ready = h.intro(); h.preference.matches = true; h.preference.emit('change', { matches: true });
   await ready; assert.equal(h.root.dataset.intro, undefined);
@@ -207,7 +227,11 @@ function harness(options = {}) {
   }
   h = harness({ mobile: true }); h.depth(); h.photos[0].parentElement.top = -10000;
   h.observers[0].enter(h.photos[0]); h.paint();
-  assert.equal(h.photos[0].style.get('--depth-y'), '52.00px', 'Mobile depth is noticeable without excessive travel');
+  assert.equal(h.photos[0].style.get('--depth-y'), '22.00px', 'Mobile depth has a subtle 22px range');
+  h.photos[0].parentElement.top = 10000; h.window.emit('scroll'); h.paint();
+  assert.ok(22 - parseFloat(h.photos[0].style.get('--depth-y')) <= 1.37, 'A full-range mobile flick moves at most 1.36px per 16ms frame');
+  h.settle();
+  assert.equal(h.photos[0].style.get('--depth-y'), '-22.00px');
 
   h = harness();
   ['coffee', 'breakfast', 'pastry'].forEach((profile, index) => {
@@ -252,8 +276,13 @@ function harness(options = {}) {
   assert.match(clubHtml, /data-intro-entry="club"/);
   assert.match(clubHtml, /data-preview="true"/);
   assert.match(clubHtml, /id="submit-button"[^>]*disabled/);
-  assert.match(css, /clip-path:url\(#intro-clip\)/);
-  assert.match(html, /clipPathUnits="objectBoundingBox"/);
+  assert.doesNotMatch(css + html + clubHtml, /intro-clip|intro-defs|>✳<|>☀</);
+  assert.match(html, /class="intro-surface" viewBox="0 0 1 1"/);
+  assert.match(html, /id="intro-edge"[^>]+fill="url\(#intro-paper\)"/);
+  assert.match(html, /-webkit-backdrop-filter:blur\(8px\)/);
+  assert.match(css, /html\[data-intro=settling\] \.intro-veil\{animation:intro-veil-clear 240ms/);
+  assert.equal((html.match(/class="brand-mark"/g) || []).length, 7, 'All home-page sun/star symbols are SVG');
+  assert.equal((clubHtml.match(/class="brand-mark"/g) || []).length, 1, 'Club symbol is also SVG');
   assert.match(css, /prefers-reduced-motion:reduce\)\{img\[data-depth-ready\]/);
   assert.doesNotMatch(script + bootstrap, /sessionStorage|localStorage|document\.cookie/);
   console.log('PASS: curved curtain, intro timing, asset failures, missing/late JS, direct links, history, keyboard/touch skip, reduced motion, depth bounds and finite inertia, mobile, idle/background work and listener cleanup.');
