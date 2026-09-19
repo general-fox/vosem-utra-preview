@@ -22,13 +22,17 @@ function webpSize(file) {
 for (const [file, width, height] of [
   ['coffee-menu-720.webp', 720, 720], ['coffee-menu-1254.webp', 1254, 1254],
   ['syrniki-800.webp', 800, 533], ['syrniki-1280.webp', 1280, 853],
+  ['breakfast-plate-800.webp', 800, 533], ['breakfast-plate-1280.webp', 1280, 853],
   ['cafe-barista-large-640.webp', 640, 843], ['cafe-barista-large-972.webp', 972, 1280],
 ]) {
   assert.deepEqual(webpSize('assets/' + file), [width, height]);
   assert.ok(fs.statSync(path.join(root, 'assets', file)).size < 450 * 1024, 'Photo weight is bounded');
 }
-const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-menu|syrniki|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
-assert.equal(updatedImages.length, 3);
+const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-menu|syrniki|breakfast-plate|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
+assert.equal(updatedImages.length, 4);
+assert.match(html, /data-depth="breakfast" src="assets\/breakfast-plate-1280.webp"/, 'Breakfast uses the supplied breakfast plate');
+assert.match(html, /data-depth="pastry" src="assets\/syrniki-1280.webp"/, 'Syrniki are in the tea card');
+assert.doesNotMatch(html, /src="assets\/brand-pastry.jpg"/, 'Former pastry image is no longer displayed');
 for (const img of updatedImages) {
   assert.match(img, /loading="lazy"/);
   assert.match(img, /decoding="async"/);

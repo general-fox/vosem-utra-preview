@@ -7,14 +7,15 @@
 | Назначение | Источник | Веб-версии |
 | --- | --- | --- |
 | «Сначала — кофе» | `assets/coffee-menu-original.jpg` → `assets/coffee-menu-expanded.png` (1254 × 1254) | `assets/coffee-menu-720.webp`, `assets/coffee-menu-1254.webp` |
-| «Потом — завтрак» | `assets/syrniki-original.jpg` (1280 × 853) | `assets/syrniki-800.webp`, `assets/syrniki-1280.webp` |
+| «Потом — завтрак» | `assets/breakfast-plate-original.jpg` (1280 × 853) | `assets/breakfast-plate-800.webp`, `assets/breakfast-plate-1280.webp` |
+| «И что-нибудь к чаю» | `assets/syrniki-original.jpg` (1280 × 853) | `assets/syrniki-800.webp`, `assets/syrniki-1280.webp` |
 | «Можно просто быть собой» | Имеющийся `assets/cafe-barista.png` (972 × 1280) | `assets/cafe-barista-large-640.webp`, `assets/cafe-barista-large-972.webp` |
 
 Фотография кофе расширена встроенным ImageGen (не CLI/API): дорисовано окружение
 для более свободного кадрирования и запаса вокруг надписи при параллаксе.
 Это AI-обработка предоставленного фото, не неизменённый оригинал; исходник сохранён
 для сравнения. Мелкий текст меню на обработанном фото не является источником
-актуальных цен или ассортимента. Фото сырников и иллюстрация бариста не перерисованы.
+актуальных цен или ассортимента. Фото завтрака, сырников и иллюстрация бариста не перерисованы.
 
 WebP экспортированы через Sharp с `quality: 92`, `effort: 6`, `withoutEnlargement: true`.
 Два размера подключены через `srcset`/`sizes`; новые версии не содержат EXIF/IPTC/XMP.
