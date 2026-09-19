@@ -1,29 +1,59 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-intro-entry="club">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#F9F7F1">
   <title>Клуб гостей — Восемь утра</title>
   <meta name="description" content="Регистрация в клубе гостей кофейни «Восемь утра»: 5% бонусами с каждого заказа и возможность оплатить бонусами до 30% покупки.">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="preload" href="assets/Lato-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/Lato-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <script>
     (() => {
       const root = document.documentElement;
       if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       if (performance.getEntriesByType('navigation')[0]?.type === 'back_forward') return;
       root.dataset.motion = 'boot';
+      const navigation = performance.getEntriesByType('navigation')[0];
+      let returning = false;
+      try { returning = navigation?.type !== 'reload' && new URL(document.referrer).origin === location.origin; } catch { /* Direct visit. */ }
+      if ((!returning || root.dataset.introEntry === 'club') && !location.hash && !document.hidden && window.scrollY === 0) root.dataset.intro = 'waiting';
       // If the module fails, reveal everything rather than leave a blank page.
-      setTimeout(() => { if (root.dataset.motion === 'boot') root.removeAttribute('data-motion'); }, 1600);
+      setTimeout(() => {
+        if (root.dataset.motion === 'boot') root.removeAttribute('data-motion');
+        root.removeAttribute('data-intro');
+      }, 1600);
     })();
   </script>
+  <style>
+    /* No flash before the stylesheet; no JavaScript means no curtain. */
+    .intro-curtain{display:none}
+    html[data-intro] .intro-curtain{display:grid;position:fixed;inset:0;z-index:1000;overflow:hidden;place-items:center;background:#F9F7F1;pointer-events:none}
+    .intro-defs{position:absolute;width:0;height:0;pointer-events:none}
+    @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain{display:none}}
+    @media print{html[data-intro] .intro-curtain{display:none}}
+  </style>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="registration.css">
   <script type="module" src="site.js"></script>
   <script type="module" src="registration.js"></script>
 </head>
 <body>
+  <svg class="intro-defs" aria-hidden="true" focusable="false"><defs><clipPath id="intro-clip" clipPathUnits="objectBoundingBox"><path id="intro-edge" d="M0 0H1V1C.75 1 .25 1 0 1Z"/></clipPath></defs></svg>
+  <div class="intro-curtain" aria-hidden="true">
+    <div class="intro-brand">
+      <svg class="intro-sun" viewBox="0 0 240 160" fill="none" focusable="false">
+        <g class="intro-rays" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <path d="M120 12v24M68 24l12 21M30 62l21 12M16 112h24M172 24l-12 21M210 62l-21 12M224 112h-24"/>
+        </g>
+        <path d="M64 123a56 56 0 0 1 112 0" fill="#ECE3CD" stroke="currentColor" stroke-width="2.4"/>
+        <path d="M49 124h142" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <img class="intro-logo" src="assets/logo.svg" width="435" height="75" alt="">
+      <p class="intro-caption">хорошее утро начинается здесь</p>
+    </div>
+  </div>
   <a class="skip-link" href="#registration-title">К анкете</a>
   <aside class="brand-panel" aria-label="Условия клуба гостей" data-reveal="visual">
     <div class="brand-rays" aria-hidden="true"></div>

@@ -21,6 +21,239 @@ document.querySelectorAll('[data-year]').forEach((element) => {
 });
 
 /**
+ * Decorative, bounded intro. Never locks scrolling, focus or pointer input.
+ * The head watchdog independently removes it if this module cannot run.
+ */
+function curtainPath(progress, bend = 0.58) {
+  const t = Math.max(0, Math.min(1, progress));
+  const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+  const edge = 1 - eased * 1.08;
+  // The centre leads the corners; a cubic curve keeps the hem smooth at any size.
+  const control = edge - Math.sin(Math.PI * t) * bend;
+  return `M0 0H1V${edge.toFixed(4)}C.75 ${control.toFixed(4)} .25 ${control.toFixed(4)} 0 ${edge.toFixed(4)}Z`;
+}
+
+function initIntro() {
+  const root = document.documentElement;
+  const preference = matchMedia('(prefers-reduced-motion: reduce)');
+  if (root.dataset.intro !== 'waiting' || preference.matches || document.hidden) {
+    root.removeAttribute('data-intro');
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const timers = new Set();
+    const curtainEdge = document.getElementById('intro-edge');
+    let curtainFrame = 0;
+    const inputs = ['pointerdown', 'touchstart', 'wheel', 'keydown', 'focusin'];
+    let finished = false;
+    const later = (callback, delay) => {
+      const timer = setTimeout(() => { timers.delete(timer); callback(); }, delay);
+      timers.add(timer);
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      timers.forEach(clearTimeout);
+      cancelAnimationFrame(curtainFrame);
+      root.removeAttribute('data-intro');
+      inputs.forEach((type) => document.removeEventListener(type, finish, true));
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', finish);
+      window.removeEventListener('hashchange', finish);
+      preference.removeEventListener('change', onPreference);
+      resolve();
+    };
+    const onVisibility = () => { if (document.hidden) finish(); };
+    const onPreference = (event) => { if (event.matches) finish(); };
+    const open = () => {
+      if (finished) return;
+      if (root.dataset.intro !== 'waiting' || preference.matches || document.hidden || window.scrollY > 0) {
+        finish();
+        return;
+      }
+      root.dataset.intro = 'leaving';
+      const openingAt = performance.now();
+      const curtainBend = window.innerWidth <= 650 ? 0.16 : 0.58;
+      const drawCurtain = () => {
+        if (finished || root.dataset.intro !== 'leaving') return;
+        const progress = Math.min(1, (performance.now() - openingAt) / 820);
+        curtainEdge?.setAttribute('d', curtainPath(progress, curtainBend));
+        if (progress < 1) curtainFrame = requestAnimationFrame(drawCurtain);
+      };
+      drawCurtain();
+      // Start the first-screen reveals as the curtain begins to lift.
+      resolve();
+      later(finish, 850);
+    };
+    inputs.forEach((type) => document.addEventListener(type, finish, { capture: true, passive: true }));
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', finish);
+    window.addEventListener('hashchange', finish);
+    preference.addEventListener('change', onPreference);
+    later(finish, 1350);
+
+    // Give the logo/font and hero a brief chance to decode, never wait for lazy images.
+    const assets = [...document.querySelectorAll('.hero-photo, .intro-logo')].map((img) => {
+      try { return img.decode ? img.decode().catch(() => {}) : Promise.resolve(); }
+      catch { return Promise.resolve(); }
+    });
+    if (document.fonts?.ready) assets.push(document.fonts.ready);
+    Promise.race([
+      Promise.all(assets),
+      new Promise((ready) => later(ready, 450)),
+    ]).then(() => {
+      if (!finished) later(open, Math.max(0, 360 - (performance.now() - started)));
+    }, finish);
+  });
+}
+
+/**
+ * The photo travels behind a fixed frame. A short, finite ease-out adds depth;
+ * frames stop as soon as the image settles, and offscreen photos do no work.
+ */
+function initPhotoDepth() {
+  const photos = [...document.querySelectorAll('img[data-depth]')];
+  if (!photos.length || !('IntersectionObserver' in window)) return;
+  const preference = matchMedia('(prefers-reduced-motion: reduce)');
+  const active = new Set();
+  const frames = new Map(photos.map((img) => [img.parentElement, img]));
+  const profiles = {
+    coffee: { strength: 1, smoothing: 75 },
+    breakfast: { strength: 0.65, smoothing: 115 },
+    pastry: { strength: 1.12, smoothing: 60 },
+  };
+  const states = new Map(photos.map((img) => [img, {
+    current: null, target: 0, travel: 0, bleed: 0,
+    ...(profiles[img.dataset.depth] || profiles.coffee),
+  }]));
+  let observer;
+  let frame = 0;
+  let enabled = false;
+  let dirty = true;
+  let previousTime = 0;
+
+  const update = (time = performance.now()) => {
+    frame = 0;
+    if (!enabled || document.hidden) return;
+    const step = previousTime ? Math.min(32, Math.max(1, time - previousTime)) : 16;
+    previousTime = time;
+    if (dirty) {
+      const viewportHeight = window.innerHeight;
+      const maxTravel = window.innerWidth <= 650 ? 52 : 84;
+      // Read all visible geometry before writing any image styles.
+      const positions = [...active].map((img) => {
+        const box = img.parentElement.getBoundingClientRect();
+        const progress = Math.max(-1, Math.min(1,
+          (viewportHeight / 2 - box.top - box.height / 2) / ((viewportHeight + box.height) / 2)));
+        const travel = Math.min(maxTravel, img.parentElement.clientHeight * 0.18) * states.get(img).strength;
+        return { img, travel, target: progress * travel };
+      });
+      positions.forEach(({ img, travel, target }) => {
+        const state = states.get(img);
+        state.target = target;
+        state.travel = travel;
+        const bleed = Math.ceil(travel + 3);
+        if (state.bleed !== bleed) {
+          state.bleed = bleed;
+          img.style.setProperty('--depth-bleed', `${bleed}px`);
+        }
+        img.dataset.depthReady = '';
+      });
+      dirty = false;
+    }
+
+    let moving = false;
+    active.forEach((img) => {
+      const state = states.get(img);
+      const blend = 1 - Math.exp(-step / state.smoothing);
+      if (state.current === null) state.current = state.target;
+      state.current += (state.target - state.current) * blend;
+      state.current = Math.max(-state.travel, Math.min(state.travel, state.current));
+      if (Math.abs(state.target - state.current) <= 0.05) state.current = state.target;
+      else moving = true;
+      img.style.setProperty('--depth-y', `${state.current.toFixed(2)}px`);
+    });
+    if (moving) frame = requestAnimationFrame(update);
+    else previousTime = 0;
+  };
+  const queue = () => {
+    dirty = true;
+    if (enabled && active.size && !frame && !document.hidden) frame = requestAnimationFrame(update);
+  };
+  const stop = () => {
+    enabled = false;
+    observer?.disconnect();
+    cancelAnimationFrame(frame);
+    frame = 0;
+    previousTime = 0;
+    active.clear();
+    window.removeEventListener('scroll', queue);
+    window.removeEventListener('resize', queue);
+    photos.forEach((img) => {
+      img.removeAttribute('data-depth-ready');
+      img.removeAttribute('data-depth-active');
+      img.style.removeProperty('--depth-y');
+      img.style.removeProperty('--depth-bleed');
+      Object.assign(states.get(img), { current: null, target: 0, travel: 0, bleed: 0 });
+    });
+  };
+  const start = () => {
+    if (enabled || preference.matches) return;
+    try {
+      observer = new IntersectionObserver((entries) => {
+        entries.forEach(({ target, isIntersecting }) => {
+          const img = frames.get(target);
+          if (isIntersecting) {
+            active.add(img);
+            img.dataset.depthActive = '';
+          } else {
+            active.delete(img);
+            states.get(img).current = null;
+            img.removeAttribute('data-depth-active');
+          }
+        });
+        if (active.size) queue();
+        else { cancelAnimationFrame(frame); frame = 0; previousTime = 0; }
+      }, { rootMargin: '100px 0px', threshold: 0 });
+      enabled = true;
+      photos.forEach((img) => observer.observe(img.parentElement));
+      window.addEventListener('scroll', queue, { passive: true });
+      window.addEventListener('resize', queue, { passive: true });
+    } catch { stop(); }
+  };
+  preference.addEventListener('change', () => { if (preference.matches) stop(); else start(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(frame); frame = 0; previousTime = 0; }
+    else queue();
+  });
+  window.addEventListener('pagehide', stop);
+  window.addEventListener('pageshow', (event) => { if (event.persisted) start(); });
+  start();
+}
+
+/** Keep the decorative CSS rotation paused offscreen, in background tabs or with reduced motion. */
+function initSunRotation() {
+  const sun = document.querySelector('.hours-note .sun-icon');
+  if (!sun || !('IntersectionObserver' in window)) return;
+  const preference = matchMedia('(prefers-reduced-motion: reduce)');
+  let visible = false;
+  const sync = () => sun.toggleAttribute('data-sun-spinning', visible && !document.hidden && !preference.matches);
+  try {
+    const observer = new IntersectionObserver((entries) => {
+      visible = entries.some((entry) => entry.isIntersecting);
+      sync();
+    });
+    observer.observe(sun);
+    document.addEventListener('visibilitychange', sync);
+    preference.addEventListener('change', sync);
+    window.addEventListener('pagehide', () => { observer.disconnect(); visible = false; sync(); });
+    window.addEventListener('pageshow', (event) => { if (event.persisted) observer.observe(sun); });
+  } catch { sun.removeAttribute('data-sun-spinning'); }
+}
+
+/**
  * The tiny head bootstrap arms the CSS before the first paint. Without it (or
  * after its watchdog has expired), we never hide already visible content.
  */
@@ -161,4 +394,6 @@ function initReveals() {
   }
 }
 
-initReveals();
+initIntro().then(initReveals);
+initPhotoDepth();
+initSunRotation();

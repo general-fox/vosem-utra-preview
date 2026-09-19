@@ -1,0 +1,26 @@
+Lato webfont packaging
+
+Original font author: Lukasz Dziedzic. License: SIL Open Font License 1.1.
+See Lato-OFL.txt for the original copyright, Reserved Font Name and license.
+The original TTF files are retained alongside these webfont copies.
+
+The Regular, Medium and Italic WOFF2 files contain the full character inventory
+of their corresponding TTFs, including Cyrillic. No subsetting, glyph changes,
+hint removal or OpenType feature removal was performed. Names, author and
+license metadata are preserved. FontTools removes the empty DSIG placeholder
+and updates the container checksum and WOFF2 compression flag.
+
+Generation: scripts/compress-fonts.py using FontTools 4.65.0 and Brotli 1.2.0.
+The script compares all retained table bytes (normalizing only the checksum
+and compression flag), character maps and advance metrics with the originals.
+To reproduce: install fonttools[woff], then run python scripts/compress-fonts.py.
+
+Sizes in bytes:
+                    Original TTF     WOFF2
+Lato-Regular             720528    211156
+Lato-Medium              720624    209188
+Lato-Italic              417368    160088
+Total                   1858520    580432  (68.8% smaller)
+
+OFL guidance on WOFF2 and functional equivalence:
+https://openfontlicense.org/ofl-faq/#2-using-ofl-fonts-for-webpages-and-online-webfont-services
