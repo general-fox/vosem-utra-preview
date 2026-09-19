@@ -154,7 +154,9 @@ function initPhotoDepth() {
         const box = img.parentElement.getBoundingClientRect();
         const progress = Math.max(-1, Math.min(1,
           (viewportHeight / 2 - box.top - box.height / 2) / ((viewportHeight + box.height) / 2)));
-        const travel = Math.min(maxTravel, img.parentElement.clientHeight * 0.18) * states.get(img).strength;
+        // Full-dish compositions need less overscan so ingredients stay in frame.
+        const framingLimit = img.dataset.depthFraming === 'full' ? 12 : maxTravel;
+        const travel = Math.min(maxTravel, framingLimit, img.parentElement.clientHeight * 0.18) * states.get(img).strength;
         return { img, travel, target: progress * travel };
       });
       positions.forEach(({ img, travel, target }) => {

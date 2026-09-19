@@ -20,18 +20,21 @@ function webpSize(file) {
 }
 
 for (const [file, width, height] of [
+  ['hero-coffee-960.webp', 960, 1440], ['hero-coffee-1600.webp', 1600, 2400],
   ['coffee-menu-720.webp', 720, 720], ['coffee-menu-1254.webp', 1254, 1254],
   ['syrniki-800.webp', 800, 533], ['syrniki-1280.webp', 1280, 853],
   ['breakfast-plate-800.webp', 800, 533], ['breakfast-plate-1280.webp', 1280, 853],
+  ['breakfast-wide-720.webp', 720, 720], ['breakfast-wide-1254.webp', 1254, 1254],
+  ['syrniki-wide-720.webp', 720, 720], ['syrniki-wide-1254.webp', 1254, 1254],
   ['cafe-barista-large-640.webp', 640, 843], ['cafe-barista-large-972.webp', 972, 1280],
 ]) {
   assert.deepEqual(webpSize('assets/' + file), [width, height]);
   assert.ok(fs.statSync(path.join(root, 'assets', file)).size < 450 * 1024, 'Photo weight is bounded');
 }
-const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-menu|syrniki|breakfast-plate|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
+const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-menu|syrniki|breakfast-wide|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
 assert.equal(updatedImages.length, 4);
-assert.match(html, /data-depth="breakfast" src="assets\/breakfast-plate-1280.webp"/, 'Breakfast uses the supplied breakfast plate');
-assert.match(html, /data-depth="pastry" src="assets\/syrniki-1280.webp"/, 'Syrniki are in the tea card');
+assert.match(html, /data-depth="breakfast" data-depth-framing="full" src="assets\/breakfast-wide-1254.webp"/, 'Breakfast uses the wider framing');
+assert.match(html, /data-depth="pastry" data-depth-framing="full" src="assets\/syrniki-wide-1254.webp"/, 'Tea card uses wider syrniki framing');
 assert.doesNotMatch(html, /src="assets\/brand-pastry.jpg"/, 'Former pastry image is no longer displayed');
 for (const img of updatedImages) {
   assert.match(img, /loading="lazy"/);
@@ -50,8 +53,15 @@ assert.match(about, /cafe-barista-large-972.webp/);
 assert.match(about, /<figcaption class="about-caption"/);
 assert.doesNotMatch(about, /cafe-friends|about-detail|about-images|data-depth/);
 assert.doesNotMatch(css, /\.about-detail|\.about-images/, 'No leftover offsets for the removed inset');
-assert.match(html, /class="hero-photo" src="assets\/coffee.webp"/, 'Hero photo is unchanged');
+const hero = html.match(/<img class="hero-photo"[^>]+>/)[0];
+assert.match(hero, /src="assets\/hero-coffee-1600.webp"/);
+assert.doesNotMatch(hero, /data-depth|loading="lazy"/, 'Hero remains prioritized and without parallax');
+const preload = html.match(/<link rel="preload" as="image"[^>]+>/)[0];
+assert.equal(preload.match(/imagesrcset="([^"]+)"/)[1], hero.match(/srcset="([^"]+)"/)[1]);
+assert.equal(preload.match(/imagesizes="([^"]+)"/)[1], hero.match(/sizes="([^"]+)"/)[1]);
 assert.match(css, /\.coffee-image img\{object-position:50% 25%\}/);
+assert.match(css, /\.menu-image img\[data-depth-framing="full"\]\{scale:1\.2\}/,
+  'Only the two dish photos use the closer, fixed 20% framing');
 
 // Measured safe box of the complete wordmark in the expanded 1254px photograph.
 // Test the two scroll extremes while the whole card is visible, plus reduced motion.
@@ -59,7 +69,7 @@ for (const viewport of [320, 375, 390, 430, 650, 768, 900, 1024, 1150, 1280, 144
   const mobile = viewport <= 650, viewportHeight = mobile ? 844 : 900;
   const width = mobile ? viewport - 40 : viewport <= 900 ? (viewport - 96) / 3 :
     viewport <= 1150 ? (viewport - 112) / 3 : (Math.min(1200, viewport - 96) - 48) / 3;
-  const height = mobile ? 310 : viewport <= 900 ? 265 : viewport <= 1150 ? 300 : 344;
+  const height = mobile ? Math.min(480, Math.max(310, viewport * .8)) : viewport <= 900 ? 265 : viewport <= 1150 ? 300 : 344;
   for (const motion of [false, true]) {
     const travel = motion ? Math.min(mobile ? 22 : 64, height * .18) : 0;
     const bleed = motion ? Math.ceil(travel + 3) : 0;
@@ -75,4 +85,4 @@ for (const viewport of [320, 375, 390, 430, 650, 768, 900, 1024, 1150, 1280, 144
     }
   }
 }
-console.log('PASS: responsive photo assets, dimensions/weights, single high-resolution barista, unchanged hero, and coffee wordmark crop through visible scroll range.');
+console.log('PASS: responsive photo assets, dimensions/weights, single high-resolution barista, prioritized hero/preload, and coffee wordmark crop through visible scroll range.');

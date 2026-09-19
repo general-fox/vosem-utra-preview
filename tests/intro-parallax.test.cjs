@@ -266,6 +266,16 @@ function harness(options = {}) {
   const travel = h.photos.map((img, index) => parseFloat(img.style.get('--depth-y')) - before[index]);
   assert.ok(travel[1] < travel[0] * 0.7 && travel[2] > travel[0] * 1.1, 'Cards retain different movement ranges after settling');
 
+  h = harness();
+  ['breakfast', 'pastry'].forEach((profile, index) => {
+    h.photos[index].dataset.depth = profile;
+    h.photos[index].dataset.depthFraming = 'full';
+    h.photos[index].parentElement.top = -10000;
+  });
+  h.depth(); h.photos.slice(0, 2).forEach(img => h.observers[0].enter(img)); h.paint();
+  assert.equal(h.photos[0].style.get('--depth-y'), '7.80px', 'Full breakfast keeps a small scroll range');
+  assert.equal(h.photos[1].style.get('--depth-y'), '13.44px', 'Full syrniki retain distinct but gentle motion');
+
   h = harness(); h.rotateSun();
   assert.equal(h.sun.dataset.sunSpinning, undefined, 'Decorative rotation is initially paused');
   h.observers[0].callback([{ target: h.sun, isIntersecting: true }]);
