@@ -6,7 +6,9 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node tests/reveals.test.cjs && node tests/intro-parallax.test.cjs && node tests/fonts.test.cjs && node tests/photos.test.cjs"
+    "test": "node tests/reveals.test.cjs && node tests/intro-parallax.test.cjs && node tests/fonts.test.cjs && node tests/photos.test.cjs && node --test tests/menu-api.test.mjs tests/menu-content.test.mjs tests/menu-client.test.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "admin:password": "node server/set-password.mjs"
   },
   "repository": {
     "type": "git",
