@@ -43,6 +43,9 @@ $passed = [];
 try {
     $valid = cafe_validate_items([item()]);
     check($valid[0]['price'] === 123.45, 'Decimal price retained');
+    check($valid[0]['availableForOrder'] === true, 'Legacy availability defaults to true');
+    check(cafe_validate_items([array_replace(item(), ['availableForOrder'=>false])])[0]['availableForOrder'] === false, 'Explicit unavailable value is preserved');
+    foreach ([null, 0, 1, 'false', [], new stdClass()] as $invalidAvailability) rejects(static fn()=>cafe_validate_items([array_replace(item(), ['availableForOrder'=>$invalidAvailability])]), 'invalid_availability');
     foreach ([['price'=>'123'],['price'=>1.001],['price'=>INF],['published'=>1],['order'=>-1],['category'=>'unknown'],['image'=>'https://external.test/a.jpg'],['image'=>'/uploads/../secret.jpg'],['image'=>'/uploads/a.php'],['name'=>"a\0b"]] as $change) {
         try { cafe_validate_items([array_replace(item(), $change)]); throw new LogicException('Accepted invalid item'); }
         catch (CafeMenuException $error) { check($error->status === 400, 'Validation rejects invalid item'); }
@@ -66,6 +69,23 @@ try {
     rejects(static fn()=>$restarted->read(), 'menu_unavailable');
     check(file_get_contents($private.'/admin-data/menu.json') === '{corrupt', 'Corruption cannot reset to seed');
     $passed[] = 'durable menu, revisions, hidden positions and corruption fail closed';
+
+    $availabilityPrivate = fixture($root, 'availability'); $availabilityMenu = new CafeMenu($availabilityPrivate, $config);
+    $legacyJson = json_encode(['items'=>[item()], 'revision'=>17], JSON_THROW_ON_ERROR);
+    file_put_contents($availabilityPrivate.'/admin-data/menu.json', $legacyJson);
+    check($availabilityMenu->read()['items'][0]['availableForOrder'] === true, 'Saved legacy catalog defaults on read');
+    check(file_get_contents($availabilityPrivate.'/admin-data/menu.json') === $legacyJson, 'Legacy read does not rewrite the stored catalog');
+    $availabilitySaved = $availabilityMenu->update([array_replace(item(), ['availableForOrder'=>false]), array_replace(item('hidden'), ['published'=>false,'availableForOrder'=>true])], 17);
+    $catalog = $availabilityMenu->catalog();
+    check($catalog['revision'] === $availabilitySaved['revision'] && $catalog['revision'] === 18, 'Published catalog revision matches authoritative save');
+    check(count($catalog['items']) === 1 && $catalog['items'][0]['published'] && !$catalog['items'][0]['availableForOrder'], 'Visible unavailable dish is retained; hidden dish is omitted');
+    check((new CafeMenu($availabilityPrivate, $config))->catalog() === $catalog, 'Availability and revision survive reload');
+    $_SERVER['REQUEST_METHOD']='GET';
+    foreach (['/api/menu','/data/menu.json'] as $route) {
+        ob_start(); $availabilityMenu->dispatch($route, 'GET'); $response=json_decode(ob_get_clean(), true, 512, JSON_THROW_ON_ERROR);
+        check($response === $catalog, 'Public route returns the complete current catalog snapshot');
+    }
+    $passed[] = 'independent order availability, legacy compatibility and public catalog revision';
 
     $racePrivate = fixture($root, 'race'); (new CafeMenu($racePrivate, $config))->read();
     $gate = $root.'/race-go'; $workers = [];
@@ -102,6 +122,10 @@ try {
     $nonceOne = cafe_secure_html($html, 'index'); $nonceTwo = cafe_secure_html($html, 'index');
     preg_match_all('~<script\b[^>]*\bnonce="([^"]+)"~', $nonceOne, $nonces);
     check(count($nonces[1]) === 2 && count(array_unique($nonces[1])) === 1 && !str_contains($nonceOne, 'nonce="stale"') && $nonceOne !== $nonceTwo, 'Unique per-response nonce applied to every script');
+    $availableCard = cafe_dish_html(item());
+    $unavailableCard = cafe_dish_html(array_replace(item('unavailable'), ['availableForOrder'=>false, 'image'=>'']));
+    check(str_contains($availableCard, 'data-cart-add="toast"') && str_contains($availableCard, 'aria-label="В корзину: ') && !str_contains($availableCard, ' disabled'), 'Legacy photo card has accessible enabled cart control');
+    check(str_contains($unavailableCard, 'data-cart-add="unavailable"') && str_contains($unavailableCard, 'aria-label="Временно недоступно: ') && str_contains($unavailableCard, ' disabled>Временно недоступно</button>'), 'Unavailable text card has a disabled cart control');
     $passed[] = 'live initial HTML, escaped JSON-LD, metadata, preview and nonce transforms';
 
     $imagePrivate = fixture($root, 'images'); $imageMenu = new CafeMenu($imagePrivate, $config);

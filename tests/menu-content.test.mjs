@@ -15,6 +15,7 @@ test('the complete breakfast seed has valid prices, categories and local origina
   assert.equal(menu.source.checkedAt, '2026-09-28');
   for (const item of items) {
     assert.ok(item.price > 0);
+    assert.equal(item.availableForOrder, true);
     assert.ok(!item.description.includes('Кафе Шелепиха'), 'No SEO boilerplate imported as ingredients');
     if (!item.image) continue;
     const file = path.join(root, 'public', item.image);

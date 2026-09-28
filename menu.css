@@ -23,6 +23,7 @@
 .dish-price{white-space:nowrap;font-size:17px}
 .dish-description{color:var(--muted);font-size:13px;line-height:1.65;margin-top:10px;max-width:95%}
 .dish-image-fallback{font-size:13px;color:var(--muted)}
+.dish-order-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin-top:18px;padding:10px 23px;border:1px solid var(--stone);border-radius:999px;background:transparent;color:var(--ink);font-size:13px;line-height:1.5}.dish-order-button:hover:not(:disabled){background:var(--sun);border-color:var(--sun-deep)}.dish-order-button:disabled{cursor:default;color:var(--muted);border-color:var(--line);font-size:12px}.dish-card-text .dish-order-button{margin-top:14px}.dish-order-button:focus-visible{outline-offset:4px}
 .breakfast-extras{margin-top:46px;padding:30px 34px;border-radius:28px;background:#F0EBDF}
 .breakfast-extras>h3{font-size:24px;font-weight:400;letter-spacing:-.03em;margin:0 0 6px}
 .dish-extras-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 40px}

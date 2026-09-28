@@ -1,0 +1,33 @@
+name: Site and PHP checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, sqlite3, openssl, sodium, curl, gd, fileinfo
+          ini-values: memory_limit=256M
+          coverage: none
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run build:reg
+      - run: npm run test:reg

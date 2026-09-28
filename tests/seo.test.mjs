@@ -137,3 +137,31 @@ test('social cover is the existing photograph with a stable public URL', async (
   assert.equal(cover.toString('ascii', 8, 12), 'WEBP');
   assert.ok(cover.length < 450 * 1024);
 });
+
+
+test('initial cards expose accessible cart controls for both photo and text dishes and disable unavailable dishes', () => {
+  const rendered = renderMenu([
+    item({ id: 'legacy-photo' }),
+    item({ id: 'unavailable-photo', name: 'Тост & сыр', availableForOrder: false }),
+    item({ id: 'text-dish', image: '', availableForOrder: true }),
+    item({ id: 'text-unavailable', image: '', availableForOrder: false }),
+    item({ id: 'hidden-dish', published: false, availableForOrder: true }),
+  ]);
+  const markup = rendered.grid + rendered.extras;
+  const buttons = [...markup.matchAll(/<button\b([^>]*)>([^<]*)<\/button>/g)];
+  assert.equal(buttons.length, 4);
+  assert.doesNotMatch(markup, /hidden-dish/);
+  for (const id of ['legacy-photo', 'text-dish']) {
+    const [, attributes, label] = buttons.find((entry) => entry[1].includes('data-cart-add="' + id + '"'));
+    assert.equal(label, 'В корзину');
+    assert.match(attributes, /aria-label="В корзину: /);
+    assert.doesNotMatch(attributes, / disabled/);
+  }
+  for (const id of ['unavailable-photo', 'text-unavailable']) {
+    const [, attributes, label] = buttons.find((entry) => entry[1].includes('data-cart-add="' + id + '"'));
+    assert.equal(label, 'Временно недоступно');
+    assert.match(attributes, / disabled/);
+    assert.match(attributes, /aria-label="Временно недоступно: /);
+  }
+  assert.match(markup, /aria-label="Временно недоступно: Тост &amp; сыр"/);
+});

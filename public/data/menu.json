@@ -13,7 +13,8 @@
       "category": "signature",
       "image": "menu-images/morning-eight.webp",
       "published": true,
-      "order": 0
+      "order": 0,
+      "availableForOrder": true
     },
     {
       "id": "avocado-toast",
@@ -23,7 +24,8 @@
       "category": "eggs",
       "image": "menu-images/avocado-toast.webp",
       "published": true,
-      "order": 1
+      "order": 1,
+      "availableForOrder": true
     },
     {
       "id": "chef-syrniki",
@@ -33,7 +35,8 @@
       "category": "sweet",
       "image": "menu-images/chef-syrniki.webp",
       "published": true,
-      "order": 2
+      "order": 2,
+      "availableForOrder": true
     },
     {
       "id": "feta-omelette",
@@ -43,7 +46,8 @@
       "category": "eggs",
       "image": "menu-images/feta-omelette.webp",
       "published": true,
-      "order": 3
+      "order": 3,
+      "availableForOrder": true
     },
     {
       "id": "oatmeal-berries",
@@ -53,7 +57,8 @@
       "category": "porridge",
       "image": "menu-images/oatmeal-berries.webp",
       "published": true,
-      "order": 4
+      "order": 4,
+      "availableForOrder": true
     },
     {
       "id": "salmon-draniki",
@@ -63,7 +68,8 @@
       "category": "signature",
       "image": "menu-images/salmon-draniki.webp",
       "published": true,
-      "order": 5
+      "order": 5,
+      "availableForOrder": true
     },
     {
       "id": "ham-brioche",
@@ -73,7 +79,8 @@
       "category": "eggs",
       "image": "menu-images/ham-brioche.webp",
       "published": true,
-      "order": 6
+      "order": 6,
+      "availableForOrder": true
     },
     {
       "id": "shakshuka",
@@ -83,7 +90,8 @@
       "category": "eggs",
       "image": "menu-images/shakshuka.webp",
       "published": true,
-      "order": 7
+      "order": 7,
+      "availableForOrder": true
     },
     {
       "id": "granola",
@@ -93,7 +101,8 @@
       "category": "porridge",
       "image": "menu-images/granola.webp",
       "published": true,
-      "order": 8
+      "order": 8,
+      "availableForOrder": true
     },
     {
       "id": "salmon-brioche",
@@ -103,7 +112,8 @@
       "category": "eggs",
       "image": "menu-images/salmon-brioche.webp",
       "published": true,
-      "order": 9
+      "order": 9,
+      "availableForOrder": true
     },
     {
       "id": "vanilla-pancakes",
@@ -113,7 +123,8 @@
       "category": "sweet",
       "image": "menu-images/vanilla-pancakes.webp",
       "published": true,
-      "order": 10
+      "order": 10,
+      "availableForOrder": true
     },
     {
       "id": "green-buckwheat",
@@ -123,7 +134,8 @@
       "category": "porridge",
       "image": "menu-images/green-buckwheat.webp",
       "published": true,
-      "order": 11
+      "order": 11,
+      "availableForOrder": true
     },
     {
       "id": "wheat-porridge",
@@ -133,7 +145,8 @@
       "category": "porridge",
       "image": "menu-images/wheat-porridge.webp",
       "published": true,
-      "order": 12
+      "order": 12,
+      "availableForOrder": true
     },
     {
       "id": "fried-eggs",
@@ -143,7 +156,8 @@
       "category": "eggs",
       "image": "",
       "published": true,
-      "order": 13
+      "order": 13,
+      "availableForOrder": true
     },
     {
       "id": "omelette-scramble",
@@ -153,7 +167,8 @@
       "category": "eggs",
       "image": "",
       "published": true,
-      "order": 14
+      "order": 14,
+      "availableForOrder": true
     },
     {
       "id": "caramel-syrniki",
@@ -163,7 +178,8 @@
       "category": "sweet",
       "image": "",
       "published": true,
-      "order": 15
+      "order": 15,
+      "availableForOrder": true
     },
     {
       "id": "english-breakfast",
@@ -173,7 +189,8 @@
       "category": "signature",
       "image": "",
       "published": true,
-      "order": 16
+      "order": 16,
+      "availableForOrder": true
     },
     {
       "id": "cottage-casserole",
@@ -183,7 +200,8 @@
       "category": "sweet",
       "image": "",
       "published": true,
-      "order": 17
+      "order": 17,
+      "availableForOrder": true
     },
     {
       "id": "sour-cream-pancakes",
@@ -193,7 +211,8 @@
       "category": "sweet",
       "image": "",
       "published": true,
-      "order": 18
+      "order": 18,
+      "availableForOrder": true
     }
   ]
 }

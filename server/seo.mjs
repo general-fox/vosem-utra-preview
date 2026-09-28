@@ -32,7 +32,10 @@ function dishMarkup(item) {
   const visual = item.image
     ? `<div class="dish-visual"><img class="dish-photo" src="${escapeHtml(item.image)}" width="600" height="450" alt="${escapeHtml(item.name)}" loading="lazy" decoding="async">${item.category === 'signature' ? '<span class="dish-badge">Фирменный завтрак</span>' : ''}</div>`
     : '';
-  return `<article class="dish-card${item.image ? '' : ' dish-card-text'}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categories[item.category] || 'Завтраки')}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price">${escapeHtml(money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p></div></article>`;
+  const available = item.availableForOrder !== false;
+  const label = available ? 'В корзину' : 'Временно недоступно';
+  const action = `<button class="dish-order-button${available ? '' : ' is-unavailable'}" type="button" data-cart-add="${escapeHtml(item.id)}" aria-label="${label}: ${escapeHtml(item.name)}"${available ? '' : ' disabled'}>${label}</button>`;
+  return `<article class="dish-card${item.image ? '' : ' dish-card-text'}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categories[item.category] || 'Завтраки')}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price">${escapeHtml(money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p>${action}</div></article>`;
 }
 
 /** Initial HTML uses the same card structure as menu.js; no JavaScript is needed to read dishes. */

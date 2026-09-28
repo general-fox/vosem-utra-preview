@@ -72,13 +72,15 @@ export function validateItems(items) {
     if (!CATEGORIES.has(item.category)) fail(400, 'Выберите категорию завтрака.', 'invalid_category');
     if (typeof item.price !== 'number' || !Number.isFinite(item.price) || item.price < 0 || item.price > 1000000 || Math.abs(item.price * 100 - Math.round(item.price * 100)) > 0.00001) fail(400, 'Укажите корректную цену в рублях.', 'invalid_price');
     if (typeof item.published !== 'boolean') fail(400, 'Укажите видимость позиции.', 'invalid_published');
+    const availableForOrder = Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true;
+    if (typeof availableForOrder !== 'boolean') fail(400, 'Укажите доступность позиции для заказа.', 'invalid_availability');
     if (!Number.isInteger(item.order) || item.order < 0 || item.order > 100000) fail(400, 'Укажите корректный порядок позиции.', 'invalid_order');
     let image = textField(item.image, 'фотография', 250);
     if (image) {
       if (!image.startsWith('/')) image = `/${image}`;
       if (!/^\/(menu-images|uploads)\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$/i.test(image) || image.includes('..')) fail(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
     }
-    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price: item.price, category: item.category, image, published: item.published, order: item.order };
+    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price: item.price, category: item.category, image, published: item.published, availableForOrder, order: item.order };
   });
 }
 
@@ -181,7 +183,7 @@ export function createMenuMiddleware(options = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) checkOrigin(req);
       if (['/api/menu', '/data/menu.json'].includes(pathname) && req.method === 'GET') {
         const menu = await readSavedMenu();
-        return sendJson(res, 200, { items: menu.items.filter((item) => item.published).sort((a, b) => a.order - b.order) });
+        return sendJson(res, 200, { items: menu.items.filter((item) => item.published).sort((a, b) => a.order - b.order), revision: menu.revision });
       }
       if (pathname === '/api/admin/session' && req.method === 'GET') {
         return sendJson(res, 200, await auth.status(sessionToken(req)));

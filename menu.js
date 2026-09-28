@@ -7,6 +7,8 @@ const categories = {
 };
 const money = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const pageBase = new URL('./', location.href);
+const configuredApi = document.querySelector('meta[name="API_BASE_URL"]')?.content?.trim();
+const apiBase = new URL(configuredApi ? configuredApi.replace(/\/?$/, '/') : './', location.href);
 let items = [];
 let selected = 'all';
 let loading = false;
@@ -41,6 +43,13 @@ function dishCard(item) {
   const heading = element('div', 'dish-heading');
   heading.append(element('h3', '', item.name), element('span', 'dish-price', money.format(item.price)));
   body.append(heading, element('p', 'dish-description', item.description));
+  const available = item.availableForOrder !== false;
+  const add = element('button', `dish-order-button${available ? '' : ' is-unavailable'}`, available ? 'В корзину' : 'Временно недоступно');
+  add.type = 'button';
+  add.dataset.cartAdd = item.id;
+  add.disabled = !available;
+  add.setAttribute('aria-label', `${available ? 'В корзину' : 'Временно недоступно'}: ${item.name}`);
+  body.append(add);
   card.append(body);
   return card;
 }
@@ -62,7 +71,7 @@ function render() {
 }
 
 async function fetchMenu() {
-  const response = await fetch(new URL('api/menu', pageBase), { signal: AbortSignal.timeout(8000), cache: 'no-store' });
+  const response = await fetch(new URL('api/menu', apiBase), { signal: AbortSignal.timeout(8000), cache: 'no-store' });
   // A static host has no API. Only that case uses the checked-in menu.
   if (response.status === 404 || response.status === 405 || (response.ok && response.headers.get('content-type')?.includes('text/html'))) {
     let fallback = await fetch(new URL('data/menu.json', pageBase), { signal: AbortSignal.timeout(8000), cache: 'no-cache' });
@@ -75,10 +84,12 @@ async function fetchMenu() {
     if (!fallback.ok) throw new Error('Menu unavailable');
     const data = await fallback.json();
     if (Array.isArray(data.items)) data.items = data.items.map(item => ({ ...item, image: item.image ? `${sourcePreview ? 'public/' : ''}${item.image.replace(/^\//, '')}` : '' }));
-    return data;
+    return { ...data, live: false };
   }
   if (!response.ok) throw new Error('Menu unavailable');
-  return response.json();
+  const data = await response.json();
+  if (Array.isArray(data.items)) data.items = data.items.map(item => ({ ...item, image: item.image ? new URL(item.image.replace(/^\//, ''), apiBase).href : '' }));
+  return { ...data, live: true };
 }
 
 async function loadMenu() {
@@ -94,6 +105,8 @@ async function loadMenu() {
     if (!Array.isArray(data.items)) throw new Error('Invalid menu');
     items = data.items.filter(item => item.published && Number.isFinite(item.price))
       .sort((a, b) => a.order - b.order);
+    window.cafeMenuSnapshot = { ...data, items };
+    if (typeof CustomEvent === 'function' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('cafe:menu', { detail: window.cafeMenuSnapshot }));
     render();
     status.textContent = '';
     root.querySelector('[data-menu-filters]').hidden = false;

@@ -221,3 +221,32 @@ test('returning to the page refreshes current items and keeps a deleted dish rem
   assert.ok(app.requests.every(({ url }) => url === 'https://cafe.example/api/menu'));
   assert.equal(app.parts['menu-retry'].hidden, false);
 });
+
+
+test('live menu availability disables cart controls independently of publication for photo and text dishes', async () => {
+  const app = await browser([response(200, { revision: 23, items: [
+    dish({ id: 'legacy-photo' }),
+    dish({ id: 'available-text', image: '', availableForOrder: true }),
+    dish({ id: 'unavailable-photo', name: 'Тост & сыр', availableForOrder: false }),
+    dish({ id: 'unavailable-text', image: '', availableForOrder: false }),
+    dish({ id: 'hidden-dish', published: false, availableForOrder: true }),
+  ] })]);
+  const buttons = app.cards().flatMap(card => byTag(card, 'button'));
+  assert.equal(buttons.length, 4);
+  for (const id of ['legacy-photo', 'available-text']) {
+    const button = buttons.find(button => button.dataset.cartAdd === id);
+    assert.equal(button.disabled, false);
+    assert.equal(button.textContent, 'В корзину');
+    assert.match(button.getAttribute('aria-label'), /^В корзину: /);
+  }
+  for (const id of ['unavailable-photo', 'unavailable-text']) {
+    const button = buttons.find(button => button.dataset.cartAdd === id);
+    assert.equal(button.disabled, true);
+    assert.equal(button.textContent, 'Временно недоступно');
+    assert.match(button.getAttribute('aria-label'), /^Временно недоступно: /);
+  }
+  assert.equal(buttons.some(button => button.dataset.cartAdd === 'hidden-dish'), false);
+  assert.equal(app.window.cafeMenuSnapshot.revision, 23);
+  assert.equal(app.window.cafeMenuSnapshot.live, true);
+  assert.equal(app.window.cafeMenuSnapshot.items.find(item => item.id === 'unavailable-photo').availableForOrder, false);
+});

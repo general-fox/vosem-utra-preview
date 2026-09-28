@@ -7,12 +7,12 @@ DirectoryIndex app.php
 RewriteEngine On
 RewriteRule ^\.well-known/acme-challenge/ - [L]
 RewriteRule (^|/)\. - [F,L]
-RewriteRule (^|/)(vosem-utra-private|admin-data|node_modules|hosting-tools|server)(/|$) - [F,L,NC]
+RewriteRule (^|/)(vosem-utra-private|admin-data|orders?-data|node_modules|hosting-tools|server)(/|$) - [F,L,NC]
 RewriteRule ^(?:site-build\.json|composer\.(?:json|lock)|package(?:-lock)?\.json)$ - [F,L,NC]
 
 # Live HTML and menu always reach the controller, even if an old static copy remains.
-RewriteRule ^(?:index\.html|admin/?|admin\.html|registration\.html|privacy\.html|consent\.html|robots\.txt|sitemap\.xml)$ app.php [END]
-RewriteRule ^(?:api/(?:admin(?:/.*)?|menu)|uploads(?:/.*)?|data/menu\.json)$ app.php [END]
+RewriteRule ^(?:index\.html|admin/?|admin\.html|registration\.html|privacy\.html|consent\.html|checkout\.html|order-terms\.html|robots\.txt|sitemap\.xml)$ app.php [END]
+RewriteRule ^(?:api/(?:admin(?:/.*)?|menu|ordering|orders(?:/.*)?)|uploads(?:/.*)?|data/menu\.json)$ app.php [END]
 # Keep the existing, independently secured loyalty registration handler intact.
 RewriteRule ^api/register\.php$ - [END]
 RewriteRule ^api/.*\.php$ - [F,L,NC]
@@ -20,7 +20,7 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ app.php [END]
 </IfModule>
 
-<FilesMatch "(?i)(^\.|\.(zip|log|bak|sql|env|ini|key|md|map)$)">
+<FilesMatch "(?i)(^\.|\.(zip|log|bak|sql|sqlite|sqlite3|db|env|ini|key|md|map)(?:-wal|-shm|-journal)?$)">
 Require all denied
 </FilesMatch>
 <IfModule mod_headers.c>

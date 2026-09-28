@@ -320,7 +320,13 @@ function validateMenu(data) {
   if (!Array.isArray(data.items) || data.revision === undefined || data.revision === null) {
     throw new ApiError('Сервер вернул неполные данные меню. Обновите страницу или проверьте настройку сервера.');
   }
-  state.items = data.items;
+  state.items = data.items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)
+      || (Object.hasOwn(item, 'availableForOrder') && typeof item.availableForOrder !== 'boolean')) {
+      throw new ApiError('Сервер вернул некорректную доступность блюда. Обновите меню.');
+    }
+    return { ...item, availableForOrder: Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true };
+  });
   state.revision = data.revision;
   state.loaded = true;
 }
@@ -367,6 +373,9 @@ function itemCard(item) {
   const title = element('div', 'item-title-row');
   title.append(element('h2', '', item.name), element('p', 'item-price', currency.format(item.price)));
   body.append(title, element('p', 'item-description', item.description || 'Описание пока не добавлено'), element('p', 'item-order', `Порядок в меню: ${item.order}`));
+  const available = item.availableForOrder !== false;
+  body.append(element('p', `item-availability${available && item.published ? '' : ' is-unavailable'}`,
+    available ? (item.published ? 'Можно заказать' : 'Можно заказать после публикации') : 'Временно недоступно'));
   const actions = element('div', 'item-actions');
   const actionList = [
     ['edit', 'edit-button', 'Редактировать', `Редактировать блюдо «${item.name}»`],
@@ -494,6 +503,7 @@ function openEditor(item = null) {
   $('category').value = item?.category || 'signature';
   $('order').value = item ? item.order : Math.min(100000, Math.max(0, ...state.items.map((entry) => entry.order)) + 10);
   $('published').checked = item ? item.published : true;
+  $('available-for-order').checked = item?.availableForOrder !== false;
   $('editor-title').textContent = item ? 'Редактировать блюдо' : 'Добавить блюдо';
   $('editor-eyebrow').textContent = item ? 'ЗАБОТА О ДЕТАЛЯХ' : 'НОВОЕ В МЕНЮ';
   $('editor-conflict').hidden = true;
@@ -797,14 +807,17 @@ $('item-form').addEventListener('submit', async (event) => {
     }
     const item = {
       id: draft.id, name, description: $('description').value.trim(), price: Number($('price').value),
-      category: $('category').value, image: draft.image, published: $('published').checked, order: Number($('order').value),
+      category: $('category').value, image: draft.image, published: $('published').checked,
+      availableForOrder: $('available-for-order').checked, order: Number($('order').value),
     };
     const items = draft.isNew ? [...state.items, item] : state.items.map((entry) => entry.id === item.id ? item : entry);
     await persist(items);
     draft.dirty = false;
     clearPreviewUrl();
     $('editor-dialog').close();
-    notice(item.published ? `«${name}» сохранено и доступно на сайте.` : `«${name}» сохранено. Блюдо скрыто от гостей.`);
+    notice(!item.published ? `«${name}» сохранено. Блюдо скрыто от гостей.` : item.availableForOrder
+      ? `«${name}» сохранено. Видно на сайте и можно заказать.`
+      : `«${name}» сохранено. Видно на сайте, временно недоступно для заказа.`);
   } catch (error) {
     sessionExpired(error);
     message($('editor-error'), error.status === 409 ? 'Не удалось сохранить: меню уже изменилось. Ваш черновик остался в форме.' : error.message);

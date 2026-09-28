@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/menu.php';
+require_once __DIR__.'/orders.php';
 
 const CAFE_SITE_URL = 'https://vosem-utra.ru/';
 const CAFE_SEO_TITLE = 'Восемь утра — кофе и завтраки весь день на Шелепихинской набережной';
@@ -23,7 +24,10 @@ function cafe_published(array $items): array {
 function cafe_dish_html(array $item): string {
     $name = cafe_html($item['name']);
     $visual = $item['image'] !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($item['image']).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async">'.($item['category'] === 'signature' ? '<span class="dish-badge">Фирменный завтрак</span>' : '').'</div>' : '';
-    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html(CAFE_CATEGORIES[$item['category']]).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price">'.cafe_money($item['price']).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p></div></article>';
+    $available = ($item['availableForOrder'] ?? true) !== false;
+    $label = $available ? 'В корзину' : 'Временно недоступно';
+    $action = '<button class="dish-order-button'.($available ? '' : ' is-unavailable').'" type="button" data-cart-add="'.cafe_html($item['id']).'" aria-label="'.$label.': '.$name.'"'.($available ? '' : ' disabled').'>'.$label.'</button>';
+    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html(CAFE_CATEGORIES[$item['category']]).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price">'.cafe_money($item['price']).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p>'.$action.'</div></article>';
 }
 function cafe_schema(array $items): array {
     $published = cafe_published($items); $sections = [];
@@ -155,10 +159,14 @@ function cafe_run_site(string $privateDir): void {
         $rawPath = explode('?', $_SERVER['REQUEST_URI'] ?? '/')[0];
         if (preg_match('/%(?![a-fA-F0-9]{2})/', $rawPath)) throw new CafeMenuException(400, 'Некорректный адрес.', 'invalid_url');
         $path = rawurldecode($rawPath); $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-        $forbidden = preg_match('~(?:^|/)(?:\.|vosem-utra-private(?:/|$)|admin-data(?:/|$)|server(?:/|$)|node_modules(?:/|$)|hosting-tools(?:/|$)|site-build\.json(?:/|$))~i', $path);
+        $forbidden = preg_match('~(?:^|/)(?:\.|vosem-utra-private(?:/|$)|admin-data(?:/|$)|orders?-data(?:/|$)|server(?:/|$)|node_modules(?:/|$)|hosting-tools(?:/|$)|site-build\.json(?:/|$))~i', $path);
         if ($forbidden || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path)) throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
         if (!$indexing) header('X-Robots-Tag: noindex, nofollow');
         $menu = new CafeMenu($privateDir, $config);
+        if (preg_match('~^/api/(?:ordering|orders(?:/.*)?)$~D', $path)) {
+            $orders = new CafeOrders($privateDir, $config, static fn(): array => $menu->catalog());
+            if ($orders->dispatch($path, $method)) return;
+        }
         if ($menu->dispatch($path, $method)) return;
         if (!in_array($method, ['GET','HEAD'], true)) { header('Allow: GET, HEAD'); throw new CafeMenuException(405, 'Метод не поддерживается.', 'method'); }
         if (in_array($path, ['/index.html','/admin','/admin/'], true)) {
@@ -171,7 +179,7 @@ function cafe_run_site(string $privateDir): void {
         if ($path === '/sitemap.xml') {
             cafe_respond(200, 'application/xml; charset=utf-8', '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'.($indexing ? "\n  <url><loc>".CAFE_SITE_URL."</loc></url>\n" : '')."</urlset>\n", 'no-cache'); return;
         }
-        $pages = ['/'=>'index','/admin.html'=>'admin','/registration.html'=>'registration','/privacy.html'=>'privacy','/consent.html'=>'consent'];
+        $pages = ['/'=>'index','/admin.html'=>'admin','/registration.html'=>'registration','/privacy.html'=>'privacy','/consent.html'=>'consent','/checkout.html'=>'checkout','/order-terms.html'=>'order-terms'];
         if (!isset($pages[$path])) throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
         $page = $pages[$path];
         $html = @file_get_contents($privateDir.'/app/templates/'.$page.'.html');

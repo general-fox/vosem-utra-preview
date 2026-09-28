@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { createMenuMiddleware } from './server/menu-api.mjs';
+import { createOrdersDevMiddleware } from './server/orders-dev.mjs';
 import { SITE_URL, transformPage, renderRobots, renderSitemap } from './server/seo.mjs';
 
 export default defineConfig(({ mode }) => {
@@ -11,8 +12,23 @@ const menuApi = createMenuMiddleware({ production: false, username: env.ADMIN_US
 const seed = JSON.parse(readFileSync(new URL('./public/data/menu.json', import.meta.url), 'utf8'));
 return {
   base: './',
-  server: { fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.data/**', '**/server/**'] } },
+  server: {
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.data/**', '**/server/**', '**/hosting/**', '**/dist-reg/**', '**/.php-preview/**', '**/orders-data/**'] },
+    watch: { ignored: ['**/.data/**', '**/.php-preview/**', '**/dist-reg/**', '**/dist-hosting/**'] },
+  },
   plugins: [{
+    name: 'cafe-orders-api',
+    configureServer(server) {
+      const orders = createOrdersDevMiddleware();
+      server.middlewares.use(orders.middleware);
+      server.httpServer?.once('close', orders.close);
+    },
+    configurePreviewServer(server) {
+      const orders = createOrdersDevMiddleware();
+      server.middlewares.use(orders.middleware);
+      server.httpServer?.once('close', orders.close);
+    },
+  }, {
     name: 'cafe-menu-api',
     configureServer(server) { server.middlewares.use(menuApi); },
     configurePreviewServer(server) { server.middlewares.use(menuApi); },
@@ -47,7 +63,7 @@ return {
     outDir: production ? 'dist-hosting' : 'dist',
     rolldownOptions: {
       input: Object.fromEntries(
-        ['index', 'registration', 'privacy', 'consent', 'admin'].map((page) => [
+        ['index', 'registration', 'privacy', 'consent', 'admin', 'checkout', 'order-terms'].map((page) => [
           page,
           fileURLToPath(new URL(`./${page}.html`, import.meta.url)),
         ]),

@@ -36,13 +36,15 @@ function cafe_validate_items(mixed $items): array {
         $price = $item['price'] ?? null;
         if ((!is_int($price) && !is_float($price)) || !is_finite((float)$price) || $price < 0 || $price > 1000000 || abs($price * 100 - round($price * 100)) > 0.00001) throw new CafeMenuException(400, 'Укажите корректную цену в рублях.', 'invalid_price');
         if (!is_bool($item['published'] ?? null)) throw new CafeMenuException(400, 'Укажите видимость позиции.', 'invalid_published');
+        $availableForOrder = array_key_exists('availableForOrder', $item) ? $item['availableForOrder'] : true;
+        if (!is_bool($availableForOrder)) throw new CafeMenuException(400, 'Укажите доступность позиции для заказа.', 'invalid_availability');
         if (!is_int($item['order'] ?? null) || $item['order'] < 0 || $item['order'] > 100000) throw new CafeMenuException(400, 'Укажите корректный порядок позиции.', 'invalid_order');
         $image = cafe_text_field($item['image'] ?? null, 'фотография', 250);
         if ($image !== '') {
             if (!str_starts_with($image, '/')) $image = '/'.$image;
             if (!preg_match('~^/(menu-images|uploads)/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$~iD', $image) || str_contains($image, '..')) throw new CafeMenuException(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
         }
-        $validated[] = ['id'=>$id, 'name'=>cafe_text_field($item['name'] ?? null, 'название', 160, 1), 'description'=>cafe_text_field($item['description'] ?? null, 'описание', 2000), 'price'=>$price, 'category'=>$category, 'image'=>$image, 'published'=>$item['published'], 'order'=>$item['order']];
+        $validated[] = ['id'=>$id, 'name'=>cafe_text_field($item['name'] ?? null, 'название', 160, 1), 'description'=>cafe_text_field($item['description'] ?? null, 'описание', 2000), 'price'=>$price, 'category'=>$category, 'image'=>$image, 'published'=>$item['published'], 'availableForOrder'=>$availableForOrder, 'order'=>$item['order']];
     }
     return $validated;
 }
@@ -113,9 +115,14 @@ final class CafeMenu {
         return $this->readSaved();
     }
     public function published(): array {
-        $items = array_values(array_filter($this->read()['items'], static fn(array $item): bool => $item['published']));
+        return $this->catalog()['items'];
+    }
+    /** Published items and their revision must come from one authoritative read. */
+    public function catalog(): array {
+        $menu = $this->read();
+        $items = array_values(array_filter($menu['items'], static fn(array $item): bool => $item['published']));
         usort($items, static fn(array $left, array $right): int => $left['order'] <=> $right['order']);
-        return $items;
+        return ['items'=>$items, 'revision'=>$menu['revision']];
     }
     public function update(array $items, mixed $revision): array {
         $items = cafe_validate_items($items);
@@ -191,7 +198,7 @@ final class CafeMenu {
             if (str_starts_with($pathname, '/api/admin/') && !($this->config['allow_http_dev'] ?? false)
                 && (empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] === 'off')) throw new CafeMenuException(400, 'Для входа используйте защищённое соединение HTTPS.', 'https_required');
             if (!in_array($method, ['GET','HEAD'], true)) $this->origin();
-            if (in_array($pathname, ['/api/menu','/data/menu.json'], true) && in_array($method, ['GET','HEAD'], true)) { cafe_json_response(['items'=>$this->published()]); return true; }
+            if (in_array($pathname, ['/api/menu','/data/menu.json'], true) && in_array($method, ['GET','HEAD'], true)) { cafe_json_response($this->catalog()); return true; }
             if ($pathname === '/api/admin/session' && $method === 'GET') { cafe_json_response($this->auth->status($this->token())); return true; }
             if ($pathname === '/api/admin/enroll/start' && $method === 'POST') { cafe_json_response($this->auth->enrollStart(cafe_json_body(), $this->peer())); return true; }
             if ($pathname === '/api/admin/enroll/cancel' && $method === 'POST') { cafe_json_response($this->auth->enrollCancel(cafe_json_body(), $this->peer())); return true; }

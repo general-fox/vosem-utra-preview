@@ -42,6 +42,9 @@
   <script type="module" src="site.js?v=20260919-coffee6"></script>
   <link rel="stylesheet" href="menu.css">
   <script type="module" src="menu.js"></script>
+  <meta name="API_BASE_URL" content="">
+  <link rel="stylesheet" href="cart.css">
+  <script type="module" src="cart.js"></script>
 </head>
 <body>
   <div class="intro-curtain" aria-hidden="true">
@@ -78,6 +81,7 @@
       <a class="wordmark" href="index.html" aria-label="Восемь утра — главная"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"></a>
       <nav class="main-nav" aria-label="Основная навигация"><a href="#about">О кофейне</a><a href="#menu">Меню</a><a href="#club">Клуб гостей</a><a href="#visit">Контакты</a></nav>
       <a class="button button-small header-action" href="registration.html">В клуб гостей <span aria-hidden="true">↗</span></a>
+      <button type="button" class="header-cart" data-cart-open aria-label="Открыть корзину" aria-haspopup="dialog">Корзина <span data-cart-count>0</span></button>
       <details class="mobile-nav">
         <summary aria-label="Меню сайта"><span></span><span></span></summary>
         <nav aria-label="Мобильная навигация"><a href="#about">О кофейне</a><a href="#menu">Меню</a><a href="#club">Клуб гостей</a><a href="#visit">Контакты</a><a href="registration.html">Присоединиться к клубу ↗</a></nav>

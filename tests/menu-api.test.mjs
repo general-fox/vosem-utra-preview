@@ -97,6 +97,8 @@ test('public menu omits drafts; admin API requires login and secure cookie setti
   const app = await fixture(t);
   const publicMenu = await app.request('/api/menu');
   assert.equal(publicMenu.status, 200);
+  assert.equal(publicMenu.value.revision, 1);
+  assert.equal(publicMenu.value.items[0].availableForOrder, true);
   assert.deepEqual(publicMenu.value.items.map((item) => item.id), ['egg-toast']);
   assert.deepEqual((await app.request('/data/menu.json')).value, publicMenu.value);
   assert.equal((await app.request('/api/admin/menu')).status, 401);
@@ -187,6 +189,7 @@ test('validation rejects malformed prices, categories, IDs, and unsafe image pat
   await app.login();
   const invalid = [
     { price: -1 }, { price: 1.111 }, { price: '400' }, { category: 'invalid' }, { published: 'true' },
+    { availableForOrder: 'false' }, { availableForOrder: null }, { availableForOrder: 0 },
     { order: -1 }, { name: '' }, { name: 'x'.repeat(161) }, { description: '\u0000' }, { id: '../bad' },
     { image: 'https://evil.example/track.jpg' }, { image: '/uploads/../secret.jpg' }, { image: '/menu-images/a.svg' }, { image: 'javascript:alert(1)' },
   ];
@@ -358,4 +361,35 @@ test('private server files stay inaccessible, including encoded and Vite filesys
     assert.equal(response.status, 404, route);
     assert.equal(response.value.code, 'not_found', route);
   }
+});
+
+
+test('legacy availability defaults on read without rewriting data, and independent availability persists with the public revision', async (t) => {
+  const app = await fixture(t);
+  await app.request('/api/menu');
+  const legacy = JSON.stringify({ revision: 7, items: seedItems });
+  await writeFile(path.join(app.dataDir, 'menu.json'), legacy);
+  const loaded = (await app.request('/api/menu')).value;
+  assert.equal(loaded.revision, 7);
+  assert.equal(loaded.items[0].availableForOrder, true);
+  assert.equal(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8'), legacy, 'Reading a legacy catalog must not rewrite production data');
+  await app.login();
+  const saved = await app.request('/api/admin/menu', { method: 'PUT', body: { revision: 7, items: [
+    { ...seedItems[0], availableForOrder: false },
+    { ...seedItems[1], availableForOrder: true },
+  ] } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.value.revision, 8);
+  assert.equal(saved.value.items[0].published, true);
+  assert.equal(saved.value.items[0].availableForOrder, false);
+  assert.equal(saved.value.items[1].availableForOrder, true);
+  for (const route of ['/api/menu', '/data/menu.json']) {
+    const catalog = (await app.request(route)).value;
+    assert.equal(catalog.revision, saved.value.revision);
+    assert.deepEqual(catalog.items.map((item) => item.id), ['egg-toast']);
+    assert.equal(catalog.items[0].availableForOrder, false, 'Visible unavailable dishes remain in the public catalog');
+  }
+  await app.stop(); await app.start();
+  assert.deepEqual((await app.request('/api/menu')).value, { items: [saved.value.items[0]], revision: 8 });
+  assert.deepEqual(JSON.parse(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8')), saved.value);
 });

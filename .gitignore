@@ -15,3 +15,10 @@ admin-config.php
 admin-access.txt
 admin-data/
 vosem-utra-private/
+orders-config.php
+order-data/
+orders-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal

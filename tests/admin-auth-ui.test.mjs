@@ -40,6 +40,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       focus() { document.activeElement = this; },
       close() { this.open = false; },
       showModal() { this.open = true; },
+      reset() {},
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
       classList: { toggle() {} },
@@ -50,7 +51,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
     nodes.set(match[3], makeNode(attributes, /\bhidden\b/.test(match[2])));
   }
   const context = vm.createContext({
-    document, Intl, URL, AbortController,
+    document, Intl, URL, AbortController, crypto: { randomUUID: () => 'new-dish-test-id' },
     setTimeout(callback, delay) { const id = Symbol(); timers.set(id, { callback, delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
     location: { href: 'https://example.test/admin.html', origin: 'https://example.test' },
@@ -67,7 +68,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
     },
   });
   const runtimeSource = source.replace("await import('qrcode')", 'await __loadLocalQr()');
-  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, sessionExpired, validUsername };\n})()`, { filename: 'admin.js' }).runInContext(context);
+  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, sessionExpired, validUsername, validateMenu, openEditor, itemCard };\n})()`, { filename: 'admin.js' }).runInContext(context);
   return {
     ...runtime, calls, responses, timers, qrCalls,
     node: (id) => document.getElementById(id),
@@ -512,5 +513,38 @@ test('PHP QR fallback rejects non-TOTP URIs and a mismatched secret before rende
     await app.trigger('enrollment-form', 'submit');
     assert.equal(app.qrCalls.length, 0);
     assertEnrollmentSecretsCleared(app);
+  }
+});
+
+
+test('menu editor defaults legacy and new dishes to orderable, preserves explicit unavailability and saves it independently', async () => {
+  const app = await page();
+  const legacy = { id: 'legacy-toast', name: 'Тост', description: 'Яйцо и хлеб', price: 450, category: 'eggs', image: '', published: true, order: 1 };
+  app.validateMenu({ items: [legacy], revision: 3 });
+  assert.equal(app.state.items[0].availableForOrder, true);
+  app.openEditor(app.state.items[0]);
+  assert.equal(app.node('available-for-order').checked, true);
+  assert.equal(app.node('published').checked, true);
+  app.node('available-for-order').checked = false;
+  app.responses.push({ body: { items: [{ ...legacy, availableForOrder: false }], revision: 4 } });
+  await app.trigger('item-form', 'submit');
+  const saved = app.calls.at(-1).body;
+  assert.equal(saved.revision, 3);
+  assert.equal(saved.items[0].availableForOrder, false);
+  assert.equal(saved.items[0].published, true);
+  assert.equal(app.state.items[0].availableForOrder, false);
+  app.openEditor(app.state.items[0]);
+  assert.equal(app.node('available-for-order').checked, false, 'Reopening must not reset explicit false');
+  const text = (node) => node.textContent + node.children.map(text).join(' ');
+  assert.match(text(app.itemCard(app.state.items[0])), /Временно недоступно/);
+  app.openEditor();
+  assert.equal(app.node('available-for-order').checked, true);
+  assert.equal(app.node('published').checked, true);
+});
+
+test('malformed availability from the menu server is rejected rather than silently enabling ordering', async () => {
+  const app = await page();
+  for (const availableForOrder of [null, 'false', 0]) {
+    assert.throws(() => app.validateMenu({ items: [{ id: 'bad', availableForOrder }], revision: 1 }), /некорректную доступность/);
   }
 });
