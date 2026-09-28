@@ -1,12 +1,12 @@
-import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAuthService, AuthError, equalSecret } from './auth.mjs';
+import { enrollmentQr } from './qr.mjs';
+export { makePasswordRecord } from './auth.mjs';
 
-const scrypt = promisify(scryptCallback);
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const SESSION_MS = 8 * 60 * 60 * 1000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const COOKIE = 'vosem_admin';
 const CATEGORIES = new Set(['signature', 'eggs', 'porridge', 'sweet']);
@@ -82,19 +82,6 @@ export function validateItems(items) {
   });
 }
 
-function equalSecret(actual, expected) {
-  if (typeof actual !== 'string' || typeof expected !== 'string') return false;
-  const left = Buffer.from(actual); const right = Buffer.from(expected);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
-export async function makePasswordRecord(password) {
-  if (typeof password !== 'string' || password.length < 12 || password.length > 1024) throw new Error('Пароль администратора должен содержать от 12 до 1024 символов.');
-  const salt = randomBytes(32).toString('hex');
-  const hash = (await scrypt(password, salt, 64)).toString('hex');
-  return { salt, hash };
-}
-
 async function atomicWrite(filename, value) {
   await mkdir(path.dirname(filename), { recursive: true });
   const temporary = `${filename}.${randomUUID()}.tmp`;
@@ -116,13 +103,8 @@ export function createMenuMiddleware(options = {}) {
   const menuFile = path.join(dataDir, 'menu.json');
   const uploadsDir = path.join(dataDir, 'uploads');
   const seedPath = options.seedPath ?? path.join(projectRoot, 'public', 'data', 'menu.json');
-  const configuredPassword = options.password ?? process.env.ADMIN_PASSWORD;
-  const publicOrigin = options.publicOrigin ?? process.env.PUBLIC_ORIGIN;
-  if (publicOrigin && new URL(publicOrigin).origin !== publicOrigin) throw new Error('PUBLIC_ORIGIN должен содержать только origin, например https://example.ru');
-  const sessionMs = options.sessionMs ?? SESSION_MS;
-  const sessions = new Map();
-  const attempts = new Map();
-  let credentials;
+  const publicOrigin = Object.hasOwn(options, 'publicOrigin') ? options.publicOrigin : process.env.PUBLIC_ORIGIN;
+  const auth = createAuthService({ ...options, dataDir, publicOrigin });
   let initialization;
   let writeQueue = Promise.resolve();
 
@@ -142,26 +124,15 @@ export function createMenuMiddleware(options = {}) {
         const seed = JSON.parse(await readFile(seedPath, 'utf8'));
         await atomicWrite(menuFile, { items: validateItems(seed.items), revision: 1 });
       }
-      if (configuredPassword) credentials = await makePasswordRecord(configuredPassword);
-      else {
-        try {
-          credentials = JSON.parse(await readFile(path.join(dataDir, 'admin-password.json'), 'utf8'));
-          if (!/^[a-f0-9]{64}$/.test(credentials.salt) || !/^[a-f0-9]{128}$/.test(credentials.hash)) throw new Error('Некорректный файл пароля администратора.');
-        } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      }
     })();
     return initialization;
   }
 
-  function sessionFor(req) {
-    const token = req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
-    const session = token ? sessions.get(token) : null;
-    if (!session || session.expiresAt <= Date.now()) { if (token) sessions.delete(token); return null; }
-    return { ...session, token };
-  }
+  const sessionToken = (req) => req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
+  const peer = (req) => req.socket.remoteAddress ?? 'unknown';
 
-  function requireSession(req, csrf = false) {
-    const session = sessionFor(req);
+  async function requireSession(req, csrf = false) {
+    const session = await auth.session(sessionToken(req));
     if (!session) fail(401, 'Войдите в панель управления.', 'unauthorized');
     if (csrf && !equalSecret(req.headers['x-csrf-token'], session.csrfToken)) fail(403, 'Сессия устарела. Обновите страницу и повторите действие.', 'csrf');
     return session;
@@ -213,45 +184,30 @@ export function createMenuMiddleware(options = {}) {
         return sendJson(res, 200, { items: menu.items.filter((item) => item.published).sort((a, b) => a.order - b.order) });
       }
       if (pathname === '/api/admin/session' && req.method === 'GET') {
-        const session = sessionFor(req);
-        return sendJson(res, 200, session ? { authenticated: true, csrfToken: session.csrfToken } : { authenticated: false, configured: Boolean(credentials) });
+        return sendJson(res, 200, await auth.status(sessionToken(req)));
       }
-      if (pathname === '/api/admin/login' && req.method === 'POST') {
-        if (!credentials) fail(503, 'Пароль администратора не настроен. Выполните npm run admin:password на сервере.', 'not_configured');
+      if (pathname === '/api/admin/enroll/start' && req.method === 'POST') {
+        const result = await auth.enrollmentStart(await readJson(req), peer(req));
+        try { return sendJson(res, 200, { ...result, qrDataUrl: await enrollmentQr(result.otpauthUri) }); }
+        catch (error) { await auth.enrollmentCancel({ enrollmentToken: result.enrollmentToken }, peer(req)); throw error; }
+      }
+      if (pathname === '/api/admin/enroll/cancel' && req.method === 'POST') return sendJson(res, 200, await auth.enrollmentCancel(await readJson(req), peer(req)));
+      if (['/api/admin/login', '/api/admin/verify', '/api/admin/enroll/confirm'].includes(pathname) && req.method === 'POST') {
         const body = await readJson(req);
-        if (typeof body.password !== 'string' || body.password.length > 1024) fail(400, 'Введите пароль.', 'invalid_password');
-        const ip = req.socket.remoteAddress ?? 'unknown';
-        const now = Date.now();
-        const prior = attempts.get(ip);
-        const bucket = prior?.until > now ? prior : { count: 0, until: now + 15 * 60 * 1000 };
-        if (bucket.count >= 8) { res.setHeader('Retry-After', Math.ceil((bucket.until - now) / 1000)); fail(429, 'Слишком много попыток. Повторите через 15 минут.', 'rate_limit'); }
-        if (attempts.size > 10000) for (const [key, value] of attempts) if (value.until <= now) attempts.delete(key);
-        // Reserve this attempt before yielding. Count includes failures and checks still in flight.
-        bucket.count += 1;
-        attempts.set(ip, bucket);
-        const candidate = (await scrypt(body.password, credentials.salt, 64)).toString('hex');
-        if (!equalSecret(candidate, credentials.hash)) fail(401, 'Неверный пароль.', 'invalid_credentials');
-        // A successful login refunds only itself; it must not clear concurrent or prior failures.
-        bucket.count -= 1;
-        if (attempts.get(ip) === bucket && bucket.count === 0) attempts.delete(ip);
-        for (const [key, value] of sessions) if (value.expiresAt <= now) sessions.delete(key);
-        const previous = sessionFor(req);
-        if (previous) sessions.delete(previous.token);
-        const token = randomBytes(32).toString('hex');
-        const csrfToken = randomBytes(32).toString('hex');
-        sessions.set(token, { csrfToken, expiresAt: now + sessionMs });
-        res.setHeader('Set-Cookie', cookie(req, token, Math.floor(sessionMs / 1000)));
-        return sendJson(res, 200, { authenticated: true, csrfToken });
+        const result = pathname.endsWith('/confirm') ? await auth.enrollmentConfirm(body, peer(req)) : pathname.endsWith('/verify') ? await auth.verify(body, peer(req)) : await auth.login(body, peer(req), sessionToken(req));
+        if (result.mfaRequired || result.enrollmentRequired) return sendJson(res, 202, result);
+        res.setHeader('Set-Cookie', cookie(req, result.token, Math.floor(auth.sessionMs / 1000)));
+        return sendJson(res, 200, { authenticated: true, csrfToken: result.csrfToken, ...(result.recoveryCodes ? { recoveryCodes: result.recoveryCodes } : {}) });
       }
       if (pathname === '/api/admin/logout' && req.method === 'POST') {
-        const session = requireSession(req, true);
-        sessions.delete(session.token);
+        const session = await requireSession(req, true);
+        await auth.logout(session.token, peer(req));
         res.setHeader('Set-Cookie', cookie(req, '', 0));
         return sendJson(res, 200, { authenticated: false });
       }
-      if (pathname === '/api/admin/menu' && req.method === 'GET') { requireSession(req); return sendJson(res, 200, await readSavedMenu()); }
+      if (pathname === '/api/admin/menu' && req.method === 'GET') { await requireSession(req); return sendJson(res, 200, await readSavedMenu()); }
       if (pathname === '/api/admin/menu' && req.method === 'PUT') {
-        requireSession(req, true);
+        await requireSession(req, true);
         const body = await readJson(req);
         const items = validateItems(body.items);
         if (!Number.isSafeInteger(body.revision) || body.revision < 1) fail(400, 'Некорректная версия меню.', 'invalid_revision');
@@ -261,13 +217,14 @@ export function createMenuMiddleware(options = {}) {
           if (body.revision !== menu.revision) fail(409, 'Меню уже изменено в другой вкладке. Загрузите актуальную версию.', 'conflict');
           const updated = { items, revision: menu.revision + 1 };
           await atomicWrite(menuFile, updated);
+          await auth.audit('menu.updated', peer(req), { revision: updated.revision, count: items.length });
           return updated;
         });
         writeQueue = write.catch(() => {});
         return sendJson(res, 200, await write);
       }
       if (pathname === '/api/admin/upload' && req.method === 'POST') {
-        requireSession(req, true);
+        await requireSession(req, true);
         const mime = req.headers['content-type']?.split(';')[0].trim();
         if (!MIME_EXT[mime]) fail(415, 'Поддерживаются JPG, PNG и WebP.', 'invalid_image_type');
         const buffer = await readBody(req, MAX_IMAGE_BYTES);
@@ -275,11 +232,15 @@ export function createMenuMiddleware(options = {}) {
         await mkdir(uploadsDir, { recursive: true });
         const name = `${randomUUID()}.${MIME_EXT[mime]}`;
         await writeFile(path.join(uploadsDir, name), buffer, { flag: 'wx', mode: 0o600 });
+        await auth.audit('image.uploaded', peer(req));
         return sendJson(res, 201, { url: `/uploads/${name}` });
       }
       fail(404, 'Адрес API не найден.', 'not_found');
     } catch (error) {
-      if (error instanceof ApiError) return sendJson(res, error.status, { error: error.message, code: error.code });
+      if (error instanceof ApiError || error instanceof AuthError) {
+        if (error.retryAfter) res.setHeader('Retry-After', error.retryAfter);
+        return sendJson(res, error.status, { error: error.message, code: error.code });
+      }
       console.error('[menu-api]', error.message);
       return sendJson(res, 500, { error: 'Не удалось выполнить действие. Попробуйте ещё раз.', code: 'server_error' });
     }

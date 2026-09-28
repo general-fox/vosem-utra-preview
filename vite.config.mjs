@@ -2,10 +2,13 @@ import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { createMenuMiddleware } from './server/menu-api.mjs';
+import { SITE_URL, transformPage, renderRobots, renderSitemap } from './server/seo.mjs';
 
 export default defineConfig(({ mode }) => {
 const env = loadEnv(mode, process.cwd(), '');
-const menuApi = createMenuMiddleware({ password: env.ADMIN_PASSWORD, publicOrigin: env.PUBLIC_ORIGIN || undefined });
+const production = mode === 'hosting';
+const menuApi = createMenuMiddleware({ production: false, username: env.ADMIN_USERNAME, password: env.ADMIN_PASSWORD, encryptionKey: env.AUTH_ENCRYPTION_KEY, publicOrigin: undefined });
+const seed = JSON.parse(readFileSync(new URL('./public/data/menu.json', import.meta.url), 'utf8'));
 return {
   base: './',
   server: { fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.data/**', '**/server/**'] } },
@@ -13,6 +16,25 @@ return {
     name: 'cafe-menu-api',
     configureServer(server) { server.middlewares.use(menuApi); },
     configurePreviewServer(server) { server.middlewares.use(menuApi); },
+  }, {
+    name: 'cafe-seo',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        return transformPage(html, {
+          page: context.filename, production, items: seed.items,
+          googleVerification: env.GOOGLE_SITE_VERIFICATION,
+          yandexVerification: env.YANDEX_VERIFICATION,
+        });
+      },
+    },
+    generateBundle() {
+      for (const [fileName, source] of Object.entries({
+        'robots.txt': renderRobots({ production }),
+        'sitemap.xml': renderSitemap({ production }),
+        'site-build.json': JSON.stringify({ production, siteUrl: SITE_URL }),
+      })) this.emitFile({ type: 'asset', fileName, source });
+    },
   }, {
     name: 'include-font-license',
     generateBundle() {
@@ -22,6 +44,7 @@ return {
     },
   }],
   build: {
+    outDir: production ? 'dist-hosting' : 'dist',
     rolldownOptions: {
       input: Object.fromEntries(
         ['index', 'registration', 'privacy', 'consent', 'admin'].map((page) => [

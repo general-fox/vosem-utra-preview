@@ -5,10 +5,15 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "build:hosting": "vite build --mode hosting",
+    "build:reg": "npm run build:hosting && node scripts/build-reg.mjs",
+    "test:reg": "node scripts/test-reg.mjs",
+    "hosting:access": "node --env-file-if-exists=.env scripts/prepare-reg-access.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node tests/reveals.test.cjs && node tests/intro-parallax.test.cjs && node tests/fonts.test.cjs && node tests/photos.test.cjs && node --test tests/menu-api.test.mjs tests/menu-content.test.mjs tests/menu-client.test.mjs",
+    "test": "node tests/reveals.test.cjs && node tests/intro-parallax.test.cjs && node tests/fonts.test.cjs && node tests/photos.test.cjs && node --test tests/*.test.mjs",
     "start": "node --env-file-if-exists=.env server/index.mjs",
-    "admin:password": "node server/set-password.mjs"
+    "admin:password": "node --env-file-if-exists=.env server/set-password.mjs",
+    "admin:setup": "node --env-file-if-exists=.env server/setup-admin.mjs"
   },
   "repository": {
     "type": "git",
@@ -23,6 +28,11 @@
   "homepage": "https://github.com/general-fox/vosem-utra-preview#readme",
   "description": "Кофейня «Восемь утра» — статическая демоверсия сайта",
   "devDependencies": {
+    "jsqr": "1.4.0",
+    "pngjs": "7.0.0",
     "vite": "^8.3.0"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
   }
 }

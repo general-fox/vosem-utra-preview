@@ -1,0 +1,3 @@
+# Source preview: every HTML page carries noindex. Crawlers may read that directive.
+User-agent: *
+Disallow: /api/

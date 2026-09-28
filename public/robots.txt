@@ -1,0 +1,3 @@
+# Preview: every HTML page carries noindex. Production builds replace this file.
+User-agent: *
+Disallow: /api/

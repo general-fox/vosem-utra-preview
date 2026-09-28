@@ -5,8 +5,11 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createMenuMiddleware, makePasswordRecord } from '../server/menu-api.mjs';
+import { makeEnrolledAccount } from '../server/auth.mjs';
+import { encodeBase32, totp } from '../server/totp.mjs';
 
 const PASSWORD = 'a-test-password-with-24-characters';
+const fixtureAccess = new Map();
 const seedItems = [
   { id: 'egg-toast', name: 'Тост с яйцом', description: 'Хлеб, яйцо и зелень', price: 450, category: 'eggs', image: '/menu-images/toast.jpg', published: true, order: 1 },
   { id: 'hidden', name: 'Черновик', description: '', price: 600, category: 'signature', image: '', published: false, order: 0 },
@@ -33,7 +36,7 @@ async function fixture(t, options = {}) {
     server = null;
   }
   await start();
-  t.after(async () => { await stop(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await stop(); fixtureAccess.delete(dataDir); await rm(directory, { recursive: true, force: true }); });
   async function request(route, { method = 'GET', body, headers = {}, authenticated = true, origin, raw } = {}) {
     const response = await fetch(`${base}${route}`, {
       method,
@@ -45,7 +48,15 @@ async function fixture(t, options = {}) {
     return { status: response.status, headers: response.headers, value };
   }
   async function login(password = PASSWORD) {
-    const result = await request('/api/admin/login', { method: 'POST', body: { password }, authenticated: false });
+    let result = await request('/api/admin/login', { method: 'POST', body: { username: 'admin', password }, authenticated: false });
+    if (result.value.enrollmentRequired) {
+      const started = await request('/api/admin/enroll/start', { method: 'POST', body: { challengeToken: result.value.challengeToken, username: 'admin' }, authenticated: false });
+      assert.equal(started.status, 200);
+      result = await request('/api/admin/enroll/confirm', { method: 'POST', body: { enrollmentToken: started.value.enrollmentToken, code: totp(started.value.secret) }, authenticated: false });
+      fixtureAccess.set(dataDir, { recoveryCodes: result.value.recoveryCodes });
+    } else if (result.value.mfaRequired) {
+      result = await request('/api/admin/verify', { method: 'POST', body: { challengeToken: result.value.challengeToken, code: fixtureAccess.get(dataDir)?.recoveryCodes.shift() }, authenticated: false });
+    }
     if (result.status === 200) auth = { Cookie: result.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': result.value.csrfToken };
     return result;
   }
@@ -59,7 +70,7 @@ async function fixture(t, options = {}) {
     };
     server.on('request', onRequest);
     const pending = passwords.map((password) => {
-      const body = JSON.stringify({ password });
+      const body = JSON.stringify({ username: 'admin', password });
       let req;
       const response = new Promise((resolve, reject) => {
         req = http.request(`${base}/api/admin/login`, { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
@@ -89,7 +100,7 @@ test('public menu omits drafts; admin API requires login and secure cookie setti
   assert.deepEqual(publicMenu.value.items.map((item) => item.id), ['egg-toast']);
   assert.deepEqual((await app.request('/data/menu.json')).value, publicMenu.value);
   assert.equal((await app.request('/api/admin/menu')).status, 401);
-  assert.deepEqual((await app.request('/api/admin/session')).value, { authenticated: false, configured: true });
+  assert.deepEqual((await app.request('/api/admin/session')).value, { authenticated: false, configured: true, mfaRequired: true, production: false, ready: false, enrollmentAvailable: true });
   assert.equal((await app.login('incorrect')).status, 401);
   const login = await app.login();
   assert.equal(login.status, 200);
@@ -241,28 +252,103 @@ test('successful login does not clear concurrent or previously failed attempts',
   const app = await fixture(t);
   await app.request('/api/admin/session');
   const attempts = await app.overlappingLogins([PASSWORD, ...Array(7).fill('bad-password')]);
-  assert.equal(attempts.filter((attempt) => attempt.status === 200).length, 1);
+  assert.equal(attempts.filter((attempt) => attempt.status === 202 && attempt.value.enrollmentRequired).length, 1);
   assert.equal(attempts.filter((attempt) => attempt.status === 401).length, 7);
   assert.equal((await app.login('bad-password')).status, 401);
   assert.equal((await app.login()).status, 429);
 });
 
-test('local password hash config works and HTTPS origin enables Secure cookies', async (t) => {
+test('local password hash config requires enrollment before issuing a session', async (t) => {
   const app = await fixture(t);
   await app.stop();
   await mkdir(app.dataDir, { recursive: true });
   await writeFile(path.join(app.dataDir, 'admin-password.json'), JSON.stringify(await makePasswordRecord(PASSWORD)));
   await app.start({ password: '', publicOrigin: 'https://cafe.example' });
-  const result = await app.request('/api/admin/login', { method: 'POST', body: { password: PASSWORD }, origin: 'https://cafe.example' });
-  assert.equal(result.status, 200);
-  assert.match(result.headers.get('set-cookie'), /; Secure/);
+  const result = await app.request('/api/admin/login', { method: 'POST', body: { username: 'admin', password: PASSWORD }, origin: 'https://cafe.example' });
+  assert.equal(result.status, 202);
+  assert.equal(result.value.enrollmentRequired, true);
+  assert.equal(result.headers.get('set-cookie'), null);
 });
 
 test('unconfigured admin remains closed while public menu works', async (t) => {
   const app = await fixture(t, { password: '' });
   assert.equal((await app.request('/api/menu')).status, 200);
-  assert.deepEqual((await app.request('/api/admin/session')).value, { authenticated: false, configured: false });
+  assert.deepEqual((await app.request('/api/admin/session')).value, { authenticated: false, configured: false, mfaRequired: false, production: false, ready: false, enrollmentAvailable: false });
   assert.equal((await app.login()).status, 503);
+});
+
+test('production auth setup failures never prevent the public menu from loading', async (t) => {
+  const app = await fixture(t, { production: true, publicOrigin: undefined, encryptionKey: '' });
+  assert.equal((await app.request('/api/menu')).status, 200);
+  assert.equal((await app.login()).status, 503);
+  await writeFile(path.join(app.dataDir, 'admin-auth.json'), 'invalid credential JSON');
+  assert.equal((await app.request('/api/menu')).status, 200);
+  assert.equal((await app.request('/data/menu.json')).status, 200);
+  assert.equal((await app.request('/api/admin/session')).value.ready, false);
+});
+
+test('explicit local origin override ignores an exported production PUBLIC_ORIGIN', async (t) => {
+  const previous = process.env.PUBLIC_ORIGIN;
+  process.env.PUBLIC_ORIGIN = 'https://production.example';
+  t.after(() => { if (previous === undefined) delete process.env.PUBLIC_ORIGIN; else process.env.PUBLIC_ORIGIN = previous; });
+  const app = await fixture(t, { production: false, publicOrigin: undefined });
+  assert.equal((await app.login()).status, 200);
+});
+
+test('HTTP MFA login sets no cookie before verification and issues a Secure session only afterward', async (t) => {
+  const key = Buffer.alloc(32, 44);
+  const origin = 'https://cafe.example';
+  const app = await fixture(t, { production: true, password: '', publicOrigin: origin, encryptionKey: key.toString('hex') });
+  await app.request('/api/menu');
+  const secret = encodeBase32(Buffer.from('12345678901234567890'));
+  const enrollmentTime = Date.now() - 60_000;
+  const { account } = await makeEnrolledAccount({ username: 'owner', password: PASSWORD, secret, key, time: enrollmentTime, code: totp(secret, { time: enrollmentTime }) });
+  await writeFile(path.join(app.dataDir, 'admin-auth.json'), JSON.stringify(account));
+  const pending = await app.request('/api/admin/login', { method: 'POST', origin, body: { username: 'owner', password: PASSWORD } });
+  assert.equal(pending.status, 202);
+  assert.equal(pending.value.mfaRequired, true);
+  assert.equal(pending.headers.get('set-cookie'), null);
+  assert.equal((await app.request('/api/admin/menu')).status, 401);
+  const verified = await app.request('/api/admin/verify', { method: 'POST', origin, body: { challengeToken: pending.value.challengeToken, code: totp(secret) } });
+  assert.equal(verified.status, 200);
+  assert.equal(verified.value.authenticated, true);
+  assert.match(verified.headers.get('set-cookie'), /; Secure/);
+  assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: verified.headers.get('set-cookie').split(';')[0] } })).status, 200);
+});
+
+test('HTTP enrollment keeps menu locked until TOTP, serves a private QR, then returns recovery codes once', async (t) => {
+  const key = Buffer.alloc(32, 55);
+  const origin = 'https://cafe.example';
+  const app = await fixture(t, { production: true, username: 'v.utra@yandex.ru', publicOrigin: origin, encryptionKey: key.toString('hex') });
+  const status = await app.request('/api/admin/session');
+  assert.equal(status.value.ready, false);
+  assert.equal(status.value.enrollmentAvailable, true);
+  assert.equal((await app.request('/api/admin/enroll/start', { method: 'POST', origin, body: { challengeToken: 'invented', username: 'v.utra@yandex.ru' } })).status, 410);
+  const pending = await app.request('/api/admin/login', { method: 'POST', origin, body: { username: 'v.utra@yandex.ru', password: PASSWORD } });
+  assert.equal(pending.status, 202);
+  assert.equal(pending.value.enrollmentRequired, true);
+  assert.equal(pending.headers.get('set-cookie'), null);
+  assert.equal((await app.request('/api/admin/menu')).status, 401);
+  const startBody = { challengeToken: pending.value.challengeToken, username: 'v.utra@yandex.ru' };
+  assert.equal((await app.request('/api/admin/enroll/start', { method: 'POST', origin: 'https://evil.example', body: startBody })).status, 403);
+  const started = await app.request('/api/admin/enroll/start', { method: 'POST', origin, body: startBody });
+  assert.equal(started.status, 200);
+  assert.equal(started.headers.get('cache-control'), 'no-store');
+  assert.match(started.value.qrDataUrl, /^data:image\/png;base64,/);
+  assert.equal(new URL(started.value.otpauthUri).searchParams.get('secret'), started.value.secret);
+  await assert.rejects(readFile(path.join(app.dataDir, 'admin-auth.json')), { code: 'ENOENT' });
+  assert.equal((await app.request('/api/admin/enroll/confirm', { method: 'POST', origin, body: { enrollmentToken: started.value.enrollmentToken, code: 'wrong' } })).status, 401);
+  assert.equal((await app.request('/api/admin/menu')).status, 401);
+  const confirmed = await app.request('/api/admin/enroll/confirm', { method: 'POST', origin, body: { enrollmentToken: started.value.enrollmentToken, code: totp(started.value.secret) } });
+  assert.equal(confirmed.status, 200);
+  assert.equal(confirmed.value.recoveryCodes.length, 10);
+  assert.match(confirmed.headers.get('set-cookie'), /; Secure/);
+  const authenticated = { Cookie: confirmed.headers.get('set-cookie').split(';')[0] };
+  assert.equal((await app.request('/api/admin/menu', { headers: authenticated })).status, 200);
+  assert.equal((await app.request('/api/admin/session', { headers: authenticated })).value.recoveryCodes, undefined);
+  assert.equal((await app.request('/api/admin/enroll/confirm', { method: 'POST', origin, body: { enrollmentToken: started.value.enrollmentToken, code: totp(started.value.secret) } })).status, 410);
+  const audit = await readFile(path.join(app.dataDir, 'security-audit.jsonl'), 'utf8');
+  for (const sensitive of [started.value.secret, started.value.otpauthUri, started.value.qrDataUrl, ...confirmed.value.recoveryCodes]) assert.equal(audit.includes(sensitive), false);
 });
 
 test('private server files stay inaccessible, including encoded and Vite filesystem paths', async (t) => {

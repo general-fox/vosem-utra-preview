@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ru" data-intro-entry="club">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#F9F7F1">
+  <title>Клуб гостей — Восемь утра</title>
+  <meta name="description" content="Регистрация в клубе гостей кофейни «Восемь утра»: 5% бонусами с каждого заказа и возможность оплатить бонусами до 30% покупки.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/Lato-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (performance.getEntriesByType('navigation')[0]?.type === 'back_forward') return;
+      root.dataset.motion = 'boot';
+      const navigation = performance.getEntriesByType('navigation')[0];
+      let returning = false;
+      try { returning = navigation?.type !== 'reload' && new URL(document.referrer).origin === location.origin; } catch { /* Direct visit. */ }
+      if ((!returning || root.dataset.introEntry === 'club') && !location.hash && !document.hidden && window.scrollY === 0) root.dataset.intro = 'waiting';
+      // If the module fails, reveal everything rather than leave a blank page.
+      setTimeout(() => {
+        if (root.dataset.motion === 'boot') root.removeAttribute('data-motion');
+        root.removeAttribute('data-intro');
+      }, 2300);
+    })();
+  </script>
+  <style>
+    /* A pre-painted sheet: the browser moves one layer, without redrawing its edge. */
+    .intro-curtain{display:none}
+    html[data-intro] .intro-curtain{display:block;position:fixed;top:0;left:0;right:0;height:100vh;height:100lvh;z-index:1000;overflow:hidden;pointer-events:none}
+    .intro-sheet{position:absolute;inset:0 0 auto;height:114%;isolation:isolate;transform:translate3d(0,0,0);backface-visibility:hidden;will-change:transform}
+    .intro-surface{position:absolute;inset:0;width:100%;height:100%;z-index:-1}
+    .intro-edge-mobile{display:none}
+    @media(max-width:650px){.intro-sheet{height:106%}.intro-edge-desktop{display:none}.intro-edge-mobile{display:block}}
+    @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain{display:none}}
+    @media print{html[data-intro] .intro-curtain{display:none}}
+  </style>
+  <link rel="stylesheet" href="style.css?v=20260919-coffee7">
+  <link rel="stylesheet" href="registration.css?v=20260921-reg3">
+  <script type="module" src="site.js?v=20260919-coffee6"></script>
+  <script type="module" src="registration.js?v=20260921-reg3"></script>
+  <link rel="stylesheet" href="cookies.css?v=20260921-reg3">
+  <script type="module" src="cookies.js?v=20260921-reg3"></script>
+</head>
+<body>
+  <div class="intro-curtain" aria-hidden="true">
+    <div class="intro-sheet">
+      <svg class="intro-surface" viewBox="0 0 1 1" preserveAspectRatio="none" focusable="false">
+        <defs>
+          <pattern id="intro-paper" width="1" height="1" patternUnits="userSpaceOnUse">
+            <rect width="1" height="1" fill="#F9F7F1"/>
+            <path d="M0 0H.5V1H.325L0 .43Z" fill="#F3EFE4"/>
+            <path d="M.5 0H1V.43L.675 1H.5Z" fill="#EEE8D6"/>
+            <path d="M1 .43V1H.675Z" fill="#F2EDDD"/>
+            <circle cx=".5" cy="1.35" r=".66" fill="#EAE1C5" opacity=".3"/>
+          </pattern>
+        </defs>
+        <path class="intro-edge-desktop" d="M0 0H1V1C.75 .88 .25 .88 0 1Z" fill="url(#intro-paper)"/>
+        <path class="intro-edge-mobile" d="M0 0H1V1C.75 .96 .25 .96 0 1Z" fill="url(#intro-paper)"/>
+      </svg>
+      <div class="intro-brand">
+        <svg class="intro-sun" viewBox="0 0 240 160" fill="none" focusable="false">
+          <g class="intro-rays" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M120 12v24M68 24l12 21M30 62l21 12M16 112h24M172 24l-12 21M210 62l-21 12M224 112h-24"/>
+          </g>
+          <path d="M64 123a56 56 0 0 1 112 0" fill="#ECE3CD" stroke="currentColor" stroke-width="2.4"/>
+          <path d="M49 124h142" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        <img class="intro-logo" src="assets/logo.svg" width="435" height="75" alt="">
+        <p class="intro-caption">хорошее утро начинается здесь</p>
+      </div>
+    </div>
+  </div>
+  <a class="skip-link" href="#registration-title">К анкете</a>
+  <aside class="brand-panel" aria-label="Условия клуба гостей" data-reveal="visual">
+    <div class="brand-rays" aria-hidden="true"></div>
+    <a class="brand-logo" href="index.html" aria-label="Восемь утра — на главную"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"></a>
+    <div class="brand-message">
+      <p class="eyebrow">КЛУБ ГОСТЕЙ</p>
+      <h2>Каждое утро<br> чуть приятнее</h2>
+      <p>Назовите номер телефона при заказе — бонусы начислятся автоматически.</p>
+    </div>
+    <div class="loyalty-summary">
+      <div><strong>5%</strong><span>с каждого заказа<br>возвращаем бонусами</span></div>
+      <div><strong>до 30%</strong><span>суммы заказа можно<br>оплатить бонусами</span></div>
+    </div>
+    <p class="brand-quote"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span> Хорошие привычки дарят больше.</p>
+  </aside>
+  <main class="form-panel">
+    <div class="registration" data-reveal-group>
+      <a class="back-link" href="index.html" data-reveal="fade">← На главную</a>
+      <p class="eyebrow" data-reveal="text">ВОСЕМЬ УТРА · КЛУБ ГОСТЕЙ</p>
+      <h1 id="registration-title" data-reveal="text">Давайте знакомиться</h1>
+      <p class="intro" data-reveal="text">Пара слов о вас — и у любимого утреннего ритуала появится ещё один приятный повод.</p>
+      <p class="required-help">Поля со звёздочкой обязательны</p>
+      <form id="registration-form" action="api/register.php" method="post">
+        <input type="hidden" name="ConsentVersion" value="2026-09-21-reg3">
+        <div class="fields">
+          <div class="field full"><label for="last-name">Фамилия <span class="required-mark" aria-hidden="true">*</span></label><input id="last-name" name="LastName" autocomplete="family-name" placeholder="Ваша фамилия" maxlength="100" required></div>
+          <div class="field"><label for="first-name">Имя <span class="required-mark" aria-hidden="true">*</span></label><input id="first-name" name="FirstName" autocomplete="given-name" placeholder="Ваше имя" maxlength="100" required></div>
+          <div class="field"><label for="middle-name">Отчество <small>если есть</small></label><input id="middle-name" name="MiddleName" autocomplete="additional-name" placeholder="Ваше отчество" maxlength="100"></div>
+          <div class="field"><label for="birth-date">Дата рождения <span class="required-mark" aria-hidden="true">*</span></label><input id="birth-date" name="BirthDate" type="date" autocomplete="bday" min="1900-01-01" required></div>
+          <div class="field"><label for="phone">Номер телефона <span class="required-mark" aria-hidden="true">*</span></label><input id="phone" name="Phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="25" required></div>
+          <div class="field full"><label for="guest-comment">Комментарий <small>необязательно</small></label><textarea id="guest-comment" name="Comment" rows="4" maxlength="500" aria-describedby="guest-comment-help" placeholder="Любимый напиток или пожелание к обслуживанию"></textarea><p id="guest-comment-help" class="field-help">Эта информация будет доступна сотрудникам кафе и поможет сделать обслуживание внимательнее.</p></div>
+        </div>
+        <p class="privacy-before-consent">Перед отправкой анкеты ознакомьтесь с <a href="privacy.html" target="_blank" rel="noopener">Политикой конфиденциальности<span class="visually-hidden"> (откроется в новой вкладке)</span></a>.</p>
+        <div class="consent"><input id="consent" name="Consent" type="checkbox" required aria-describedby="consent-help"><label for="consent">Я даю <a href="consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных<span class="visually-hidden"> (откроется в новой вкладке)</span></a> для участия в программе лояльности. <span class="required-mark" aria-hidden="true">*</span></label></div>
+        <p id="consent-help" class="legal-note">Согласие можно отозвать: <a href="mailto:vosem.utra@inbox.ru">vosem.utra@inbox.ru</a>. Оно не включает рекламные рассылки.</p>
+        <p id="form-message" class="message" role="alert" hidden></p>
+        <div class="registration-actions">
+          <div class="captcha-block" id="captcha-privacy"><div id="recaptcha-widget"></div><p id="captcha-status" role="status" aria-live="polite"></p></div>
+          <button id="submit-button" type="submit" aria-describedby="captcha-notice">Зарегистрироваться</button>
+          <p class="captcha-note" id="captcha-notice">Защита от спама — Google reCAPTCHA. <a href="privacy.html#cookies" target="_blank" rel="noopener">Подробнее</a></p>
+          <a class="registration-contact" href="https://t.me/vosemutracafe" target="_blank" rel="noopener">Задать вопрос в Telegram ↗</a>
+        </div>
+        <noscript><p class="message">Для регистрации включите JavaScript в браузере.</p></noscript>
+      </form>
+      <section id="registration-success" class="success" tabindex="-1" aria-live="polite" hidden><h2>Добро пожаловать!</h2><p>Рады видеть вас в клубе гостей «Восемь утра».</p><a href="index.html">Вернуться на главную</a></section>
+      <footer class="registration-footer" data-reveal="fade"><nav aria-label="Правовые документы"><a href="privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a><a href="consent.html" target="_blank" rel="noopener">Согласие на обработку данных</a><a href="privacy.html#cookies" target="_blank" rel="noopener">Файлы cookie</a><button class="cookie-settings" type="button" data-cookie-settings hidden>Настройки cookie</button></nav></footer>
+    </div>
+  </main>
+</body>
+</html>
