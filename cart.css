@@ -2,7 +2,8 @@
 .header-cart{justify-content:center;min-height:44px;border:0;border-radius:999px;padding:8px 12px;gap:8px;background:transparent;line-height:1;transition:background-color .2s ease,transform .2s ease}
 .header-cart svg{display:block;flex-shrink:0}
 .header-cart:focus-visible{outline:2px solid var(--ink);outline-offset:4px;background:var(--sun)}
-.header-cart [data-cart-count]{min-width:24px;height:24px;padding-inline:6px;border-radius:999px;font-variant-numeric:tabular-nums;transition:background-color .2s ease}
+/* The 1px bottom inset optically centers Lato's digits without moving the badge. */
+.header-cart [data-cart-count]{display:grid;place-items:center;flex-shrink:0;min-width:24px;height:24px;padding:0 6px 1px;border-radius:999px;line-height:1;letter-spacing:0;text-align:center;font-variant-numeric:lining-nums tabular-nums;transition:background-color .2s ease}
 .header-cart:focus-visible [data-cart-count]{background:var(--paper)}
 .floating-cart{transition:background-color .2s ease,box-shadow .2s ease,transform .2s ease}
 @media(hover:hover){.header-cart:hover{background:var(--sun);transform:translateY(-1px)}.header-cart:hover [data-cart-count]{background:var(--paper)}.floating-cart:hover{background:#49463F;box-shadow:0 10px 30px #2b2b2b25;transform:translateY(-2px)}}
