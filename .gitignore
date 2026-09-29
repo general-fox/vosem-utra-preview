@@ -3,6 +3,12 @@ dist/
 dist-hosting/
 dist-reg/
 dist-reg.zip
+# Local cleanup archives and old release packages never belong in this repository.
+/_archive/
+/backups/
+/review/
+/tmp/
+/*.zip
 .php-preview/
 .vite/
 *.log

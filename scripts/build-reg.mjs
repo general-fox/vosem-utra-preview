@@ -27,8 +27,14 @@ await cp(path.join(root, 'hosting/legacy-public'), site, { recursive: true });
 await cp(path.join(root, 'hosting/legacy-private'), privateRoot, { recursive: true });
 await cp(path.join(root, 'hosting/php'), app, { recursive: true });
 await cp(path.join(root, 'hosting/public'), site, { recursive: true });
-// Old registration pages reference these stable local asset URLs.
-await cp(path.join(root, 'assets'), path.join(site, 'assets'), { recursive: true });
+// The PHP registration/legal pages keep stable URLs instead of Vite's hashed URLs.
+// Copy only their dependencies, not font sources or unused photo originals.
+await mkdir(path.join(site, 'assets'), { recursive: true });
+for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg',
+  'Lato-Regular.woff2', 'Lato-Medium.woff2', 'Lato-Italic.woff2',
+  'Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+  await cp(path.join(root, 'assets', name), path.join(site, 'assets', name));
+}
 await cp(path.join(root, 'style.css'), path.join(site, 'style.css'));
 await cp(path.join(root, 'site.js'), path.join(site, 'site.js'));
 await mkdir(path.join(app, 'seed'), { recursive: true });

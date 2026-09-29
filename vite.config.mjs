@@ -12,7 +12,7 @@ return {
   base: './',
   server: {
     host: '127.0.0.1',
-    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/*.{key,cafebackup,sqlite,sqlite-wal,sqlite-shm,sqlite-journal}', '**/.git/**', '**/.data/**', '**/server/**', '**/hosting/**', '**/dist-reg/**', '**/.php-preview/**', '**/orders-data/**'] },
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/*.{key,cafebackup,sqlite,sqlite-wal,sqlite-shm,sqlite-journal}', '**/.git/**', '**/.data/**', '**/_archive/**', '**/vosem-utra-private/**', '**/server/**', '**/hosting/**', '**/dist-reg/**', '**/.php-preview/**', '**/orders-data/**'] },
     watch: { ignored: ['**/.data/**', '**/.php-preview/**', '**/dist-reg/**', '**/dist-hosting/**'] },
   },
   plugins: [{

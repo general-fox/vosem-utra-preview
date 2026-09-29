@@ -83,7 +83,7 @@
       <a class="wordmark" href="index.html" aria-label="Восемь утра — главная"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"></a>
       <nav class="main-nav" aria-label="Основная навигация"><a href="#about">О кофейне</a><a href="#menu">Меню</a><a href="#club">Клуб гостей</a><a href="#visit">Контакты</a></nav>
       <a class="button button-small header-action" href="registration.html">В клуб гостей <span aria-hidden="true">↗</span></a>
-      <button type="button" class="header-cart" data-cart-open aria-label="Открыть корзину" aria-haspopup="dialog">Корзина <span data-cart-count>0</span></button>
+      <button type="button" class="header-cart" data-cart-open aria-label="Открыть корзину, порций: 0" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true" focusable="false"><path d="m8 9 4-6 4 6M3 9h18l-1.8 10a2 2 0 0 1-2 1.6H6.8a2 2 0 0 1-2-1.6L3 9Zm5 4 .5 4M12 13v4m4-4-.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-cart-count aria-hidden="true">0</span></button>
       <details class="mobile-nav">
         <summary aria-label="Меню сайта"><span></span><span></span></summary>
         <nav aria-label="Мобильная навигация"><a href="#about">О кофейне</a><a href="#menu">Меню</a><a href="#club">Клуб гостей</a><a href="#visit">Контакты</a><a href="registration.html">Присоединиться к клубу ↗</a></nav>
@@ -134,8 +134,8 @@
         </div>
         <p class="menu-status" role="status" data-menu-status></p>
         <button class="button button-outline menu-retry" type="button" data-menu-retry hidden>Попробовать ещё раз</button>
-        <div class="dish-grid" data-dish-grid></div>
-        <div class="breakfast-extras" data-extra-section hidden><h3>Ещё к вашему утру</h3><div class="dish-extras-grid" data-dish-extras></div></div>
+        <div class="dish-grid" data-dish-grid data-reveal-group></div>
+        <div class="breakfast-extras" data-extra-section hidden><h3>Ещё к вашему утру</h3><div class="dish-extras-grid" data-dish-extras data-reveal-group></div></div>
         <p class="menu-empty" data-menu-empty hidden>В этой категории пока нет блюд. Загляните в другие завтраки.</p>
         <noscript><p>Чтобы увидеть карточки блюд, включите JavaScript.</p></noscript>
         <div class="breakfast-footer"><p>Готовим для вас в кофейне. О составе блюд и аллергенах расскажет наша команда.</p></div>

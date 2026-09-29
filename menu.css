@@ -11,22 +11,36 @@
 .breakfast-filters button{border:1px solid var(--line);background:transparent;color:var(--ink);padding:11px 18px;border-radius:99px;min-height:46px;font-size:13px;transition:background .18s,border-color .18s}
 .breakfast-filters button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .breakfast-count{white-space:nowrap;color:var(--muted);font-size:12px}
-.dish-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:38px 24px}
-.dish-card{min-width:0}
+.dish-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:1fr;gap:38px 24px}
+.dish-card{min-width:0;display:flex;flex-direction:column}
 .dish-visual{position:relative;overflow:hidden;aspect-ratio:4/3;border-radius:26px;background:var(--cream);display:grid;place-items:center}
 .dish-photo{width:100%;height:100%;object-fit:cover;transition:transform .4s}
 .dish-badge{position:absolute;left:16px;bottom:16px;font-size:11px;padding:6px 13px;background:var(--paper);border-radius:50px}
-.dish-body{padding:18px 2px 0}
+.dish-body{padding:18px 2px 0;display:flex;flex-direction:column;flex:1}
 .dish-category{color:#817563;font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
 .dish-heading{display:flex;gap:14px;align-items:baseline;justify-content:space-between}
-.dish-heading h3{font-size:20px;font-weight:400;line-height:1.25;letter-spacing:-.025em;margin:0}
+.dish-heading h3{font-size:20px;font-weight:400;line-height:1.25;letter-spacing:-.025em;margin:0;overflow-wrap:anywhere}
 .dish-price{white-space:nowrap;font-size:17px}
 .dish-description{color:var(--muted);font-size:13px;line-height:1.65;margin-top:10px;max-width:95%}
 .dish-image-fallback{font-size:13px;color:var(--muted)}
-.dish-order-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin-top:18px;padding:10px 23px;border:1px solid var(--stone);border-radius:999px;background:transparent;color:var(--ink);font-size:13px;line-height:1.5}.dish-order-button:hover:not(:disabled){background:var(--sun);border-color:var(--sun-deep)}.dish-order-button:disabled{cursor:default;color:var(--muted);border-color:var(--line);font-size:12px}.dish-card-text .dish-order-button{margin-top:14px}.dish-order-button:focus-visible{outline-offset:4px}
+.dish-cart-actions{margin-top:auto;padding-top:18px;min-height:64px;display:flex;align-items:flex-end}
+.dish-visual{flex-shrink:0}
+.dish-order-button{display:inline-flex;align-items:center;justify-content:center;min-height:46px;margin:0;padding:10px 23px;border:1px solid var(--stone);border-radius:999px;background:transparent;color:var(--ink);font-size:13px;line-height:1.5}
+.dish-order-button:hover:not(:disabled){background:var(--sun);border-color:var(--sun-deep)}
+.dish-order-button:disabled{cursor:default;color:var(--muted);border-color:var(--line);font-size:12px}
+.dish-cart-selected{width:100%;min-height:46px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dish-cart-actions [hidden]{display:none!important}
+.dish-in-cart{display:inline-flex;align-items:center;gap:5px;font-size:12px;line-height:1.4;color:#565F43}
+.dish-in-cart svg{flex-shrink:0}
+.dish-quantity{display:inline-flex;align-items:center;flex-shrink:0;background:var(--sun);border:1px solid var(--sun-deep);border-radius:999px}
+.dish-quantity-button{display:grid;place-items:center;width:44px;min-height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);font:inherit;font-size:22px;line-height:1;touch-action:manipulation;cursor:pointer}
+.dish-quantity-value{min-width:28px;text-align:center;font-size:14px;font-variant-numeric:tabular-nums}
+.dish-quantity-button:disabled{opacity:.4;cursor:default}
+.dish-order-button:focus-visible,.dish-quantity-button:focus-visible{outline:2px solid var(--ink);outline-offset:4px}
+@media(hover:hover){.dish-quantity-button:hover:not(:disabled){background:#E5D899}}
 .breakfast-extras{margin-top:46px;padding:30px 34px;border-radius:28px;background:#F0EBDF}
 .breakfast-extras>h3{font-size:24px;font-weight:400;letter-spacing:-.03em;margin:0 0 6px}
-.dish-extras-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 40px}
+.dish-extras-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:0 40px}
 .dish-card-text{padding:23px 0;border-bottom:1px solid #DCD4C3}
 .dish-card-text .dish-body{padding:0}
 .dish-card-text .dish-heading h3{font-size:18px}

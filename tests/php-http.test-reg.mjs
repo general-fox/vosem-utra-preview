@@ -15,6 +15,22 @@ import { createHash } from 'node:crypto';
 import { phpEnvironment } from '../scripts/php-runtime.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+test('REG.RU stable assets are complete without archived images or font source files', async () => {
+  const site = path.join(root, 'dist-reg/site');
+  const names = await readdir(path.join(site, 'assets'));
+  for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg', 'Lato-Regular.woff2',
+    'Lato-Medium.woff2', 'Lato-Italic.woff2', 'Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+    assert.ok(names.includes(name), name);
+  }
+  assert.ok(!names.some(name => /\.(?:ttf|png|jpe?g)$/i.test(name)), 'No unused originals in deployment assets');
+  const templates = path.join(root, 'dist-reg/vosem-utra-private/app/templates');
+  for (const name of ['registration', 'privacy', 'consent']) {
+    const html = await readFile(path.join(templates, name + '.html'), 'utf8');
+    for (const match of html.matchAll(/(?:src|href)="(assets\/[^"?#]+)"/g)) {
+      assert.ok((await readFile(path.join(site, match[1]))).length, `${name}: ${match[1]}`);
+    }
+  }
+});
 test('REG.RU consent receipts hash the current archived documents, not removed public HTML', async () => {
   const site = path.join(root, 'dist-reg/site');
   const privateDir = path.join(root, 'dist-reg/vosem-utra-private');

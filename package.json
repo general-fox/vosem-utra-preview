@@ -33,7 +33,7 @@
     "url": "https://github.com/general-fox/vosem-utra-preview/issues"
   },
   "homepage": "https://github.com/general-fox/vosem-utra-preview#readme",
-  "description": "Кофейня «Восемь утра» — статическая демоверсия сайта",
+  "description": "Кофейня «Восемь утра» — сайт, GitHub-предпросмотр и PHP-сборка для REG.RU",
   "devDependencies": {
     "jsqr": "1.4.0",
     "pngjs": "7.0.0",

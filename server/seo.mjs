@@ -35,7 +35,7 @@ function dishMarkup(item) {
   const available = item.availableForOrder !== false;
   const label = available ? 'В корзину' : 'Временно недоступно';
   const action = `<button class="dish-order-button${available ? '' : ' is-unavailable'}" type="button" data-cart-add="${escapeHtml(item.id)}" aria-label="${label}: ${escapeHtml(item.name)}"${available ? '' : ' disabled'}>${label}</button>`;
-  return `<article class="dish-card${item.image ? '' : ' dish-card-text'}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categories[item.category] || 'Завтраки')}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price">${escapeHtml(money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p>${action}</div></article>`;
+  return `<article class="dish-card${item.image ? '' : ' dish-card-text'}" data-reveal="visual" data-reveal-key="dish:${escapeHtml(item.id)}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categories[item.category] || 'Завтраки')}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price">${escapeHtml(money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p><div class="dish-cart-actions" data-cart-item="${escapeHtml(item.id)}">${action}</div></div></article>`;
 }
 
 /** Initial HTML uses the same card structure as menu.js; no JavaScript is needed to read dishes. */

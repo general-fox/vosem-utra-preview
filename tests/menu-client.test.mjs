@@ -222,6 +222,21 @@ test('returning to the page refreshes current items and keeps a deleted dish rem
   assert.equal(app.parts['menu-retry'].hidden, false);
 });
 
+test('unchanged refresh and category round trip reuse cards without restarting reveal or quantity controls', async () => {
+  const items = [dish(), dish({ id: 'sweet', category: 'sweet', order: 2 })];
+  const app = await browser([response(200, { items }), response(200, { items })]);
+  const card = app.cards()[0];
+  assert.equal(card.dataset.reveal, 'visual');
+  assert.equal(card.dataset.revealKey, 'dish:eggs');
+  assert.equal(byClass(card, 'dish-cart-actions')[0].dataset.cartItem, 'eggs');
+  card.dataset.revealState = 'shown';
+  await app.window.dispatch('focus');
+  assert.equal(app.cards()[0], card);
+  await app.filter('sweet'); await app.filter('eggs');
+  assert.equal(app.cards()[0], card);
+  assert.equal(card.dataset.revealState, 'shown');
+});
+
 
 test('live menu availability disables cart controls independently of publication for photo and text dishes', async () => {
   const app = await browser([response(200, { revision: 23, items: [

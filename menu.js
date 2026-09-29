@@ -12,6 +12,7 @@ const apiBase = new URL(configuredApi ? configuredApi.replace(/\/?$/, '/') : './
 let items = [];
 let selected = 'all';
 let loading = false;
+const cards = new Map();
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -21,7 +22,12 @@ function element(tag, className, text) {
 }
 
 function dishCard(item) {
+  const signature = JSON.stringify(item);
+  const cached = cards.get(item.id);
+  if (cached?.signature === signature) return cached.card;
   const card = element('article', `dish-card${item.image ? '' : ' dish-card-text'}`);
+  card.dataset.reveal = 'visual';
+  card.dataset.revealKey = `dish:${item.id}`;
   if (item.image) {
     const visual = element('div', 'dish-visual');
     const img = element('img', 'dish-photo');
@@ -49,17 +55,28 @@ function dishCard(item) {
   add.dataset.cartAdd = item.id;
   add.disabled = !available;
   add.setAttribute('aria-label', `${available ? 'В корзину' : 'Временно недоступно'}: ${item.name}`);
-  body.append(add);
+  const actions = element('div', 'dish-cart-actions');
+  actions.dataset.cartItem = item.id;
+  actions.append(add);
+  body.append(actions);
   card.append(body);
+  cards.set(item.id, { signature, card });
   return card;
+}
+
+function replaceCards(container, next) {
+  // Keep the live nodes when a background refresh returns the same dishes.
+  // This preserves keyboard focus, quantity controls and completed reveals.
+  const current = [...container.children];
+  if (current.length !== next.length || current.some((card, index) => card !== next[index])) container.replaceChildren(...next);
 }
 
 function render() {
   const visible = items.filter(item => selected === 'all' || item.category === selected);
   const photos = visible.filter(item => item.image);
   const textOnly = visible.filter(item => !item.image);
-  root.querySelector('[data-dish-grid]').replaceChildren(...photos.map(dishCard));
-  root.querySelector('[data-dish-extras]').replaceChildren(...textOnly.map(dishCard));
+  replaceCards(root.querySelector('[data-dish-grid]'), photos.map(dishCard));
+  replaceCards(root.querySelector('[data-dish-extras]'), textOnly.map(dishCard));
   root.querySelector('[data-extra-section]').hidden = textOnly.length === 0;
   root.querySelector('[data-menu-empty]').hidden = visible.length !== 0;
   const count = visible.length;
@@ -68,6 +85,8 @@ function render() {
   for (const button of root.querySelectorAll('[data-menu-filter]')) {
     button.setAttribute('aria-pressed', String(button.dataset.menuFilter === selected));
   }
+  for (const id of cards.keys()) if (!items.some(item => item.id === id)) cards.delete(id);
+  if (typeof CustomEvent === 'function' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('cafe:menu-rendered'));
 }
 
 async function fetchMenu() {
