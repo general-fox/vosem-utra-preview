@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/prepare-local-php.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "build:hosting": "vite build --mode hosting",
@@ -11,9 +12,15 @@
     "hosting:access": "node --env-file-if-exists=.env scripts/prepare-reg-access.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node tests/reveals.test.cjs && node tests/intro-parallax.test.cjs && node tests/fonts.test.cjs && node tests/photos.test.cjs && node --test tests/*.test.mjs",
-    "start": "node --env-file-if-exists=.env server/index.mjs",
-    "admin:password": "node --env-file-if-exists=.env server/set-password.mjs",
-    "admin:setup": "node --env-file-if-exists=.env server/setup-admin.mjs"
+    "start": "npm run dev",
+    "local:prepare": "node scripts/prepare-local-php.mjs",
+    "private:backup": "node scripts/private-data.mjs backup",
+    "private:export": "node scripts/private-data.mjs export",
+    "private:restore": "node scripts/private-data.mjs restore",
+    "admin:add": "node scripts/add-admin-php.mjs",
+    "legacy:start": "node --env-file-if-exists=.env server/index.mjs",
+    "legacy:admin:password": "node --env-file-if-exists=.env server/set-password.mjs",
+    "legacy:admin:setup": "node --env-file-if-exists=.env server/setup-admin.mjs"
   },
   "repository": {
     "type": "git",
@@ -26,7 +33,7 @@
     "url": "https://github.com/general-fox/vosem-utra-preview/issues"
   },
   "homepage": "https://github.com/general-fox/vosem-utra-preview#readme",
-  "description": "Кофейня «Восемь утра» — статическая демоверсия сайта",
+  "description": "Кофейня «Восемь утра» — сайт, GitHub-предпросмотр и PHP-сборка для REG.RU",
   "devDependencies": {
     "jsqr": "1.4.0",
     "pngjs": "7.0.0",

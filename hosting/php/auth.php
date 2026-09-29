@@ -2,11 +2,12 @@
 declare(strict_types=1);
 require_once __DIR__ . '/core.php';
 
-/** One named administrator. Every PHP worker shares one locked, atomic state transaction. */
+/** Named administrators. Every PHP worker shares one locked, atomic state transaction. */
 final class CafeAuth
 {
     private const CHALLENGE_MS = 300000;
     private const RATE_MS = 900000;
+    private const DEVICE_MS = 2592000000;
     private string $directory;
     private array $config;
     private Closure $clock;
@@ -69,8 +70,8 @@ final class CafeAuth
     {
         $algorithm = self::passwordAlgorithm();
         $length = self::passwordLength($password);
-        if ($length < 15 || $length > 1024 || ($algorithm === PASSWORD_BCRYPT && strlen($password) > 72)) {
-            throw new CafeAuthException(400, $algorithm === PASSWORD_BCRYPT ? 'Пароль: от 15 символов, не более 72 байт UTF-8 на этом сервере.' : 'Пароль должен содержать от 15 до 1024 символов.', 'invalid_password');
+        if ($length < 8 || $length > 1024 || ($algorithm === PASSWORD_BCRYPT && strlen($password) > 72)) {
+            throw new CafeAuthException(400, $algorithm === PASSWORD_BCRYPT ? 'Пароль: от 8 символов, не более 72 байт UTF-8 на этом сервере.' : 'Пароль должен содержать от 8 до 1024 символов.', 'invalid_password');
         }
         $hash = password_hash($password, $algorithm, self::passwordOptions($algorithm));
         if (!is_string($hash)) throw new RuntimeException('Password hashing is unavailable.');
@@ -177,8 +178,11 @@ final class CafeAuth
             if (!is_array($state) || ($state['version'] ?? null) !== 1) throw new RuntimeException('Invalid authentication storage.');
             foreach (['sessions', 'challenges', 'enrollments', 'buckets'] as $section) if (!isset($state[$section]) || !is_array($state[$section])) throw new RuntimeException('Invalid authentication storage.');
             $before = $state;
+            $state['accounts'] ??= [];
+            $state['devices'] ??= [];
+            if (!is_array($state['accounts']) || !is_array($state['devices'])) throw new RuntimeException('Invalid account storage.');
             $this->checkpointed = false;
-            foreach (['sessions', 'challenges', 'enrollments'] as $section) foreach ($state[$section] as $key => $value) if (($value['expiresAt'] ?? 0) <= $this->now()) unset($state[$section][$key]);
+            foreach (['sessions', 'challenges', 'enrollments', 'devices'] as $section) foreach ($state[$section] as $key => $value) if (($value['expiresAt'] ?? 0) <= $this->now()) unset($state[$section][$key]);
             foreach ($state['buckets'] as $key => $value) {
                 if (!is_array($value) || !is_int($value['until'] ?? null) || !is_int($value['count'] ?? null) || $value['count'] < 0) throw new RuntimeException('Invalid authentication limits.');
                 if ($value['until'] <= $this->now()) unset($state['buckets'][$key]);
@@ -189,22 +193,29 @@ final class CafeAuth
             return $result;
         });
     }
-    private function account(array $state): ?array
+    private function account(array $state, ?string $username = null): ?array
     {
-        $account = $state['account'] ?? null;
+        $account = ($username !== null ? ($state['accounts'][$username] ?? null) : null) ?? $state['account'] ?? null;
         if ($account !== null) {
             if (!is_array($account) || ($account['version'] ?? null) !== 1 || self::normalizeUsername($account['username'] ?? null) !== $account['username'] || !self::usableHash($account['passwordHash'] ?? null) || !is_string($account['credentialVersion'] ?? null) || !array_key_exists('totp', $account) || !is_array($account['recovery'] ?? null)) throw new RuntimeException('Invalid administrator configuration.');
             return $account;
         }
         $hash = $this->config['bootstrap_password_hash'] ?? null;
-        if (!self::usableHash($hash)) return null;
+        if (!self::usableHash($hash)) {
+            if (!empty($state['accounts'])) {
+                $first = array_key_first($state['accounts']);
+                if (!is_array($state['accounts'][$first]) || ($state['accounts'][$first]['secondary'] ?? false) !== true || ($state['accounts'][$first]['username'] ?? null) !== $first) throw new RuntimeException('Invalid additional account');
+                return $this->account($state, $first);
+            }
+            return null;
+        }
         $username = self::normalizeUsername($this->config['bootstrap_username'] ?? 'admin');
         return ['version' => 1, 'username' => $username, 'passwordHash' => $hash, 'credentialVersion' => hash('sha256', $username . ':' . $hash), 'totp' => null, 'recovery' => []];
     }
-    private function readiness(array $state): array
+    private function readiness(array $state, ?string $username = null): array
     {
         try {
-            $account = $this->account($state);
+            $account = $this->account($state, $username);
             if ($account === null) return ['current' => null, 'ready' => false, 'enrollmentAvailable' => false];
             if (!$this->originReady()) return ['current' => $account, 'ready' => false, 'enrollmentAvailable' => false];
             $this->encryptionKey();
@@ -215,6 +226,41 @@ final class CafeAuth
             }
             return ['current' => $account, 'ready' => $account['totp'] !== null, 'enrollmentAvailable' => $account['totp'] === null];
         } catch (Throwable) { return ['current' => $account ?? null, 'ready' => false, 'enrollmentAvailable' => false]; }
+    }
+    private function saveAccount(array &$state, array $account): void
+    {
+        if (($account['secondary'] ?? false) === true) $state['accounts'][$account['username']] = $account;
+        else $state['account'] = $account;
+    }
+    private function trustedDevice(array $state, ?string $token): ?array
+    {
+        $key = self::tokenKey($token);
+        $device = $key ? ($state['devices'][$key] ?? null) : null;
+        if (!$device || $device['expiresAt'] <= $this->now()) return null;
+        $fresh = $this->readiness($state, $device['username']);
+        return $fresh['ready'] && $fresh['current']['username'] === $device['username'] && $fresh['current']['credentialVersion'] === $device['credentialVersion'] ? $device : null;
+    }
+    private function rememberDevice(array &$state, array $account, ?string $oldToken = null, ?int $expiresAt = null): array
+    {
+        $expiresAt ??= $this->now() + self::DEVICE_MS;
+        if ($key = self::tokenKey($oldToken)) unset($state['devices'][$key]);
+        $token = self::token();
+        $this->boundedAdd($state['devices'], $token, ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'expiresAt' => $expiresAt]);
+        return ['deviceToken' => $token, 'deviceMaxAge' => max(0, (int)floor(($expiresAt - $this->now()) / 1000))];
+    }
+    public function forgetDevice(?string $token): void
+    {
+        $this->transaction(function (array &$state) use ($token) { if ($key = self::tokenKey($token)) unset($state['devices'][$key]); });
+    }
+    public function resume(?string $deviceToken, string $peer): array
+    {
+        return $this->transaction(function (array &$state) use ($deviceToken, $peer) {
+            $device = $this->trustedDevice($state, $deviceToken);
+            if (!$device) throw new CafeAuthException(401, 'Срок запоминания истёк. Войдите с паролем.', 'device_expired');
+            $token = self::token();
+            $this->boundedAdd($state['challenges'], $token, ['type' => 'mfa', 'username' => $device['username'], 'credentialVersion' => $device['credentialVersion'], 'deviceHash' => self::tokenKey($deviceToken), 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0, 'oldTokenHash' => null]);
+            return ['mfaRequired' => true, 'challengeToken' => $token, 'trusted' => true, 'username' => $device['username']];
+        });
     }
     private function reserve(array &$state, string $peer, string $phase): array
     {
@@ -248,7 +294,7 @@ final class CafeAuth
     {
         $key = self::tokenKey($token); $session = $key !== null ? ($state['sessions'][$key] ?? null) : null;
         if ($session === null) return null;
-        $fresh = $this->readiness($state);
+        $fresh = $this->readiness($state, $session['username']);
         if (!$fresh['ready'] || $session['credentialVersion'] !== $fresh['current']['credentialVersion'] || $session['expiresAt'] <= $this->now() || $session['lastSeen'] + ($this->config['idle_ms'] ?? 1800000) <= $this->now()) { unset($state['sessions'][$key]); return null; }
         if ($touch) $state['sessions'][$key]['lastSeen'] = $this->now();
         return $session + ['token' => $token];
@@ -275,16 +321,34 @@ final class CafeAuth
         });
     }
 
-    public function status(?string $token = null): array
+    public function status(?string $token = null, ?string $deviceToken = null): array
     {
-        return $this->transaction(function (array &$state) use ($token) {
+        return $this->transaction(function (array &$state) use ($token, $deviceToken) {
             $session = $this->sessionInState($state, $token);
             if ($session !== null) return ['authenticated' => true, 'csrfToken' => $session['csrfToken']];
             $fresh = $this->readiness($state);
-            return ['authenticated' => false, 'configured' => $fresh['current'] !== null, 'mfaRequired' => true, 'production' => !($this->config['allow_http_dev'] ?? false), 'ready' => $fresh['ready'], 'enrollmentAvailable' => $fresh['enrollmentAvailable']];
+            $device = $this->trustedDevice($state, $deviceToken);
+            return ['authenticated' => false, 'configured' => $fresh['current'] !== null, 'mfaRequired' => true, 'production' => !($this->config['allow_http_dev'] ?? false), 'ready' => $fresh['ready'], 'enrollmentAvailable' => $fresh['enrollmentAvailable']] + ($device ? ['trustedUsername' => $device['username']] : []);
         });
     }
     /** Offline migration/provisioning only. No HTTP route may expose this method. */
+    public function validatePortableState(array $state): void
+    {
+        if (PHP_SAPI !== 'cli') throw new RuntimeException('Offline validation only.');
+        if (($state['version'] ?? null) !== 1 || !is_array($state['accounts'] ?? [])) throw new RuntimeException('Invalid account snapshot.');
+        $users = [];
+        if (($state['account'] ?? null) !== null) $users[] = $state['account']['username'] ?? '';
+        foreach ($state['accounts'] ?? [] as $username => $account) {
+            if (($account['username'] ?? null) !== $username || ($account['secondary'] ?? false) !== true || in_array($username, $users, true)) throw new RuntimeException('Invalid employee snapshot.');
+            $users[] = $username;
+        }
+        foreach ($users ?: [null] as $username) {
+            $fresh = $this->readiness($state, $username);
+            if ($fresh['current'] !== null && !$fresh['ready'] && !$fresh['enrollmentAvailable']) throw new RuntimeException('Account or encryption key cannot be restored.');
+            if ($username !== null && ($fresh['current']['username'] ?? null) !== $username) throw new RuntimeException('Invalid account snapshot.');
+        }
+    }
+
     public function installAccount(array $account): void
     {
         if (PHP_SAPI !== 'cli') throw new CafeAuthException(403, 'Настройка разрешена только локально.', 'forbidden');
@@ -295,6 +359,21 @@ final class CafeAuth
             $state['account'] = $account;
             $state['sessions'] = []; $state['challenges'] = []; $state['enrollments'] = [];
             $this->audit('credentials.installed', '', ['username' => $account['username']]);
+        });
+    }
+    /** Offline only: add, never overwrite the owner or another employee. */
+    public function installAdditionalAccount(array $account): void
+    {
+        if (PHP_SAPI !== 'cli') throw new CafeAuthException(403, 'Настройка разрешена только локально.', 'forbidden');
+        $this->transaction(function (array &$state) use ($account) {
+            $username = self::normalizeUsername($account['username'] ?? null);
+            if ($username === ($this->account($state)['username'] ?? null) || isset($state['accounts'][$username])) throw new RuntimeException('This account already exists; nothing was replaced.');
+            $account['secondary'] = true;
+            $candidate = $state; $candidate['accounts'][$username] = $account;
+            $fresh = $this->readiness($candidate, $username);
+            if (!$fresh['ready'] && !$fresh['enrollmentAvailable']) throw new RuntimeException('Invalid additional account configuration.');
+            $state['accounts'][$username] = $account;
+            $this->audit('credentials.added', '', ['username' => $username]);
         });
     }
     public function session(?string $token, bool $touch = true): ?array { return $this->transaction(fn(array &$state) => $this->sessionInState($state, $token, $touch)); }
@@ -312,18 +391,18 @@ final class CafeAuth
     public function login(array $body, string $peer, ?string $oldToken = null): array
     {
         return $this->transaction(function (array &$state) use ($body, $peer, $oldToken) {
-            $fresh = $this->readiness($state);
+            try { $username = self::normalizeUsername($body['username'] ?? null); } catch (CafeAuthException) { $username = ''; }
+            $fresh = $this->readiness($state, $username);
             if (!$fresh['ready'] && !$fresh['enrollmentAvailable']) throw new CafeAuthException(503, 'Вход администратора требует настройки на сервере.', $fresh['current'] ? 'production_setup_required' : 'not_configured');
             $account = $fresh['current']; $reservation = $this->reserve($state, $peer, 'password');
-            try { $username = self::normalizeUsername($body['username'] ?? null); } catch (CafeAuthException) { $username = ''; }
             $password = $body['password'] ?? null;
             $validPassword = self::checkPassword($password, $account['passwordHash']);
-            if (!$validPassword || !hash_equals($account['username'], $username)) { $this->audit('login.failed', $peer); throw self::invalid(); }
+            if (!$validPassword || !hash_equals($account['username'], $username) || (isset($account['initialExpiresAt']) && $account['initialExpiresAt'] <= $this->now())) { $this->audit('login.failed', $peer); throw self::invalid(); }
             $this->refund($state, $reservation);
             $token = self::token();
-            $pending = ['credentialVersion' => $account['credentialVersion'], 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0];
+            $pending = ['username' => $account['username'], 'secondary' => ($account['secondary'] ?? false) === true, 'credentialVersion' => $account['credentialVersion'], 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0];
             if ($account['totp'] === null) {
-                $requiresNewPassword = self::passwordLength($password) < 15;
+                $requiresNewPassword = ($account['temporaryPassword'] ?? false) === true || self::passwordLength($password) < 8;
                 $passwordHash = $requiresNewPassword ? null : (password_needs_rehash($account['passwordHash'], self::passwordAlgorithm(), self::passwordOptions(self::passwordAlgorithm())) ? self::hashPassword($password) : $account['passwordHash']);
                 $pending += ['type' => 'enrollment', 'requiresNewPassword' => $requiresNewPassword, 'passwordHash' => $passwordHash];
                 $this->boundedAdd($state['challenges'], $token, $pending);
@@ -340,14 +419,17 @@ final class CafeAuth
     {
         return $this->transaction(function (array &$state) use ($body, $peer) {
             [$key, $pending] = $this->pending($state['challenges'], $body['challengeToken'] ?? null, $peer, 'enrollment');
-            $fresh = $this->readiness($state);
+            $fresh = $this->readiness($state, $pending['username'] ?? null);
             if (!$fresh['enrollmentAvailable'] || $fresh['current']['credentialVersion'] !== $pending['credentialVersion']) { unset($state['challenges'][$key]); throw self::expired(); }
             $username = self::normalizeUsername($body['username'] ?? null);
+            if (($pending['secondary'] ?? false) && $username !== $pending['username']) throw new CafeAuthException(400, 'Для этой учётной записи нельзя изменить почту.', 'invalid_username');
+            if (!($pending['secondary'] ?? false) && isset($state['accounts'][$username])) throw new CafeAuthException(400, 'Эта почта уже используется.', 'invalid_username');
             $reservation = $this->reserve($state, $peer, 'enrollment');
-            if ($pending['requiresNewPassword'] && !isset($body['password'])) throw new CafeAuthException(400, 'Укажите новый пароль от 15 символов.', 'invalid_password');
+            if ($pending['requiresNewPassword'] && !isset($body['password'])) throw new CafeAuthException(400, 'Укажите новый пароль от 8 символов.', 'invalid_password');
+            if (($fresh['current']['temporaryPassword'] ?? false) && self::checkPassword($body['password'] ?? null, $fresh['current']['passwordHash'])) throw new CafeAuthException(400, 'Задайте свой пароль, отличный от временного.', 'invalid_password');
             $passwordHash = array_key_exists('password', $body) ? (is_string($body['password']) ? self::hashPassword($body['password']) : throw new CafeAuthException(400, 'Укажите новый пароль.', 'invalid_password')) : $pending['passwordHash'];
             $secret = self::base32Encode(random_bytes(20)); $token = self::token();
-            $this->boundedAdd($state['enrollments'], $token, ['credentialVersion' => $pending['credentialVersion'], 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0, 'username' => $username, 'passwordHash' => $passwordHash, 'encryptedSecret' => $this->encrypt($secret)]);
+            $this->boundedAdd($state['enrollments'], $token, ['accountUsername' => $pending['username'] ?? null, 'secondary' => $pending['secondary'] ?? false, 'credentialVersion' => $pending['credentialVersion'], 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0, 'username' => $username, 'passwordHash' => $passwordHash, 'encryptedSecret' => $this->encrypt($secret)]);
             unset($state['challenges'][$key]); $this->refund($state, $reservation);
             $this->audit('enrollment.started', $peer);
             $uri = 'otpauth://totp/' . rawurlencode('Восемь утра:' . $username) . '?secret=' . $secret . '&issuer=' . rawurlencode('Восемь утра') . '&algorithm=SHA1&digits=6&period=30';
@@ -359,7 +441,7 @@ final class CafeAuth
     {
         return $this->transaction(function (array &$state) use ($body, $peer) {
             [$key, $pending] = $this->pending($state['enrollments'], $body['enrollmentToken'] ?? null, $peer);
-            $fresh = $this->readiness($state);
+            $fresh = $this->readiness($state, $pending['accountUsername'] ?? null);
             if (!$fresh['enrollmentAvailable'] || $fresh['current']['credentialVersion'] !== $pending['credentialVersion']) { unset($state['enrollments'][$key]); throw self::expired(); }
             $reservation = $this->reserve($state, $peer, 'otp');
             $state['enrollments'][$key]['attempts']++;
@@ -373,9 +455,13 @@ final class CafeAuth
             $recovery = [];
             for ($index = 0; $index < 10; $index++) $recovery[] = implode('-', str_split(bin2hex(random_bytes(16)), 4));
             $account = ['version' => 1, 'username' => $pending['username'], 'passwordHash' => $pending['passwordHash'], 'credentialVersion' => self::token(), 'totp' => ['encrypted' => $this->encrypt($secret), 'lastCounter' => $counter], 'recovery' => array_map(self::recoveryHash(...), $recovery)];
-            $state['account'] = $account; $state['sessions'] = []; $state['challenges'] = []; $state['enrollments'] = [];
+            if ($pending['secondary'] ?? false) $account['secondary'] = true;
+            elseif (isset($state['accounts'][$account['username']])) throw new CafeAuthException(400, 'Эта почта уже используется.', 'invalid_username');
+            $this->saveAccount($state, $account);
+            foreach (['sessions', 'challenges', 'enrollments'] as $section) foreach ($state[$section] as $id => $entry) if ($entry['credentialVersion'] === $pending['credentialVersion']) unset($state[$section][$id]);
             $this->refund($state, $reservation); $this->audit('credentials.mfa_enrolled', $peer, ['username' => $account['username']]);
-            return $this->issue($state, $account, $peer) + ['recoveryCodes' => $recovery];
+            $deviceResult = $this->rememberDevice($state, $account);
+            return $this->issue($state, $account, $peer) + ['recoveryCodes' => $recovery] + $deviceResult;
         });
     }
     public function enrollCancel(array $body, string $peer): array
@@ -388,21 +474,25 @@ final class CafeAuth
             return ['cancelled' => true];
         });
     }
-    public function verify(array $body, string $peer): array
+    public function verify(array $body, string $peer, ?string $deviceToken = null): array
     {
-        return $this->transaction(function (array &$state) use ($body, $peer) {
+        return $this->transaction(function (array &$state) use ($body, $peer, $deviceToken) {
             [$key, $pending] = $this->pending($state['challenges'], $body['challengeToken'] ?? null, $peer, 'mfa');
-            $fresh = $this->readiness($state);
+            $fresh = $this->readiness($state, $pending['username'] ?? null);
             if (!$fresh['ready'] || $fresh['current']['credentialVersion'] !== $pending['credentialVersion']) { unset($state['challenges'][$key]); throw self::expired(); }
             $reservation = $this->reserve($state, $peer, 'otp');
             $state['challenges'][$key]['attempts']++;
+            $device = isset($pending['deviceHash']) ? $this->trustedDevice($state, $deviceToken) : null;
+            if (isset($pending['deviceHash']) && (!$device || $pending['deviceHash'] !== self::tokenKey($deviceToken) || $device['username'] !== $fresh['current']['username'])) {
+                unset($state['challenges'][$key]); throw new CafeAuthException(401, 'Войдите с паролем.', 'device_expired');
+            }
             $account = $fresh['current']; $method = 'totp';
             $code = is_string($body['code'] ?? null) && strlen($body['code']) <= 100 ? trim($body['code']) : '';
             $counter = $this->verifyTotp($this->decrypt($account['totp']['encrypted']), $code, $account['totp']['lastCounter']);
             if ($counter !== null) $account['totp']['lastCounter'] = $counter;
             else {
                 $recoveryIndex = false;
-                if (preg_match('/\A[a-fA-F0-9 -]{32,47}\z/', $code)) foreach ($account['recovery'] as $index => $hash) if (hash_equals($hash, self::recoveryHash($code))) { $recoveryIndex = $index; break; }
+                if (!isset($pending['deviceHash']) && preg_match('/\A[a-fA-F0-9 -]{32,47}\z/', $code)) foreach ($account['recovery'] as $index => $hash) if (hash_equals($hash, self::recoveryHash($code))) { $recoveryIndex = $index; break; }
                 if ($recoveryIndex === false) {
                     $this->audit('mfa.failed', $peer);
                     if ($state['challenges'][$key]['attempts'] >= 5) { unset($state['challenges'][$key]); throw self::expired(); }
@@ -410,10 +500,11 @@ final class CafeAuth
                 }
                 array_splice($account['recovery'], $recoveryIndex, 1); $method = 'recovery';
             }
-            $state['account'] = $account; unset($state['challenges'][$key]);
+            $this->saveAccount($state, $account); unset($state['challenges'][$key]);
             if ($pending['oldTokenHash']) unset($state['sessions'][$pending['oldTokenHash']]);
             $this->refund($state, $reservation); $this->audit('mfa.succeeded', $peer, ['method' => $method]);
-            return $this->issue($state, $account, $peer);
+            $deviceResult = $method === 'totp' ? $this->rememberDevice($state, $account, $deviceToken, $device['expiresAt'] ?? null) : [];
+            return $this->issue($state, $account, $peer) + $deviceResult;
         });
     }
 }

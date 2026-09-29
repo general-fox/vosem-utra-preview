@@ -1,44 +1,41 @@
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { createMenuMiddleware } from './server/menu-api.mjs';
-import { createOrdersDevMiddleware } from './server/orders-dev.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+import { createPhpDevMiddleware } from './server/php-dev.mjs';
 import { SITE_URL, transformPage, renderRobots, renderSitemap } from './server/seo.mjs';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
 const env = loadEnv(mode, process.cwd(), '');
 const production = mode === 'hosting';
-const menuApi = createMenuMiddleware({ production: false, username: env.ADMIN_USERNAME, password: env.ADMIN_PASSWORD, encryptionKey: env.AUTH_ENCRYPTION_KEY, publicOrigin: undefined });
 const seed = JSON.parse(readFileSync(new URL('./public/data/menu.json', import.meta.url), 'utf8'));
 return {
   base: './',
   server: {
-    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.data/**', '**/server/**', '**/hosting/**', '**/dist-reg/**', '**/.php-preview/**', '**/orders-data/**'] },
+    host: '127.0.0.1',
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/*.{key,cafebackup,sqlite,sqlite-wal,sqlite-shm,sqlite-journal}', '**/.git/**', '**/.data/**', '**/_archive/**', '**/vosem-utra-private/**', '**/server/**', '**/hosting/**', '**/dist-reg/**', '**/.php-preview/**', '**/orders-data/**'] },
     watch: { ignored: ['**/.data/**', '**/.php-preview/**', '**/dist-reg/**', '**/dist-hosting/**'] },
   },
   plugins: [{
-    name: 'cafe-orders-api',
+    name: 'cafe-php-api',
     configureServer(server) {
-      const orders = createOrdersDevMiddleware();
-      server.middlewares.use(orders.middleware);
-      server.httpServer?.once('close', orders.close);
+      const php = createPhpDevMiddleware();
+      server.middlewares.use(php.middleware);
+      server.httpServer?.once('close', php.close);
     },
     configurePreviewServer(server) {
-      const orders = createOrdersDevMiddleware();
-      server.middlewares.use(orders.middleware);
-      server.httpServer?.once('close', orders.close);
+      const php = createPhpDevMiddleware();
+      server.middlewares.use(php.middleware);
+      server.httpServer?.once('close', php.close);
     },
-  }, {
-    name: 'cafe-menu-api',
-    configureServer(server) { server.middlewares.use(menuApi); },
-    configurePreviewServer(server) { server.middlewares.use(menuApi); },
   }, {
     name: 'cafe-seo',
     transformIndexHtml: {
       order: 'post',
       handler(html, context) {
+        const savedMenu = new URL('./.data/php-runtime/admin-data/menu.json', import.meta.url);
+        const items = command === 'serve' && existsSync(savedMenu) ? JSON.parse(readFileSync(savedMenu, 'utf8')).items : seed.items;
         return transformPage(html, {
-          page: context.filename, production, items: seed.items,
+          page: context.filename, production, items,
           googleVerification: env.GOOGLE_SITE_VERIFICATION,
           yandexVerification: env.YANDEX_VERIFICATION,
         });

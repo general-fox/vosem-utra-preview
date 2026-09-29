@@ -2,10 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { phpBinary } from './php-runtime.mjs';
+import { phpBinary, phpEnvironment } from './php-runtime.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 function run(command, args, quiet = false) {
-  const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', stdio: quiet ? 'pipe' : 'inherit' });
+  const result = spawnSync(command, args, { cwd: root, env: phpEnvironment, encoding: 'utf8', stdio: quiet ? 'pipe' : 'inherit' });
   if (result.error || result.status !== 0) {
     if (quiet) process.stderr.write(result.stdout + result.stderr);
     throw result.error || new Error(`${command} failed (${result.status})`);
@@ -20,5 +20,10 @@ async function lint(directory) {
 }
 await lint(path.join(root, 'hosting'));
 console.log('PHP syntax checks passed.');
+<<<<<<< HEAD
 for (const file of ['tests/php-auth.php', 'hosting/tests/menu-site-test.php', 'tests/php-orders.php', 'tests/php-staff-orders.php', 'tests/php-telegram.php']) run(phpBinary, [file]);
 run(process.execPath, ['--test', 'tests/php-http.test-reg.mjs', 'tests/orders-http.test-reg.mjs', 'tests/staff-http.test-reg.mjs']);
+=======
+for (const file of ['tests/php-auth.php', 'hosting/tests/menu-site-test.php', 'tests/php-orders.php']) run(phpBinary, [file]);
+run(process.execPath, ['--test', 'tests/php-http.test-reg.mjs', 'tests/orders-http.test-reg.mjs', 'tests/php-local.test-reg.mjs']);
+>>>>>>> 8216fb2f4515f8556b59c62b27da785e1ad79b6b

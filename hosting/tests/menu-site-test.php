@@ -166,7 +166,7 @@ try {
     $passed[] = 'HTTPS authentication gate ignores forwarded headers; public page survives missing admin setup';
 
     $htaccess = file_get_contents(dirname(__DIR__).'/public/.htaccess');
-    check(preg_match('/^RewriteRule (\(\^\|\/\)\\\.) - \[F,L\]$/m', $htaccess, $deny) === 1, 'Dot-directory denial exists');
+    check(preg_match('/^RewriteRule (\(\^\|\/\)\\\.) - \[F,L\]\r?$/m', $htaccess, $deny) === 1, 'Dot-directory denial exists');
     foreach (['.git/config','sub/.data/auth.json','x/.env/secret'] as $path) check(preg_match('~'.$deny[1].'~', $path) === 1, 'Dot-folder rule blocks '.$path);
     check(strpos($htaccess, 'acme-challenge') < strpos($htaccess, $deny[0]), 'Certificate exception precedes dot denial');
     check(!preg_match('/RewriteRule .*https:/', $htaccess), 'Hosting-panel redirects are not duplicated');

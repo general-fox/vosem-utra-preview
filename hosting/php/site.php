@@ -27,7 +27,7 @@ function cafe_dish_html(array $item): string {
     $available = ($item['availableForOrder'] ?? true) !== false;
     $label = $available ? 'В корзину' : 'Временно недоступно';
     $action = '<button class="dish-order-button'.($available ? '' : ' is-unavailable').'" type="button" data-cart-add="'.cafe_html($item['id']).'" aria-label="'.$label.': '.$name.'"'.($available ? '' : ' disabled').'>'.$label.'</button>';
-    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html(CAFE_CATEGORIES[$item['category']]).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price">'.cafe_money($item['price']).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p>'.$action.'</div></article>';
+    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html(CAFE_CATEGORIES[$item['category']]).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price">'.cafe_money($item['price']).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p><div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div></div></article>';
 }
 function cafe_schema(array $items): array {
     $published = cafe_published($items); $sections = [];

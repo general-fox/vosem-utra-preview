@@ -22,7 +22,7 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ app.php [END]
 </IfModule>
 
-<FilesMatch "(?i)(^\.|\.(zip|log|bak|sql|sqlite|sqlite3|db|env|ini|key|md|map)(?:-wal|-shm|-journal)?$)">
+<FilesMatch "(?i)(^\.|\.(zip|cafebackup|log|bak|sql|sqlite|sqlite3|db|env|ini|key|md|map)(?:-wal|-shm|-journal)?$)">
 Require all denied
 </FilesMatch>
 <IfModule mod_headers.c>

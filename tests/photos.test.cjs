@@ -22,8 +22,6 @@ function webpSize(file) {
 for (const [file, width, height] of [
   ['hero-two-cups-720.webp', 720, 720], ['hero-two-cups-1254.webp', 1254, 1254],
   ['coffee-soft-720.webp', 720, 1080], ['coffee-soft-853.webp', 853, 1280],
-  ['syrniki-800.webp', 800, 533], ['syrniki-1280.webp', 1280, 853],
-  ['breakfast-plate-800.webp', 800, 533], ['breakfast-plate-1280.webp', 1280, 853],
   ['breakfast-wide-720.webp', 720, 720], ['breakfast-wide-1254.webp', 1254, 1254],
   ['syrniki-wide-720.webp', 720, 720], ['syrniki-wide-1254.webp', 1254, 1254],
   ['cafe-barista-large-640.webp', 640, 843], ['cafe-barista-large-972.webp', 972, 1280],

@@ -278,7 +278,8 @@ function initReveals() {
     return;
   }
 
-  const targets = [...document.querySelectorAll('[data-reveal]')];
+  let targets = [...document.querySelectorAll('[data-reveal]')];
+  const shownKeys = new Set();
   const preparing = new Set();
   const timers = new Map();
   let observer;
@@ -288,6 +289,7 @@ function initReveals() {
     clearTimeout(timers.get(element));
     timers.delete(element);
     element.dataset.revealState = 'shown';
+    if (element.dataset.revealKey) shownKeys.add(element.dataset.revealKey);
     element.style.removeProperty('--reveal-delay');
     observer?.unobserve(element);
   };
@@ -302,15 +304,16 @@ function initReveals() {
     return box.width > 0 && box.height > 0 && box.bottom > 0 &&
       box.top < window.innerHeight - 20;
   };
-  const showWithin = (container) => {
+  const showWithin = (container, visibleOnly = false) => {
     if (!container) return;
     targets.forEach((element) => {
-      if (container.contains(element) || element.contains(container)) finish(element);
+      if ((container.contains(element) || element.contains(container)) &&
+          (!visibleOnly || !element.dataset.revealKey || onScreen(element))) finish(element);
     });
   };
   const showHash = (hash) => {
     try {
-      showWithin(document.getElementById(decodeURIComponent(hash.slice(1))));
+      showWithin(document.getElementById(decodeURIComponent(hash.slice(1))), true);
     } catch { /* A malformed fragment must not affect the page. */ }
   };
 
@@ -333,7 +336,7 @@ function initReveals() {
     preparing.add(element);
     try {
       await imagesReady(element);
-      if (stopped || element.dataset.revealState) return;
+      if (stopped || element.isConnected === false || element.dataset.revealState) return;
       if (preference.matches || document.hidden || element.contains(document.activeElement)) {
         finish(element);
         return;
@@ -343,6 +346,7 @@ function initReveals() {
       observer.unobserve(element);
       element.style.setProperty('--reveal-delay', `${delay}ms`);
       element.dataset.revealState = 'revealing';
+      if (element.dataset.revealKey) shownKeys.add(element.dataset.revealKey);
       const duration = element.dataset.reveal === 'visual' ? 800 :
         element.dataset.reveal === 'fade' ? 400 : 640;
       timers.set(element, setTimeout(() => finish(element), duration + delay + 80));
@@ -366,6 +370,25 @@ function initReveals() {
           void reveal(target, Math.min(rank * 70, 180));
         });
     }, { threshold: 0.08, rootMargin: '0px 0px -20px 0px' });
+
+    // The menu loads and filters after boot. Use this same observer, timing and
+    // image decoding for its cards, without restarting already seen dishes.
+    window.addEventListener('cafe:menu-rendered', () => {
+      try {
+        targets = targets.filter(element => {
+          if (element.isConnected !== false) return true;
+          observer.unobserve(element);
+          clearTimeout(timers.get(element)); timers.delete(element);
+          return false;
+        });
+        for (const element of document.querySelectorAll('[data-reveal]')) {
+          if (targets.includes(element)) continue;
+          targets.push(element);
+          if (stopped || element.dataset.revealState || shownKeys.has(element.dataset.revealKey)) finish(element);
+          else if (root.dataset.motion === 'ready') observer.observe(element);
+        }
+      } catch { disable(); }
+    });
 
     // Two frames preserve the hidden first paint even with a warm browser cache.
     requestAnimationFrame(() => requestAnimationFrame(() => {

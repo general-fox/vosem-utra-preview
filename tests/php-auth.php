@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../hosting/php/auth.php';
 
-const TEST_PASSWORD = 'test-only-password-at-least-15';
+const TEST_PASSWORD = 'test-only-long-password';
 const TEST_NOW = 1800000000000;
 $passwordHash = CafeAuth::hashPassword(TEST_PASSWORD);
 $directories = [];
@@ -70,7 +70,9 @@ try {
         check(CafeAuth::normalizeUsername(' V.Utra@Yandex.RU ') === 'v.utra@yandex.ru');
         check(CafeAuth::normalizeUsername(' OWNER ') === 'owner');
         foreach (['a@@b.ru', '.a@b.ru', 'a..b@c.ru', 'a@-b.ru', "a@b.ru\n", str_repeat('a', 65) . '@b.ru'] as $value) expectError(fn() => CafeAuth::normalizeUsername($value), 'invalid_username');
-        expectError(fn() => CafeAuth::hashPassword('too-short'), 'invalid_password');
+        expectError(fn() => CafeAuth::hashPassword('short-7'), 'invalid_password');
+        expectError(fn() => CafeAuth::hashPassword(str_repeat('я', 7)), 'invalid_password');
+        foreach (['eight-8!', str_repeat('я', 8)] as $password) check(password_verify($password, CafeAuth::hashPassword($password)));
         check(password_verify(TEST_PASSWORD, $passwordHash));
         if (CafeAuth::passwordAlgorithm() === PASSWORD_ARGON2ID) check(password_get_info($passwordHash)['options']['memory_cost'] >= 65536);
         $app = fixture(['bootstrap_password_hash' => password_hash(str_repeat('x', 72), PASSWORD_BCRYPT, ['cost' => 12])]);
@@ -108,13 +110,25 @@ try {
         check(!isset($auth->status($done['token'])['recoveryCodes']));
     });
     runTest('weak bootstrap requires replacement; cancellation leaves account unchanged', function () {
-        $app = fixture(['bootstrap_password_hash' => password_hash('old-password', PASSWORD_BCRYPT)]); $auth = $app['auth'];
-        $pending = $auth->login(credentials('old-password'), 'peer'); check($pending['requiresNewPassword']);
+        $app = fixture(['bootstrap_password_hash' => password_hash('short-7', PASSWORD_BCRYPT)]); $auth = $app['auth'];
+        $pending = $auth->login(credentials('short-7'), 'peer'); check($pending['requiresNewPassword']);
         expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru'], 'peer'), 'invalid_password');
         $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru', 'password' => TEST_PASSWORD], 'peer');
         $auth->enrollCancel(['enrollmentToken' => $started['enrollmentToken']], 'peer');
         expectError(fn() => $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'peer'), 'challenge_expired');
         check(state($app)['account'] === null && state($app)['enrollments'] === []);
+    });
+    runTest('eight-character password can be retained and still requires TOTP', function () {
+        $password = 'eight-8!';
+        $app = fixture(['bootstrap_password_hash' => CafeAuth::hashPassword($password)]); $auth = $app['auth'];
+        $pending = $auth->login(credentials($password), 'peer');
+        check($pending['enrollmentRequired'] && !$pending['requiresNewPassword'] && !isset($pending['token']));
+        $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru'], 'peer');
+        check(state($app)['account'] === null);
+        $done = $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'peer');
+        check($done['authenticated'] && password_verify($password, state($app)['account']['passwordHash']));
+        $pending = $auth->login(credentials($password), 'peer');
+        check($pending['mfaRequired'] && !isset($pending['token']));
     });
     runTest('peer binding, expiry and five-code limit persist across PHP instances', function () {
         $app = fixture(); $auth = $app['auth'];
@@ -196,6 +210,82 @@ try {
         CafeStorage::locked($app['directory'] . '/auth.lock', fn() => CafeStorage::atomicJson($app['directory'] . '/auth-state.json', $saved));
         check(!$app['auth']->status()['ready'] && !$app['auth']->status()['enrollmentAvailable']);
         expectError(fn() => $app['auth']->login(credentials(), 'peer'), 'production_setup_required');
+    });
+    runTest('independent employee enrollment preserves owner credentials and session', function () {
+        global $passwordHash;
+        $app = fixture(); $owner = enroll($app); $auth = $app['auth']; $before = state($app)['account'];
+        $extra = ['version' => 1, 'username' => 'ira@example.test', 'passwordHash' => $passwordHash, 'credentialVersion' => bin2hex(random_bytes(32)), 'totp' => null, 'recovery' => [], 'temporaryPassword' => true, 'initialExpiresAt' => TEST_NOW + 604800000];
+        $auth->installAdditionalAccount($extra);
+        try { $auth->installAdditionalAccount($extra); throw new Exception('Overwrite accepted'); } catch (RuntimeException $error) { check(str_contains($error->getMessage(), 'already exists')); }
+        $pending = $auth->login(['username' => 'IRA@example.test', 'password' => TEST_PASSWORD], 'ira');
+        check($pending['requiresNewPassword']);
+        expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru', 'password' => TEST_PASSWORD], 'ira'), 'invalid_username');
+        expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test'], 'ira'), 'invalid_password');
+        expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => TEST_PASSWORD], 'ira'), 'invalid_password');
+        expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => 'short-7'], 'ira'), 'invalid_password');
+        $newPassword = 'eight-8!';
+        $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => $newPassword], 'ira');
+        $done = $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'ira');
+        check($done['authenticated'] && $done['deviceMaxAge'] === 2592000);
+        check($auth->session($done['token'])['username'] === 'ira@example.test');
+        check(state($app)['account'] === $before);
+        check($auth->session($owner['done']['token']) !== null);
+        check(state($app)['accounts']['ira@example.test']['secondary']);
+        expectError(fn() => $auth->login(['username' => 'ira@example.test', 'password' => TEST_PASSWORD], 'ira'), 'invalid_credentials');
+        $app['clock']->now += 1800001;
+        check($auth->session($done['token']) === null);
+        $auth = new CafeAuth($app['directory'], $app['config']);
+        check($auth->status(null, $done['deviceToken'])['trustedUsername'] === 'ira@example.test');
+        $challenge = $auth->resume($done['deviceToken'], 'ira');
+        expectError(fn() => $auth->verify(['challengeToken' => $challenge['challengeToken'], 'code' => CafeAuth::totp($owner['started']['secret'], $app['clock']->now)], 'ira', $done['deviceToken']), 'invalid_code');
+        $unlocked = $auth->verify(['challengeToken' => $challenge['challengeToken'], 'code' => CafeAuth::totp($started['secret'], $app['clock']->now)], 'ira', $done['deviceToken']);
+        check($auth->session($unlocked['token'])['username'] === 'ira@example.test');
+    });
+    runTest('trusted token is hashed, rotates, needs cookie plus OTP and never extends its 30-day deadline', function () {
+        $app = fixture(); $setup = enroll($app); $auth = $app['auth'];
+        check(isset($setup['done']['deviceToken']) && $setup['done']['deviceMaxAge'] === 2592000);
+        $app['clock']->now += 30000;
+        $pending = $auth->login(credentials(), 'peer');
+        $done = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer');
+        check($done['deviceMaxAge'] === 2592000);
+        check(!str_contains(file_get_contents($app['directory'] . '/auth-state.json'), $done['deviceToken']));
+        check(!$auth->status(null, $done['deviceToken'])['authenticated']);
+        check(!isset($auth->status()['trustedUsername']));
+        $app['clock']->now += 1800000;
+        $auth = new CafeAuth($app['directory'], $app['config']);
+        $pending = $auth->resume($done['deviceToken'], 'peer');
+        expectError(fn() => $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer'), 'device_expired');
+        $pending = $auth->resume($done['deviceToken'], 'peer'); $other = $auth->resume($done['deviceToken'], 'peer');
+        $unlocked = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $done['deviceToken']);
+        check($unlocked['deviceToken'] !== $done['deviceToken'] && $unlocked['deviceMaxAge'] === 2592000 - 1800);
+        expectError(fn() => $auth->verify(['challengeToken' => $other['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $done['deviceToken']), 'device_expired');
+        expectError(fn() => $auth->resume($done['deviceToken'], 'peer'), 'device_expired');
+        $app['clock']->now += 2592000000;
+        expectError(fn() => $auth->resume($unlocked['deviceToken'], 'peer'), 'device_expired');
+    });
+    runTest('device recovery bypass, forgotten token, five wrong codes and changed credentials are rejected', function () {
+        $app = fixture(); $setup = enroll($app); $auth = $app['auth']; $app['clock']->now += 30000;
+        $pending = $auth->login(credentials(), 'peer');
+        $done = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer');
+        $resumed = $auth->resume($done['deviceToken'], 'peer');
+        expectError(fn() => $auth->verify(['challengeToken' => $resumed['challengeToken'], 'code' => $setup['done']['recoveryCodes'][0]], 'peer', $done['deviceToken']), 'invalid_code');
+        $pending = $auth->login(credentials(), 'peer');
+        $recovery = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => $setup['done']['recoveryCodes'][0]], 'peer');
+        check(!isset($recovery['deviceToken']));
+        for ($i = 0; $i < 4; $i++) expectError(fn() => $auth->verify(['challengeToken' => $resumed['challengeToken'], 'code' => 'bad'], 'peer', $done['deviceToken']), $i === 3 ? 'challenge_expired' : 'invalid_code');
+        $auth->forgetDevice($done['deviceToken']); expectError(fn() => $auth->resume($done['deviceToken'], 'peer'), 'device_expired');
+        $app['clock']->now += 30000;
+        $pending = $auth->login(credentials(), 'peer');
+        $again = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer');
+        $changed = state($app)['account']; $changed['credentialVersion'] = bin2hex(random_bytes(32)); $auth->installAccount($changed);
+        expectError(fn() => $auth->resume($again['deviceToken'], 'peer'), 'device_expired');
+    });
+    runTest('expired employee initial password is rejected without affecting owner', function () {
+        global $passwordHash;
+        $app = fixture(); enroll($app);
+        $app['auth']->installAdditionalAccount(['version' => 1, 'username' => 'expired@example.test', 'passwordHash' => $passwordHash, 'credentialVersion' => bin2hex(random_bytes(32)), 'totp' => null, 'recovery' => [], 'temporaryPassword' => true, 'initialExpiresAt' => TEST_NOW]);
+        expectError(fn() => $app['auth']->login(['username' => 'expired@example.test', 'password' => TEST_PASSWORD], 'peer'), 'invalid_credentials');
+        check($app['auth']->login(credentials(), 'peer')['mfaRequired']);
     });
     echo "{$passed} PHP authentication tests passed.\n";
 } finally {

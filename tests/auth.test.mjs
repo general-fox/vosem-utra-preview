@@ -60,7 +60,10 @@ test('new password policy and versioned scrypt parameters are enforced', async (
   assert.equal(PASSWORD_RECORD.N, 131072);
   assert.equal(SCRYPT_PARAMS.r, 8);
   assert.equal(SCRYPT_PARAMS.p, 1);
-  await assert.rejects(makePasswordRecord('short-password'), /15/);
+  await assert.rejects(makePasswordRecord('Abc123!'), /от 8 до 1024/);
+  await assert.rejects(makePasswordRecord('a'.repeat(1025)), /от 8 до 1024/);
+  const minimumRecord = await makePasswordRecord('Abc123!?');
+  assert.equal(await verifyPassword('Abc123!?', minimumRecord), true);
   assert.equal(await verifyPassword(PASSWORD, PASSWORD_RECORD), true);
   assert.equal(await verifyPassword('incorrect-password', PASSWORD_RECORD), false);
 });
@@ -113,9 +116,9 @@ test('expensive password checks have a bounded queue instead of unlimited memory
   assert.equal(results.filter((result) => result.status === 'rejected' && result.reason.code === 'rate_limit').length, 4);
 });
 
-test('legacy hash upgrades only after confirmed MFA without changing a sufficiently strong password', async (t) => {
+test('legacy eight-character password upgrades only after confirmed MFA without requiring replacement', async (t) => {
   const app = await fixture(t);
-  const password = 'old-legacy-password!';
+  const password = 'old-Pw8!';
   const salt = '11'.repeat(32);
   const legacy = { salt, hash: scryptSync(password, salt, 64).toString('hex') };
   await writeFile(path.join(app.dataDir, 'admin-password.json'), JSON.stringify(legacy));
@@ -339,9 +342,10 @@ test('production bootstrap enrollment exposes no session or secret before passwo
   assert.equal(nextLogin.enrollmentRequired, undefined);
 });
 
-test('weak legacy password must be replaced; cancellation and wrong codes preserve the original account', async (t) => {
+test('seven-character legacy password must be replaced; eight-character replacement still requires MFA', async (t) => {
   const app = await fixture(t);
-  const weak = 'old-12-chars!';
+  const weak = 'old-Pw7';
+  const replacement = 'new-Pw8!';
   const salt = '22'.repeat(32);
   const legacy = { salt, hash: scryptSync(weak, salt, 64).toString('hex') };
   await writeFile(path.join(app.dataDir, 'admin-password.json'), JSON.stringify(legacy));
@@ -349,20 +353,24 @@ test('weak legacy password must be replaced; cancellation and wrong codes preser
   let pending = await service.login({ username: 'admin', password: weak }, 'peer');
   assert.equal(pending.requiresNewPassword, true);
   await assert.rejects(service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru' }, 'peer'), { code: 'invalid_password' });
-  await assert.rejects(service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru', password: 'short' }, 'peer'), { code: 'invalid_password' });
-  let started = await service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru', password: PASSWORD }, 'peer');
+  await assert.rejects(service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru', password: 'new-Pw7' }, 'peer'), { code: 'invalid_password' });
+  let started = await service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru', password: replacement }, 'peer');
+  assert.equal(await service.session(started.enrollmentToken), null);
   await assert.rejects(service.enrollmentConfirm({ enrollmentToken: started.enrollmentToken, code: 'wrong' }, 'peer'), { code: 'invalid_code' });
   await service.enrollmentCancel({ enrollmentToken: started.enrollmentToken }, 'peer');
   await assert.rejects(service.enrollmentConfirm({ enrollmentToken: started.enrollmentToken, code: totp(started.secret, { time: TIME }) }, 'peer'), { code: 'challenge_expired' });
   assert.deepEqual(JSON.parse(await readFile(path.join(app.dataDir, 'admin-password.json'), 'utf8')), legacy);
   await assert.rejects(readFile(path.join(app.dataDir, 'admin-auth.json')), { code: 'ENOENT' });
   pending = await service.login({ username: 'admin', password: weak }, 'peer');
-  started = await service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru', password: PASSWORD }, 'peer');
+  started = await service.enrollmentStart({ challengeToken: pending.challengeToken, username: 'v.utra@yandex.ru', password: replacement }, 'peer');
   await service.enrollmentConfirm({ enrollmentToken: started.enrollmentToken, code: totp(started.secret, { time: TIME }) }, 'peer');
   const saved = JSON.parse(await readFile(path.join(app.dataDir, 'admin-auth.json'), 'utf8'));
-  assert.equal(await verifyPassword(PASSWORD, saved.password), true);
+  assert.equal(await verifyPassword(replacement, saved.password), true);
   assert.equal(await verifyPassword(weak, saved.password), false);
   assert.equal(saved.username, 'v.utra@yandex.ru');
+  const nextLogin = await service.login({ username: 'v.utra@yandex.ru', password: replacement }, 'peer');
+  assert.equal(nextLogin.mfaRequired, true);
+  assert.equal(nextLogin.token, undefined);
 });
 
 test('cancelling password challenge and a concurrently queued confirmation prevents enrollment', async (t) => {

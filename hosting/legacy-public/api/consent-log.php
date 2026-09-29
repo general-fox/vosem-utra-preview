@@ -1,7 +1,17 @@
 <?php
 declare(strict_types=1);
 
-const CONSENT_VERSION = '2026-09-21-reg3';
+const CONSENT_VERSION = '2026-09-29-reg4';
+
+function consent_document_hash(string $document): string {
+    if (!in_array($document, ['consent', 'privacy'], true)) throw new RuntimeException('consent_document_invalid');
+    // Public HTML is routed through PHP in the REG.RU package. Keep the exact
+    // versioned text outside the document root rather than hashing missing URLs.
+    $file = dirname(__DIR__, 2).'/vosem-utra-private/legal-versions/'.CONSENT_VERSION.'/'.$document.'.html';
+    $hash = is_file($file) ? hash_file('sha256', $file) : false;
+    if (!is_string($hash)) throw new RuntimeException('consent_document_unavailable');
+    return $hash;
+}
 
 function consent_directory(): string {
     $dir = dirname(__DIR__, 2).'/vosem-utra-private/consents';
@@ -32,8 +42,8 @@ function consent_record(array $payload): string {
     $record = [
         'id'=>$id, 'received_at'=>gmdate('c'), 'version'=>CONSENT_VERSION,
         'consent'=>true, 'captcha_permission'=>true,
-        'consent_sha256'=>hash_file('sha256',dirname(__DIR__).'/consent.html'),
-        'privacy_sha256'=>hash_file('sha256',dirname(__DIR__).'/privacy.html'),
+        'consent_sha256'=>consent_document_hash('consent'),
+        'privacy_sha256'=>consent_document_hash('privacy'),
         'phone_hmac'=>hash_hmac('sha256',$payload['Phone'],$key),
         'payload_hmac'=>hash_hmac('sha256',json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$key),
         'status'=>'submitted',

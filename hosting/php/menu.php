@@ -143,6 +143,7 @@ final class CafeMenu {
     }
     private function peer(): string { return $_SERVER['REMOTE_ADDR'] ?? 'unknown'; }
     private function token(): ?string { return is_string($_COOKIE['vosem_admin'] ?? null) ? $_COOKIE['vosem_admin'] : null; }
+    private function deviceToken(): ?string { return is_string($_COOKIE['vosem_admin_device'] ?? null) ? $_COOKIE['vosem_admin_device'] : null; }
     private function origin(): void {
         $expected = $this->config['public_origin'] ?? 'https://vosem-utra.ru';
         if (($_SERVER['HTTP_ORIGIN'] ?? '') !== $expected || ($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site') throw new CafeMenuException(403, 'Запрос должен быть отправлен с этого сайта.', 'origin');
@@ -154,8 +155,8 @@ final class CafeMenu {
         if ($csrf && (!is_string($provided) || !is_string($session['csrfToken'] ?? null) || !hash_equals($session['csrfToken'], $provided))) throw new CafeMenuException(403, 'Сессия устарела. Обновите страницу и повторите действие.', 'csrf');
         return $session;
     }
-    private function cookie(string $token, int $seconds): void {
-        setcookie('vosem_admin', $token, ['expires'=>$seconds > 0 ? time() + $seconds : time() - 3600, 'path'=>'/api/admin', 'secure'=>!($this->config['allow_http_dev'] ?? false), 'httponly'=>true, 'samesite'=>'Strict']);
+    private function cookie(string $token, int $seconds, string $name = 'vosem_admin'): void {
+        setcookie($name, $token, ['expires'=>$seconds > 0 ? time() + $seconds : time() - 3600, 'path'=>'/api/admin', 'secure'=>!($this->config['allow_http_dev'] ?? false), 'httponly'=>true, 'samesite'=>'Strict']);
     }
     public function storeImage(string $bytes, string $mime): string {
         $extensions = ['image/jpeg'=>'jpg', 'image/png'=>'png', 'image/webp'=>'webp'];
@@ -204,25 +205,34 @@ final class CafeMenu {
                 && (empty($_SERVER['HTTPS']) || $_SERVER['HTTPS'] === 'off')) throw new CafeMenuException(400, 'Для входа используйте защищённое соединение HTTPS.', 'https_required');
             if (!in_array($method, ['GET','HEAD'], true)) $this->origin();
             if (in_array($pathname, ['/api/menu','/data/menu.json'], true) && in_array($method, ['GET','HEAD'], true)) { cafe_json_response($this->catalog()); return true; }
-            if ($pathname === '/api/admin/session' && $method === 'GET') { cafe_json_response($this->auth->status($this->token())); return true; }
+            if ($pathname === '/api/admin/session' && $method === 'GET') { cafe_json_response($this->auth->status($this->token(), $this->deviceToken())); return true; }
+            if ($pathname === '/api/admin/resume' && $method === 'POST') { cafe_json_response($this->auth->resume($this->deviceToken(), $this->peer()), 202); return true; }
+            if ($pathname === '/api/admin/forget-device' && $method === 'POST') {
+                $this->auth->forgetDevice($this->deviceToken()); $this->cookie('', 0, 'vosem_admin_device');
+                cafe_json_response(['forgotten' => true]); return true;
+            }
             if ($pathname === '/api/admin/enroll/start' && $method === 'POST') { cafe_json_response($this->auth->enrollStart(cafe_json_body(), $this->peer())); return true; }
             if ($pathname === '/api/admin/enroll/cancel' && $method === 'POST') { cafe_json_response($this->auth->enrollCancel(cafe_json_body(), $this->peer())); return true; }
             if (in_array($pathname, ['/api/admin/login','/api/admin/verify','/api/admin/enroll/confirm'], true) && $method === 'POST') {
                 $body = cafe_json_body();
                 $result = match ($pathname) {
                     '/api/admin/login'=>$this->auth->login($body, $this->peer(), $this->token()),
-                    '/api/admin/verify'=>$this->auth->verify($body, $this->peer()),
+                    '/api/admin/verify'=>$this->auth->verify($body, $this->peer(), $this->deviceToken()),
                     default=>$this->auth->enrollConfirm($body, $this->peer()),
                 };
                 if (($result['mfaRequired'] ?? false) || ($result['enrollmentRequired'] ?? false)) cafe_json_response($result, 202);
                 else {
                     $this->cookie($result['token'], (int)(($this->config['session_ms'] ?? 28800000) / 1000));
-                    unset($result['token']); cafe_json_response($result);
+                    $this->auth->forgetDevice($this->deviceToken());
+                    $this->cookie($result['deviceToken'] ?? '', $result['deviceMaxAge'] ?? 0, 'vosem_admin_device');
+                    unset($result['token'], $result['deviceToken'], $result['deviceMaxAge']); cafe_json_response($result);
                 }
                 return true;
             }
             if ($pathname === '/api/admin/logout' && $method === 'POST') {
-                $this->requireSession(true); $this->auth->logout($this->token(), $this->peer()); $this->cookie('', 0);
+                if ($this->auth->session($this->token())) $this->requireSession(true);
+                $this->auth->logout($this->token(), $this->peer()); $this->cookie('', 0);
+                $this->auth->forgetDevice($this->deviceToken()); $this->cookie('', 0, 'vosem_admin_device');
                 cafe_json_response(['authenticated'=>false]); return true;
             }
             if ($pathname === '/api/admin/menu' && $method === 'GET') { $this->requireSession(); cafe_json_response($this->read()); return true; }

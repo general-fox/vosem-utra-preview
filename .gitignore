@@ -3,6 +3,12 @@ dist/
 dist-hosting/
 dist-reg/
 dist-reg.zip
+# Local cleanup archives and old release packages never belong in this repository.
+/_archive/
+/backups/
+/review/
+/tmp/
+/*.zip
 .php-preview/
 .vite/
 *.log
@@ -13,6 +19,7 @@ dist-reg.zip
 # Private PHP configuration and runtime data, including copies outside build directories.
 admin-config.php
 admin-access.txt
+admin-access-*.txt
 admin-data/
 vosem-utra-private/
 orders-config.php
@@ -24,3 +31,5 @@ orders-data/
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite-journal
+*.cafebackup
+*.key

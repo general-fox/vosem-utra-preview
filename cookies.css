@@ -1,0 +1,46 @@
+/* The same paper, sunrise motif and pill buttons as the café's main sections. */
+.cookie-notice-open body::after{content:'';display:block;grid-column:1/-1;height:var(--cookie-banner-space,0px);flex:none}
+.cookie-banner{
+  position:fixed;z-index:90;isolation:isolate;left:24px;right:24px;
+  bottom:max(20px,env(safe-area-inset-bottom));width:min(940px,calc(100% - 48px));margin-inline:auto;
+  display:grid;grid-template-columns:minmax(0,1fr) 340px;align-items:center;gap:32px;
+  padding:22px 28px;border:1px solid #DCD3BF;border-radius:28px;
+  background:#F1EBDB;color:var(--ink);box-shadow:0 12px 40px -18px #66583F45,inset 0 1px 0 #FFF9;
+  font-size:13px;line-height:1.6;max-height:calc(100svh - 32px);overflow:auto;
+  animation:cookie-arrive .45s cubic-bezier(.22,1,.36,1) both;
+}
+.cookie-banner::before{
+  content:'';position:absolute;z-index:-1;pointer-events:none;inset:0;border-radius:inherit;
+  background:conic-gradient(from 270deg at 82% 140%,#DED3B744 0deg 30deg,transparent 30deg 60deg,#F9F7F199 60deg 90deg,transparent 90deg 120deg,#FAECBD66 120deg 150deg,transparent 150deg 360deg);
+}
+.cookie-banner[hidden],.cookie-banner [hidden],.cookie-settings[hidden]{display:none!important}
+.cookie-banner-copy{min-width:0}
+.cookie-banner p{margin:0}
+.cookie-banner .cookie-banner-title{display:flex;align-items:center;gap:12px;font-size:23px;line-height:1.25;letter-spacing:-.035em;margin:0 0 8px;font-weight:400}
+.cookie-banner-title::before{content:'';display:block;flex:0 0 40px;width:40px;height:32px;background:url('assets/cookie-sun.svg') center/contain no-repeat}
+.cookie-banner-copy>p:not(.cookie-banner-title){color:var(--muted)}
+.cookie-banner a{color:var(--ink);text-decoration:underline;text-decoration-color:#AA9D81;text-underline-offset:3px;white-space:nowrap}
+.cookie-banner .cookie-banner-status:not(:empty){margin-top:10px;font-size:12px}
+.cookie-banner-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:8px 10px;min-width:0}
+.cookie-banner button{display:inline-flex;align-items:center;justify-content:center;min-width:0;min-height:48px;margin:0;padding:12px 14px;border:1px solid #AAA18F;border-radius:999px;font:inherit;font-size:13px;line-height:1.4;background:#F9F7F166;color:var(--ink);cursor:pointer;transition:background .2s,border-color .2s,transform .2s}
+.cookie-banner button[data-cookie-choice=all]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.cookie-banner .cookie-banner-close{grid-column:1/-1;justify-self:end;min-height:44px;padding:6px 12px;border:0;background:none;font-size:12px;text-decoration:underline;text-decoration-color:#AA9D81;text-underline-offset:4px}
+.cookie-settings{display:inline-flex;align-items:center;min-height:44px;padding:8px 0;border:0;border-radius:0;background:none;color:inherit;font:inherit;font-size:12px;text-decoration:underline;text-decoration-color:var(--stone);text-underline-offset:4px;text-align:left;cursor:pointer}
+.cookie-banner :focus-visible,.cookie-settings:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+html[data-intro] .cookie-banner{visibility:hidden;animation:none}
+@keyframes cookie-arrive{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(hover:hover){
+  .cookie-banner button[data-cookie-choice=all]:hover{background:#49463F;border-color:#49463F;transform:translateY(-1px)}
+  .cookie-banner button[data-cookie-choice=necessary]:hover{background:var(--paper);border-color:#80735C;transform:translateY(-1px)}
+  .cookie-banner a:hover,.cookie-banner .cookie-banner-close:hover,.cookie-settings:hover{text-decoration-color:var(--ink)}
+}
+@media(max-width:760px){
+  .cookie-banner{left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));width:calc(100% - 24px);grid-template-columns:minmax(0,1fr);padding:18px 20px;border-radius:24px;gap:16px;font-size:12px}
+  .cookie-banner .cookie-banner-title{gap:10px;font-size:21px;margin-bottom:6px}
+  .cookie-banner-title::before{flex-basis:34px;width:34px;height:28px}
+  .cookie-banner button{padding:11px 12px;font-size:12px}
+  .cookie-banner .cookie-banner-close{justify-self:center}
+}
+@media(max-width:360px){.cookie-banner{padding:16px;gap:14px}.cookie-banner-actions{column-gap:8px}.cookie-banner button{padding-inline:8px}}
+@media(prefers-reduced-motion:reduce){.cookie-banner{animation:none}.cookie-banner button{transition:none}}
+@media print{.cookie-banner,.cookie-settings,body::after{display:none!important}}

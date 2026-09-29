@@ -5,8 +5,13 @@ declare(strict_types=1);
 $root = realpath($_SERVER['DOCUMENT_ROOT']);
 $raw = explode('?', $_SERVER['REQUEST_URI'] ?? '/')[0];
 $path = rawurldecode($raw);
+<<<<<<< HEAD
 $dynamic = $path === '/' || preg_match('~^/(?:index\.html|admin/?|admin\.html|registration\.html|privacy\.html|consent\.html|checkout\.html|order-terms\.html|staff\.html|staff-demo\.html|robots\.txt|sitemap\.xml|api/(?:admin(?:/.*)?|menu|ordering|orders(?:/.*)?|staff(?:/.*)?|telegram/webhook)|uploads(?:/.*)?|data/menu\.json)$~D', $path);
 $blocked = preg_match('~(?:^|/)(?:\.|vosem-utra-private(?:/|$)|admin-data(?:/|$)|orders?-data(?:/|$)|server(?:/|$)|node_modules(?:/|$)|hosting-tools(?:/|$)|site-build\.json(?:/|$))~i', $path) || str_contains($path, '\\') || str_contains($path, "\0") || preg_match('~\.(?:zip|log|bak|sql|sqlite|sqlite3|db|env|ini|key|md|map)(?:-wal|-shm)?$~i', $path);
+=======
+$dynamic = $path === '/' || preg_match('~^/(?:index\.html|admin/?|admin\.html|registration\.html|privacy\.html|consent\.html|checkout\.html|order-terms\.html|robots\.txt|sitemap\.xml|api/(?:admin(?:/.*)?|menu|ordering|orders(?:/.*)?)|uploads(?:/.*)?|data/menu\.json)$~D', $path);
+$blocked = preg_match('~(?:^|/)(?:\.|vosem-utra-private(?:/|$)|admin-data(?:/|$)|orders?-data(?:/|$)|server(?:/|$)|node_modules(?:/|$)|hosting-tools(?:/|$)|site-build\.json(?:/|$))~i', $path) || str_contains($path, '\\') || str_contains($path, "\0") || preg_match('~\.(?:zip|cafebackup|log|bak|sql|sqlite|sqlite3|db|env|ini|key|md|map)(?:-wal|-shm)?$~i', $path);
+>>>>>>> 8216fb2f4515f8556b59c62b27da785e1ad79b6b
 $file = $root ? realpath($root.'/'.$path) : false;
 if (!$dynamic && !$blocked && $file && is_file($file) && str_starts_with($file, $root.DIRECTORY_SEPARATOR)) {
     if ($path === '/api/register.php') return false;

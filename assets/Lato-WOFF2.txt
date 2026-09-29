@@ -2,7 +2,8 @@ Lato webfont packaging
 
 Original font author: Lukasz Dziedzic. License: SIL Open Font License 1.1.
 See Lato-OFL.txt for the original copyright, Reserved Font Name and license.
-The original TTF files are retained alongside these webfont copies.
+The original TTF files are retained in the repository assets/ for reproducible
+packaging. They are not downloaded by the site or included in the hosting package.
 
 The Regular, Medium and Italic WOFF2 files contain the full character inventory
 of their corresponding TTFs, including Cyrillic. No subsetting, glyph changes,

@@ -11,8 +11,43 @@ import { randomBytes } from 'node:crypto';
 import { phpBinary } from '../scripts/php-runtime.mjs';
 import { totp } from '../server/totp.mjs';
 import { encryptTotp } from '../server/auth.mjs';
+import { createHash } from 'node:crypto';
+import { phpEnvironment } from '../scripts/php-runtime.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+test('REG.RU stable assets are complete without archived images or font source files', async () => {
+  const site = path.join(root, 'dist-reg/site');
+  const names = await readdir(path.join(site, 'assets'));
+  for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg', 'Lato-Regular.woff2',
+    'Lato-Medium.woff2', 'Lato-Italic.woff2', 'Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+    assert.ok(names.includes(name), name);
+  }
+  assert.ok(!names.some(name => /\.(?:ttf|png|jpe?g)$/i.test(name)), 'No unused originals in deployment assets');
+  const templates = path.join(root, 'dist-reg/vosem-utra-private/app/templates');
+  for (const name of ['registration', 'privacy', 'consent']) {
+    const html = await readFile(path.join(templates, name + '.html'), 'utf8');
+    for (const match of html.matchAll(/(?:src|href)="(assets\/[^"?#]+)"/g)) {
+      assert.ok((await readFile(path.join(site, match[1]))).length, `${name}: ${match[1]}`);
+    }
+  }
+});
+test('REG.RU consent receipts hash the current archived documents, not removed public HTML', async () => {
+  const site = path.join(root, 'dist-reg/site');
+  const privateDir = path.join(root, 'dist-reg/vosem-utra-private');
+  const registration = await readFile(path.join(privateDir, 'app/templates/registration.html'), 'utf8');
+  const version = registration.match(/name="ConsentVersion" value="([^"]+)"/)[1];
+  assert.equal(version, '2026-09-29-reg4');
+  const result = spawnSync(phpBinary, ['-r', 'require $argv[1]; echo json_encode([CONSENT_VERSION, consent_document_hash("privacy"), consent_document_hash("consent")]);', path.join(site, 'api/consent-log.php')], { encoding: 'utf8', env: phpEnvironment });
+  assert.equal(result.status, 0, result.stderr);
+  const hashes = JSON.parse(result.stdout);
+  assert.equal(hashes[0], version);
+  for (const [index, page] of ['privacy', 'consent'].entries()) {
+    const displayed = await readFile(path.join(privateDir, 'app/templates', page + '.html'));
+    const archived = await readFile(path.join(privateDir, 'legal-versions', version, page + '.html'));
+    assert.deepEqual(archived, displayed);
+    assert.equal(hashes[index + 1], createHash('sha256').update(displayed).digest('hex'));
+  }
+});
 async function freePort() {
   const server = net.createServer().listen(0, '127.0.0.1');
   await once(server, 'listening'); const port = server.address().port;
@@ -77,6 +112,8 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
     await t.test('pages, cookies, assets, photos and private paths', async () => {
       const home = await request('/'); assert.equal(home.status, 200, serverLog);
       assert.match(home.text, /data-cookie-settings/); assert.match(home.text, /dish-card/);
+      assert.equal((home.text.match(/\bdata-cookie-settings\b/g) || []).length, 1, 'One cookie settings button after REG packaging');
+      assert.doesNotMatch(home.text, /src="cookies\.js\?/, 'Do not load the legacy module alongside its Vite bundle');
       assert.match(home.response.headers.get('Content-Security-Policy'), /nonce-/);
       const urls = new Set([...home.text.matchAll(/(?:src|href)="([^"#]+)"/g)].map((match) => match[1]).filter((url) => !/^(?:https?:|mailto:|tel:|data:)/.test(url)));
       for (const url of urls) {
@@ -147,6 +184,44 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       const verify = await request('/api/admin/verify', { method: 'POST', body: { challengeToken: login.json.challengeToken, code: recovery[0] } }); assert.equal(verify.status, 200);
       const again = await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password } });
       assert.equal((await request('/api/admin/verify', { method: 'POST', body: { challengeToken: again.json.challengeToken, code: recovery[0] } })).status, 401);
+    });
+    await t.test('offline employee add preserves owner; HTTP enrollment sets private device cookie and logout revokes it', async () => {
+      const before = JSON.parse(await readFile(path.join(privateDir, 'admin-data/auth-state.json'), 'utf8')).account;
+      const command = [path.join(privateDir, 'app/add-admin.php'), privateDir, 'ira@example.test'];
+      const created = spawnSync(phpBinary, command, { encoding: 'utf8' });
+      assert.equal(created.status, 0, created.stderr);
+      assert.deepEqual(JSON.parse(await readFile(path.join(privateDir, 'admin-data/auth-state.json'), 'utf8')).account, before);
+      const accessFile = (await readdir(privateDir)).find((name) => /^admin-access-[a-f0-9]+\.txt$/.test(name));
+      const firstPassword = (await readFile(path.join(privateDir, accessFile), 'utf8')).match(/Временный пароль: (.+)/)[1];
+      assert.ok(!created.stdout.includes(firstPassword));
+      assert.notEqual(spawnSync(phpBinary, command, { encoding: 'utf8' }).status, 0);
+      const login = await request('/api/admin/login', { method: 'POST', body: { username: 'ira@example.test', password: firstPassword } });
+      assert.equal(login.status, 202); assert.equal(login.json.requiresNewPassword, true);
+      assert.equal(login.response.headers.get('Set-Cookie'), null);
+      const begin = await request('/api/admin/enroll/start', { method: 'POST', body: { challengeToken: login.json.challengeToken, username: 'ira@example.test', password: 'different-new-fixture-password' } });
+      assert.equal(begin.status, 200, begin.text);
+      const done = await request('/api/admin/enroll/confirm', { method: 'POST', body: { enrollmentToken: begin.json.enrollmentToken, code: totp(begin.json.secret) } });
+      assert.equal(done.status, 200, done.text);
+      assert.equal(done.json.deviceToken, undefined); assert.equal(done.json.token, undefined);
+      const deviceHeader = done.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device='));
+      assert.match(deviceHeader, /HttpOnly/i); assert.match(deviceHeader, /SameSite=Strict/i); assert.match(deviceHeader, /path=\/api\/admin/i); assert.match(deviceHeader, /Max-Age=25920\d\d/i);
+      const deviceCookie = deviceHeader.split(';')[0];
+      const known = await request('/api/admin/session', { headers: { Cookie: deviceCookie } });
+      assert.equal(known.json.authenticated, false); assert.equal(known.json.trustedUsername, 'ira@example.test');
+      assert.equal((await request('/api/admin/menu', { headers: { Cookie: deviceCookie } })).status, 401);
+      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie, Origin: 'https://attacker.example' } })).status, 403);
+      const challenge = await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie }, body: {} });
+      assert.equal(challenge.status, 202);
+      const unlocked = await request('/api/admin/verify', { method: 'POST', headers: { Cookie: deviceCookie }, body: { challengeToken: challenge.json.challengeToken, code: totp(begin.json.secret, { time: Date.now() + 30000 }) } });
+      assert.equal(unlocked.status, 200, unlocked.text);
+      const rotated = unlocked.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')).split(';')[0];
+      assert.notEqual(rotated, deviceCookie);
+      assert.equal(unlocked.json.deviceToken, undefined);
+      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie } })).status, 401);
+      // With only the device cookie (no active session), logout must still forget it.
+      const out = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: rotated }, body: {} });
+      assert.equal(out.status, 200); assert.match(out.response.headers.get('Set-Cookie'), /vosem_admin_device=deleted/);
+      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: rotated } })).status, 401);
     });
   } finally {
     await stop();

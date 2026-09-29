@@ -27,23 +27,37 @@ await cp(path.join(root, 'hosting/legacy-public'), site, { recursive: true });
 await cp(path.join(root, 'hosting/legacy-private'), privateRoot, { recursive: true });
 await cp(path.join(root, 'hosting/php'), app, { recursive: true });
 await cp(path.join(root, 'hosting/public'), site, { recursive: true });
-// Old registration pages reference these stable local asset URLs.
-await cp(path.join(root, 'assets'), path.join(site, 'assets'), { recursive: true });
+// The PHP registration/legal pages keep stable URLs instead of Vite's hashed URLs.
+// Copy only their dependencies, not font sources or unused photo originals.
+await mkdir(path.join(site, 'assets'), { recursive: true });
+for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg',
+  'Lato-Regular.woff2', 'Lato-Medium.woff2', 'Lato-Italic.woff2',
+  'Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+  await cp(path.join(root, 'assets', name), path.join(site, 'assets', name));
+}
 await cp(path.join(root, 'style.css'), path.join(site, 'style.css'));
 await cp(path.join(root, 'site.js'), path.join(site, 'site.js'));
 await mkdir(path.join(app, 'seed'), { recursive: true });
 await cp(path.join(root, 'public/data/menu.json'), path.join(app, 'seed/menu.json'));
 for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', 'checkout', 'order-terms', 'staff', 'staff-demo']) {
   let html = await readFile(path.join(site, `${page}.html`), 'utf8');
-  if (page === 'index') {
-    html = html.replace('</head>', '  <link rel="stylesheet" href="cookies.css?v=20260921-reg3">\n  <script type="module" src="cookies.js?v=20260921-reg3"></script>\n</head>');
-    html = html.replace('<a href="privacy.html#cookies">Файлы cookie</a>', '<a href="privacy.html#cookies">Файлы cookie</a><button class="cookie-settings" type="button" data-cookie-settings hidden>Настройки cookie</button>');
-  }
+  // The current homepage already includes cookies.js and its settings button.
+  // Vite bundles that module: injecting the legacy URL too creates two banners.
   await writeFile(path.join(app, 'templates', `${page}.html`), html);
   // HTML pages must pass through PHP (fresh menu, nonce, noindex); never leave a static bypass.
   await rm(path.join(site, `${page}.html`));
 }
 // Public JSON also passes through PHP and cannot leak a hidden seed item.
+// Each registration receipt refers to an immutable copy of the displayed legal
+// documents. Keep earlier revisions; never relabel them with the current text.
+const consentLog = await readFile(path.join(site, 'api/consent-log.php'), 'utf8');
+const legalVersion = consentLog.match(/const CONSENT_VERSION = '([0-9]{4}-[0-9]{2}-[0-9]{2}-reg[0-9]+)';/)?.[1];
+if (!legalVersion) throw new Error('Missing legal document version');
+const legalArchive = path.join(privateRoot, 'legal-versions', legalVersion);
+await mkdir(legalArchive, { recursive: true });
+for (const page of ['privacy', 'consent']) {
+  await cp(path.join(app, 'templates', `${page}.html`), path.join(legalArchive, `${page}.html`), { force: false, errorOnExist: true });
+}
 await rm(path.join(site, 'data'), { recursive: true, force: true });
 await rm(path.join(site, 'site-build.json'), { force: true });
 await rm(path.join(site, 'robots.txt'), { force: true });
@@ -55,6 +69,7 @@ await cp(path.join(root, 'hosting/telegram-config.example.php'), path.join(priva
 for (const file of ['telegram-worker.php', 'telegram-setup.php']) await cp(path.join(root, 'hosting', file), path.join(privateRoot, file));
 await cp(path.join(root, 'hosting/prepare-access.php'), path.join(privateRoot, 'prepare-access.php'));
 await cp(path.join(root, 'docs/reg-upload.md'), path.join(output, 'READ-ME.md'));
+await cp(path.join(root, 'docs/local-runtime-and-transfer.md'), path.join(output, 'local-runtime-and-transfer.md'));
 await cp(path.join(root, 'docs/delivery.md'), path.join(output, 'delivery.md'));
 await cp(path.join(root, 'docs/telegram.md'), path.join(output, 'telegram.md'));
 // A package never includes runtime data or the old integration credentials.

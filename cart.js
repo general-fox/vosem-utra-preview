@@ -1,5 +1,6 @@
 import { cartStore, cartSummary, CART_KEY } from './cart-store.js';
 import { fetchCatalog, money } from './order-client.js';
+import { syncDishCartControls } from './dish-cart.js';
 
 const node = (tag, className, text) => { const el = document.createElement(tag); el.className = className; if (text !== undefined) el.textContent = text; return el; };
 let catalog = []; let baseline = []; let live = false; let busy = false; let verified = false;
@@ -15,6 +16,8 @@ function currentSummary() { return cartSummary(cartStore.lines, catalog, baselin
 function updateEntry() {
   const { count, subtotalMinor, rows } = currentSummary();
   document.querySelectorAll('[data-cart-count]').forEach(el => { el.textContent = String(count); });
+  document.querySelectorAll('.header-cart').forEach(el => { el.setAttribute('aria-label', `Открыть корзину, порций: ${count}`); });
+  syncDishCartControls(document, cartStore.lines);
   floating.textContent = count ? `Корзина · ${count} · ${rows.every(row => row.unitMinor !== null) ? money(subtotalMinor) : 'проверить'}` : 'Корзина · 0';
   floating.setAttribute('aria-label', `Открыть корзину, порций: ${count}`);
 }
@@ -71,16 +74,37 @@ $('.cart-checkout').addEventListener('click', () => { if (!$('.cart-checkout').d
 document.addEventListener('click', async event => {
   const open = event.target.closest('[data-cart-open]');
   if (open) { if (!dialog.open) dialog.showModal(); await refresh(); return; }
+  const quantityButton = event.target.closest('[data-dish-delta]');
+  if (quantityButton && !quantityButton.disabled) {
+    const actions = quantityButton.closest('[data-cart-item]');
+    const id = actions.dataset.cartItem;
+    const delta = Number(quantityButton.dataset.dishDelta);
+    const qty = cartStore.lines.find(line => line.id === id)?.qty || 0;
+    const name = actions.closest('.dish-card').querySelector('h3').textContent;
+    try {
+      if (delta > 0 && (!catalog.some(item => item.id === id && item.published && item.availableForOrder !== false))) throw new Error('Блюдо временно недоступно. Обновите меню.');
+      const focused = document.activeElement === quantityButton;
+      cartStore.setQuantity(id, Math.max(0, qty + delta));
+      if (focused && qty + delta <= 0) actions.querySelector('[data-cart-add]').focus({ preventScroll: true });
+      else if (focused && quantityButton.disabled) actions.querySelector('[data-dish-delta="-1"]').focus({ preventScroll: true });
+      announce(qty + delta > 0 ? `${name} — в корзине: ${qty + delta}` : `${name} — убрали из корзины`);
+    } catch (error) { announce(error.message); }
+    return;
+  }
   const button = event.target.closest('[data-cart-add]');
   if (!button || button.disabled) return;
   try {
     if (!catalog.length) receiveMenu(await fetchCatalog({ allowStatic: true }));
     const item = catalog.find(entry => entry.id === button.dataset.cartAdd);
     if (!item || !item.published || item.availableForOrder === false) throw new Error('Блюдо временно недоступно. Обновите меню.');
-    cartStore.add(item.id); announce(`${item.name} — в корзине`);
+    const focused = document.activeElement === button;
+    cartStore.add(item.id);
+    if (focused) button.closest('[data-cart-item]')?.querySelector('[data-dish-delta="1"]')?.focus({ preventScroll: true });
+    announce(`${item.name} — в корзине`);
   } catch (error) { announce(error.message); }
 });
 window.addEventListener('cafe:menu', event => receiveMenu(event.detail));
-window.addEventListener('storage', event => { if (event.key === CART_KEY) { cartStore.reload(); if (dialog.open) refresh(); } });
+window.addEventListener('cafe:menu-rendered', () => syncDishCartControls(document, cartStore.lines));
+window.addEventListener('storage', event => { if (event.key === CART_KEY || event.key === null) { cartStore.reload(); if (dialog.open) refresh(); } });
 cartStore.subscribe(render);
 receiveMenu(window.cafeMenuSnapshot); render();

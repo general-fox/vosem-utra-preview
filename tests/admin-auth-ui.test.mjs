@@ -29,7 +29,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
   function makeNode(attributes = new Map(), hidden = false) {
     const handlers = new Map();
     return {
-      value: attributes.get('value') || '', hidden, disabled: false, checked: false,
+      value: attributes.get('value') || '', type: attributes.get('type') || '', hidden, disabled: false, checked: false,
       textContent: '', open: false, dataset: {}, attributes, handlers, children: [],
       inputMode: attributes.get('inputmode') || '', autocomplete: attributes.get('autocomplete') || '',
       setAttribute(name, value) { attributes.set(name, String(value)); },
@@ -370,6 +370,30 @@ test('an available first enrollment permits password login but reveals setup dat
   assert.equal(app.node('enrollment-qr-image').getAttribute('src'), enrollmentStart.qrDataUrl);
 });
 
+test('new password minimum is eight in HTML, help and enrollment validation', async () => {
+  for (const required of [true, false]) {
+    const app = await page(enrollmentSession);
+    await enrollmentPasswordStep(app, required);
+    for (const id of ['enrollment-password', 'enrollment-password-confirm']) {
+      assert.equal(app.node(id).getAttribute('minlength'), '8');
+      assert.equal(app.node(id).getAttribute('maxlength'), '1024');
+      app.node(id).value = 'short-7';
+    }
+    assert.match(app.node('enrollment-password-help').textContent, /8/);
+    await app.trigger('enrollment-form', 'submit');
+    assert.equal(app.calls.length, 2, 'Seven characters must not reach the server');
+    assert.match(app.node('enrollment-error').textContent, /от 8 до 1024/);
+    app.node('enrollment-password').value = 'eight-8!';
+    app.node('enrollment-password-confirm').value = 'eight-8!';
+    app.responses.push({ body: enrollmentStart });
+    await app.trigger('enrollment-form', 'submit');
+    assert.equal(app.calls[2].body.password, 'eight-8!');
+    assert.equal(app.node('enrollment-verify-form').hidden, false);
+    assert.equal(app.node('dashboard').hidden, true, 'A valid password still needs TOTP');
+    assert.equal(app.state.csrfToken, '');
+  }
+});
+
 test('wrong enrollment codes cannot open the menu and recovery codes must be saved before continuing', async () => {
   const app = await page(enrollmentSession);
   await showTestQr(app);
@@ -547,4 +571,107 @@ test('malformed availability from the menu server is rejected rather than silent
   for (const availableForOrder of [null, 'false', 0]) {
     assert.throws(() => app.validateMenu({ items: [{ id: 'bad', availableForOrder }], revision: 1 }), /некорректную доступность/);
   }
+});
+
+test('remembering the browser is automatic with no checkbox or opt-in request flag', async () => {
+  const app = await page();
+  assert.doesNotMatch(html, /id="remember-device"/);
+  assert.match(html, /Запомним браузер на 30 дней/);
+  await passwordStep(app);
+  assert.deepEqual(app.calls[1].body, { username: 'cafe-admin', password: 'example-password-only-for-tests' });
+  app.node('verification-code').value = '001234'; successfulVerify(app);
+  await app.trigger('verify-form', 'submit');
+  assert.deepEqual(app.calls[2].body, { challengeToken: 'memory-only-challenge', code: '001234' });
+});
+
+test('password eyes reveal and hide each field independently without submitting or changing its value', async () => {
+  const app = await page();
+  const ids = ['password', 'enrollment-password', 'enrollment-password-confirm'];
+  for (const id of ids) {
+    const input = app.node(id); const button = app.node(`${id}-toggle`);
+    input.value = 'fixture-password-to-inspect';
+    assert.equal(input.type, 'password');
+    assert.equal(button.getAttribute('type'), 'button');
+    assert.equal(button.getAttribute('aria-controls'), id);
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    await app.trigger(`${id}-toggle`);
+    assert.equal(input.type, 'text');
+    assert.equal(button.getAttribute('aria-pressed'), 'true');
+    assert.match(button.getAttribute('aria-label'), /^Скрыть /);
+    for (const other of ids.filter((value) => value !== id)) assert.equal(app.node(other).type, 'password');
+    await app.trigger(`${id}-toggle`);
+    assert.equal(input.type, 'password');
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    assert.match(button.getAttribute('aria-label'), /^Показать /);
+    assert.equal(input.value, 'fixture-password-to-inspect');
+  }
+  assert.equal(app.calls.length, 1, 'Visibility toggles must not make network requests');
+});
+
+test('password visibility resets on submission and cancellation, including failed login', async () => {
+  const app = await page();
+  app.node('username').value = 'cafe-admin'; app.node('password').value = 'fixture-invalid-password';
+  await app.trigger('password-toggle');
+  app.responses.push({ status: 401, body: { error: 'Неверный пароль.' } });
+  await app.trigger('login-form', 'submit');
+  assert.equal(app.node('password').type, 'password');
+  assert.equal(app.node('password').value, '');
+  assert.equal(app.node('password-toggle').getAttribute('aria-pressed'), 'false');
+  await passwordStep(app);
+  assert.equal(app.node('password').type, 'password');
+  await app.trigger('auth-back');
+  assert.equal(app.node('password-toggle').getAttribute('aria-pressed'), 'false');
+});
+
+test('trusted browser shows saved identity and code only, then requests a cookie-bound challenge', async () => {
+  const app = await page({ authenticated: false, configured: true, ready: true, trustedUsername: 'ira@example.test' });
+  assert.equal(app.node('login-form').hidden, true);
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.node('code-mode').hidden, true);
+  assert.match(app.node('auth-description').textContent, /ira@example.test/);
+  assert.equal(app.node('username').value, 'ira@example.test');
+  assert.equal(app.state.csrfToken, '');
+  app.node('verification-code').value = '001234';
+  app.responses.push({ status: 202, body: { mfaRequired: true, challengeToken: 'trusted-challenge' } });
+  successfulVerify(app);
+  await app.trigger('verify-form', 'submit');
+  assert.equal(app.calls[1].url, '/api/admin/resume');
+  assert.deepEqual(app.calls[1].body, {});
+  assert.deepEqual(app.calls[2].body, { challengeToken: 'trusted-challenge', code: '001234' });
+  assert.equal(app.node('dashboard').hidden, false);
+  assert.equal(app.auth.trustedUsername, '');
+});
+
+test('expired device requires password; switching accounts forgets the server-side device', async () => {
+  const app = await page({ authenticated: false, configured: true, ready: true, trustedUsername: 'ira@example.test' });
+  app.node('verification-code').value = '001234';
+  app.responses.push({ status: 401, body: { code: 'device_expired', error: 'Войдите с паролем.' } });
+  await app.trigger('verify-form', 'submit');
+  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.node('verify-form').hidden, true);
+  const other = await page({ authenticated: false, configured: true, ready: true, trustedUsername: 'ira@example.test' });
+  other.responses.push({ body: { forgotten: true } });
+  await other.trigger('auth-back');
+  assert.equal(other.calls.at(-1).url, '/api/admin/forget-device');
+  assert.equal(other.node('login-form').hidden, false);
+});
+
+test('idle expiry presents OTP unlock without losing the open dish draft', async () => {
+  const app = await page();
+  app.state.csrfToken = 'old-csrf'; app.node('editor-dialog').open = true; app.draft.dirty = true;
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  app.sessionExpired({ status: 401 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(app.draft.resume, true); assert.equal(app.draft.dirty, true);
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.auth.trustedUsername, 'ira@example.test');
+});
+
+test('additional account enrollment uses the authenticated email instead of the owner preset', async () => {
+  const app = await page();
+  app.node('username').value = 'ira@example.test'; app.node('password').value = 'temporary-fixture-password';
+  app.responses.push({ status: 202, body: { enrollmentRequired: true, challengeToken: 'ira-setup', username: 'ira@example.test', requiresNewPassword: true } });
+  await app.trigger('login-form', 'submit');
+  assert.equal(app.node('enrollment-username').value, 'ira@example.test');
+  assert.equal(app.node('enrollment-password').required, true);
 });
