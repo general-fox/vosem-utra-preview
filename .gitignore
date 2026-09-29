@@ -1,7 +1,24 @@
 node_modules/
 dist/
+dist-hosting/
+dist-reg/
+dist-reg.zip
+.php-preview/
 .vite/
 *.log
 .env
 .env.*
 !.env.example
+.data/
+# Private PHP configuration and runtime data, including copies outside build directories.
+admin-config.php
+admin-access.txt
+admin-data/
+vosem-utra-private/
+orders-config.php
+order-data/
+orders-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal

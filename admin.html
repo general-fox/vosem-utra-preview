@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#F9F7F1">
+  <title>Управление меню — Восемь утра</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/Lato-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
+  <script type="module" src="admin.js"></script>
+</head>
+<body class="admin-page">
+  <a class="skip-link" href="#main">К управлению меню</a>
+  <header class="admin-header">
+    <a href="index.html" class="admin-logo" aria-label="Восемь утра — на главную"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"></a>
+    <div class="admin-header-actions"><a href="index.html#menu" class="text-link" target="_blank" rel="noopener">Открыть сайт <span aria-hidden="true">↗</span><span class="visually-hidden"> в новой вкладке</span></a><button class="button button-outline button-small" id="logout" type="button" hidden>Выйти</button></div>
+  </header>
+  <main id="main" class="admin-main">
+    <p class="connection-status" id="connection-status" role="status">Проверяем подключение…</p>
+    <section class="login-layout" id="login-panel" aria-labelledby="login-title" hidden>
+      <div class="login-brand">
+        <span class="login-sun" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span>
+        <div><p class="eyebrow">ВОСЕМЬ УТРА · ДЛЯ КОМАНДЫ</p><h1 id="login-title">Хорошее утро<br>начинается с меню</h1><p>Всё, что любят наши гости,<br>и новые поводы заглянуть на завтрак.</p></div>
+        <p class="login-brand-note">Забота о деталях — наша хорошая привычка.</p>
+      </div>
+      <div class="login-form-wrap">
+        <p class="eyebrow">УПРАВЛЕНИЕ МЕНЮ</p><h2 id="auth-heading" tabindex="-1">Рады видеть вас</h2><p class="muted" id="auth-description">Войдите, чтобы добавлять блюда, обновлять фотографии и цены.</p>
+        <div class="auth-setup" id="auth-setup" role="status" hidden><p>Вход пока недоступен. Обратитесь к администратору сервера, чтобы подготовить защищённое подключение.</p><button type="button" class="text-link" id="check-setup">Проверить готовность ↻</button></div>
+        <form id="login-form" aria-labelledby="auth-heading">
+          <div class="admin-field"><label for="username">Почта или логин</label><input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.ru или логин" required minlength="3" maxlength="254" title="Введите почту администратора или ранее настроенный логин."></div>
+          <div class="admin-field"><label for="password">Пароль</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024"></div>
+          <p class="admin-message error" id="login-error" role="alert" hidden></p>
+          <button type="submit" class="button button-dark" id="login-submit">Продолжить <span aria-hidden="true">↗</span></button>
+        </form>
+        <form id="verify-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step">Подтверждение входа</p>
+          <div class="admin-field"><label for="verification-code" id="verification-label">Код из Яндекс ID (Ключ)</label><input id="verification-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" pattern="[0-9]{6}" minlength="6" maxlength="6" required aria-describedby="verification-help"><p class="field-help" id="verification-help">В Яндекс ID (Ключ) выберите «Восемь утра» и введите 6 цифр. Код можно вставить целиком.</p></div>
+          <p class="admin-message error" id="verification-error" role="alert" hidden></p>
+          <button type="submit" class="button button-dark" id="verify-submit">Подтвердить вход <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="code-mode">Использовать резервный код</button><button type="button" class="text-link" id="auth-back">← К почте и паролю</button></div>
+        </form>
+        <form id="enrollment-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step">1 из 3 · Данные для входа</p>
+          <div class="admin-field"><label for="enrollment-username">Почта администратора</label><input id="enrollment-username" name="username" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required aria-describedby="enrollment-email-help"><p class="field-help" id="enrollment-email-help">Эта почта станет вашим логином для следующих входов.</p></div>
+          <div class="admin-field"><label for="enrollment-password">Новый пароль <small id="enrollment-password-option">необязательно</small></label><input id="enrollment-password" name="newPassword" type="password" autocomplete="new-password" minlength="15" maxlength="1024" aria-describedby="enrollment-password-help"><p class="field-help" id="enrollment-password-help">Можно оставить текущий пароль или задать новый — не менее 15 символов.</p></div>
+          <div class="admin-field"><label for="enrollment-password-confirm">Повторите новый пароль</label><input id="enrollment-password-confirm" name="confirmPassword" type="password" autocomplete="new-password" minlength="15" maxlength="1024"></div>
+          <p class="admin-message error" id="enrollment-error" role="alert" hidden></p>
+          <button type="submit" class="button button-dark" id="enrollment-start">Показать QR-код <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="enrollment-back">← Отменить настройку</button></div>
+        </form>
+        <form id="enrollment-verify-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step">2 из 3 · Подключение телефона</p>
+          <ol class="enrollment-steps"><li>Откройте Яндекс ID (Ключ) и добавьте аккаунт.</li><li>Отсканируйте QR-код. Выберите запись «Восемь утра».</li><li>Введите шестизначный код из этой записи ниже.</li></ol>
+          <figure class="enrollment-qr"><img id="enrollment-qr-image" width="260" height="260" alt="QR-код для добавления «Восемь утра» в Яндекс ID (Ключ)"><figcaption>Не передавайте QR-код другим людям.</figcaption></figure>
+          <p id="enrollment-expires" class="field-help"></p>
+          <details id="enrollment-manual" class="enrollment-manual"><summary>Ввести ключ вручную</summary><p>Добавьте аккаунт «Восемь утра» с этим ключом. Тип: TOTP, 6 цифр, 30 секунд, SHA-1.</p><code id="enrollment-secret"></code></details>
+          <div class="admin-field"><label for="enrollment-code">Код из Яндекс ID (Ключ)</label><input id="enrollment-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" pattern="[0-9]{6}" minlength="6" maxlength="6" required aria-describedby="enrollment-code-help"><p id="enrollment-code-help" class="field-help">Подключение завершится только после проверки кода.</p></div>
+          <p class="admin-message error" id="enrollment-verify-error" role="alert" hidden></p>
+          <button type="submit" class="button button-dark" id="enrollment-confirm">Подтвердить подключение <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="enrollment-cancel">← Отменить настройку</button></div>
+        </form>
+        <form id="enrollment-recovery-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step">3 из 3 · Сохраните доступ</p>
+          <p class="recovery-note">Эти коды показываются один раз. Сохраните их в менеджере паролей: они помогут войти без телефона. Каждый код действует один раз после ввода пароля.</p>
+          <ol class="recovery-codes" id="enrollment-recovery-codes" aria-label="Резервные коды"></ol>
+          <label class="recovery-confirmation" for="saved-recovery-codes"><input type="checkbox" id="saved-recovery-codes" required><span>Сохранила резервные коды</span></label>
+          <p class="admin-message error" id="recovery-error" role="alert" hidden></p>
+          <button type="submit" class="button button-dark" id="enrollment-continue" disabled>Перейти к меню <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="recovery-logout">Выйти</button></div>
+        </form>
+        <p class="login-help">Доступ только для команды кофейни.</p>
+      </div>
+    </section>
+    <section id="dashboard" aria-labelledby="dashboard-title" hidden>
+      <div class="dashboard-intro"><div><p class="eyebrow">ВОСЕМЬ УТРА · УПРАВЛЕНИЕ МЕНЮ</p><h1 id="dashboard-title">Наши завтраки</h1><p class="muted">Меняйте меню здесь — гости увидят обновления на сайте.</p></div><button type="button" class="button button-dark" id="add-item">Добавить блюдо <span aria-hidden="true">+</span></button></div>
+      <div class="menu-summary" aria-label="Состояние меню"><div><strong id="total-count">—</strong><span>всего в меню</span></div><div><strong id="published-count">—</strong><span>видно на сайте</span></div><div><strong id="hidden-count">—</strong><span>скрыто от гостей</span></div><p><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span> Маленькие изменения<br>для большого аппетита.</p></div>
+      <div class="admin-notice" id="dashboard-notice" hidden><p id="dashboard-message" role="status"></p><button type="button" class="text-link" id="retry-load" hidden>Обновить меню ↻</button></div>
+      <div class="menu-toolbar"><div class="admin-search"><label class="visually-hidden" for="search">Найти блюдо по названию или описанию</label><span aria-hidden="true">⌕</span><input type="search" id="search" placeholder="Найти блюдо" autocomplete="off"></div><div class="admin-filter"><label class="visually-hidden" for="category-filter">Раздел меню</label><select id="category-filter"><option value="all">Все разделы</option><option value="signature">Фирменные завтраки</option><option value="eggs">Яйца и тосты</option><option value="porridge">Каши и гранола</option><option value="sweet">Сладкое утро</option></select></div><button type="button" class="refresh-button" id="refresh" aria-label="Обновить меню с сервера" title="Обновить меню с сервера">↻</button></div>
+      <p id="results-count" class="results-count" role="status"></p>
+      <div class="admin-items" id="items"></div>
+      <div class="empty-state" id="empty-state" hidden><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><h2 id="empty-title">Начнём с первого блюда</h2><p id="empty-description">Добавьте название, описание, цену и фотографию.</p></div>
+    </section>
+    <noscript><p class="admin-message error">Для управления меню включите JavaScript в браузере.</p></noscript>
+  </main>
+  <footer class="admin-footer"><span>Восемь утра</span><span>Меню с заботой о гостях</span></footer>
+  <dialog class="editor-dialog" id="editor-dialog" aria-labelledby="editor-title">
+    <form id="item-form">
+      <div class="editor-heading"><div><p class="eyebrow" id="editor-eyebrow">НОВОЕ В МЕНЮ</p><h2 id="editor-title">Добавить блюдо</h2></div><button type="button" class="close-button" id="close-editor" aria-label="Закрыть редактор"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+      <fieldset id="editor-fields">
+        <div class="editor-layout">
+          <div class="photo-column"><div class="photo-preview" id="photo-preview"><div class="photo-placeholder" id="photo-placeholder"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><p>Здесь будет<br>фотография блюда</p></div><img id="preview-image" alt="Предпросмотр фотографии блюда" hidden></div><div class="admin-field photo-field"><label for="photo">Фотография <small>необязательно</small></label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help"><p class="field-help" id="photo-help">JPG, PNG или WebP, до 5 МБ. Лучше всего подойдёт квадратное фото.</p></div><button type="button" class="text-link remove-photo" id="remove-photo" hidden>Убрать фотографию</button></div>
+          <div class="editor-inputs"><div class="admin-field"><label for="item-name">Название <span aria-hidden="true">*</span></label><input id="item-name" name="name" maxlength="160" placeholder="Как называется ваше блюдо" required></div><div class="admin-field"><label for="description">Описание</label><textarea id="description" name="description" rows="4" maxlength="2000" placeholder="Ингредиенты и всё, что делает блюдо особенным"></textarea></div><div class="field-pair"><div class="admin-field"><label for="price">Цена, ₽ <span aria-hidden="true">*</span></label><input id="price" name="price" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" placeholder="650" required></div><div class="admin-field"><label for="order">Порядок в меню</label><input id="order" name="order" type="number" min="0" max="100000" step="1" inputmode="numeric" value="0" required></div></div><div class="admin-field"><label for="category">Раздел <span aria-hidden="true">*</span></label><select id="category" name="category" required><option value="signature">Фирменные завтраки</option><option value="eggs">Яйца и тосты</option><option value="porridge">Каши и гранола</option><option value="sweet">Сладкое утро</option></select></div><p class="field-help order-help">Блюда с меньшим номером показываются первыми.</p><label class="publish-control" for="published"><input type="checkbox" id="published" name="published" checked><span><strong>Показывать на сайте</strong><small>Выключите, чтобы сохранить блюдо скрытым</small></span></label><label class="publish-control" for="available-for-order"><input type="checkbox" id="available-for-order" name="availableForOrder" checked><span><strong>Можно заказать</strong><small>Выключите, чтобы оставить блюдо в меню с пометкой «Временно недоступно». Скрытое блюдо заказать нельзя.</small></span></label></div>
+        </div>
+      </fieldset>
+      <p class="admin-message error" id="editor-error" role="alert" hidden></p>
+      <div class="editor-conflict" id="editor-conflict" hidden><p>Меню на сервере изменилось. Обновите список и проверьте черновик перед сохранением.</p><button type="button" class="text-link" id="refresh-draft">Обновить список, сохранив черновик ↻</button></div>
+      <div class="editor-footer"><p id="editor-hint">Изменения появятся на сайте после сохранения.</p><div><button type="button" class="button button-outline button-small" id="cancel-editor">Отмена</button><button type="submit" class="button button-dark button-small" id="save-item">Сохранить блюдо</button></div></div>
+    </form>
+  </dialog>
+  <dialog class="delete-dialog" id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description"><h2 id="delete-title">Удалить блюдо?</h2><p id="delete-description"></p><p class="admin-message error" id="delete-error" role="alert" hidden></p><div class="delete-actions"><button type="button" class="button button-outline button-small" id="cancel-delete" autofocus>Оставить</button><button type="button" class="button button-dark button-small" id="confirm-delete">Удалить</button></div></dialog>
+</body>
+</html>

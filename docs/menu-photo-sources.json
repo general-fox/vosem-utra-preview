@@ -1,0 +1,121 @@
+{
+  "source": {
+    "url": "https://yandex.ru/maps/org/vosem_utra/133294557510/menu/",
+    "checkedAt": "2026-09-28",
+    "note": "Меню представителя организации, обновлено 16 сентября. Рекламные описания сокращены до информации из названия. Мак и чиз и тартар не включены в раздел завтраков."
+  },
+  "photos": [
+    {
+      "id": "morning-eight",
+      "image": "menu-images/morning-eight.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/5236693/2a000001a0507d1f7d83b7f015c12aaa0c4b/orig",
+      "width": 525,
+      "height": 505,
+      "bytes": 41004
+    },
+    {
+      "id": "avocado-toast",
+      "image": "menu-images/avocado-toast.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/19861719/2a000001a05078520361863369a85217094a/orig",
+      "width": 533,
+      "height": 533,
+      "bytes": 23774
+    },
+    {
+      "id": "chef-syrniki",
+      "image": "menu-images/chef-syrniki.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/21168328/2a000001a0507a5aacf9b4892d7fc95b3b62/orig",
+      "width": 533,
+      "height": 541,
+      "bytes": 26612
+    },
+    {
+      "id": "feta-omelette",
+      "image": "menu-images/feta-omelette.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/5514775/2a000001a01a092ee8a6d0681a7bb4a8e80d/orig",
+      "width": 768,
+      "height": 960,
+      "bytes": 74268
+    },
+    {
+      "id": "oatmeal-berries",
+      "image": "menu-images/oatmeal-berries.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/13672565/2a000001a0507e16fccfeb5e33c9f65cd328/orig",
+      "width": 532,
+      "height": 513,
+      "bytes": 29182
+    },
+    {
+      "id": "salmon-draniki",
+      "image": "menu-images/salmon-draniki.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/9896919/2a000001a04d68adf073b39ed060da0aa470/orig",
+      "width": 960,
+      "height": 947,
+      "bytes": 67016
+    },
+    {
+      "id": "ham-brioche",
+      "image": "menu-images/ham-brioche.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/5236693/2a000001a04d74f28226457abc6154c53349/orig",
+      "width": 960,
+      "height": 902,
+      "bytes": 47654
+    },
+    {
+      "id": "shakshuka",
+      "image": "menu-images/shakshuka.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/21168328/2a000001a04d77842b6a08470c7fee8d41af/orig",
+      "width": 533,
+      "height": 544,
+      "bytes": 38386
+    },
+    {
+      "id": "granola",
+      "image": "menu-images/granola.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/10324913/2a000001a0508327bba6406575b2f9f044df/orig",
+      "width": 533,
+      "height": 521,
+      "bytes": 26992
+    },
+    {
+      "id": "salmon-brioche",
+      "image": "menu-images/salmon-brioche.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/20340178/2a000001a04d6c54b1413c0742009ed253d1/orig",
+      "width": 533,
+      "height": 517,
+      "bytes": 24542
+    },
+    {
+      "id": "vanilla-pancakes",
+      "image": "menu-images/vanilla-pancakes.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/10118156/2a000001a04d6435a0c7d9da197e9ceb0b11/orig",
+      "width": 939,
+      "height": 960,
+      "bytes": 52038
+    },
+    {
+      "id": "green-buckwheat",
+      "image": "menu-images/green-buckwheat.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/5567679/2a000001a050808e828c3fa8fa59c3687e44/orig",
+      "width": 533,
+      "height": 541,
+      "bytes": 33662
+    },
+    {
+      "id": "wheat-porridge",
+      "image": "menu-images/wheat-porridge.webp",
+      "url": "https://avatars.mds.yandex.net/get-sprav-products/17791271/2a000001a0507ef29477233b2ee3a3c5f3ce/orig",
+      "width": 530,
+      "height": 504,
+      "bytes": 12280
+    }
+  ],
+  "optimization": {
+    "format": "WebP",
+    "quality": 85,
+    "maxWidth": 960,
+    "maxHeight": 960,
+    "upscale": false,
+    "note": "Фотографии уменьшены пропорционально, без кадрирования и изменения содержания."
+  }
+}

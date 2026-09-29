@@ -1,0 +1,4 @@
+Options -Indexes
+<FilesMatch "^(loyalty-core|recaptcha|consent-log)\.php$">
+Require all denied
+</FilesMatch>
