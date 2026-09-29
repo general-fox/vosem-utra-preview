@@ -185,7 +185,7 @@ try {
         check($auth->requireSession($token, $setup['done']['csrfToken'], true)['username'] === 'v.utra@yandex.ru');
         $app['clock']->now += 101; check($auth->session($token) === null);
         $login = $auth->login(credentials(), 'peer'); $session = $auth->verify(['challengeToken' => $login['challengeToken'], 'code' => $setup['done']['recoveryCodes'][0]], 'peer');
-        for ($index = 0; $index < 3; $index++) { $app['clock']->now += 80; check($auth->session($session['token']) !== null); }
+        for ($index = 0; $index < 3; $index++) { $app['clock']->now += 80; check($auth->activity($session['token'], $session['csrfToken'])['authenticated']); }
         $app['clock']->now += 11; check($auth->session($session['token']) === null);
         $login = $auth->login(credentials(), 'peer'); $session = $auth->verify(['challengeToken' => $login['challengeToken'], 'code' => $setup['done']['recoveryCodes'][1]], 'peer');
         $auth->logout($session['token'], 'peer'); check($auth->session($session['token']) === null);
@@ -226,13 +226,13 @@ try {
         $newPassword = 'eight-8!';
         $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => $newPassword], 'ira');
         $done = $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'ira');
-        check($done['authenticated'] && $done['deviceMaxAge'] === 2592000);
+        check($done['authenticated'] && $done['deviceMaxAge'] === 34560000);
         check($auth->session($done['token'])['username'] === 'ira@example.test');
         check(state($app)['account'] === $before);
         check($auth->session($owner['done']['token']) !== null);
         check(state($app)['accounts']['ira@example.test']['secondary']);
         expectError(fn() => $auth->login(['username' => 'ira@example.test', 'password' => TEST_PASSWORD], 'ira'), 'invalid_credentials');
-        $app['clock']->now += 1800001;
+        $app['clock']->now += 900001;
         check($auth->session($done['token']) === null);
         $auth = new CafeAuth($app['directory'], $app['config']);
         check($auth->status(null, $done['deviceToken'])['trustedUsername'] === 'ira@example.test');
@@ -241,27 +241,34 @@ try {
         $unlocked = $auth->verify(['challengeToken' => $challenge['challengeToken'], 'code' => CafeAuth::totp($started['secret'], $app['clock']->now)], 'ira', $done['deviceToken']);
         check($auth->session($unlocked['token'])['username'] === 'ira@example.test');
     });
-    runTest('trusted token is hashed, rotates, needs cookie plus OTP and never extends its 30-day deadline', function () {
+    runTest('trusted token is hashed, rotates, needs cookie plus OTP and survives beyond 30 days and logout', function () {
         $app = fixture(); $setup = enroll($app); $auth = $app['auth'];
-        check(isset($setup['done']['deviceToken']) && $setup['done']['deviceMaxAge'] === 2592000);
+        check(isset($setup['done']['deviceToken']) && $setup['done']['deviceMaxAge'] === 34560000);
         $app['clock']->now += 30000;
         $pending = $auth->login(credentials(), 'peer');
         $done = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer');
-        check($done['deviceMaxAge'] === 2592000);
+        check($done['deviceMaxAge'] === 34560000);
         check(!str_contains(file_get_contents($app['directory'] . '/auth-state.json'), $done['deviceToken']));
         check(!$auth->status(null, $done['deviceToken'])['authenticated']);
         check(!isset($auth->status()['trustedUsername']));
-        $app['clock']->now += 1800000;
+        $app['clock']->now += 900000;
         $auth = new CafeAuth($app['directory'], $app['config']);
         $pending = $auth->resume($done['deviceToken'], 'peer');
         expectError(fn() => $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer'), 'device_expired');
         $pending = $auth->resume($done['deviceToken'], 'peer'); $other = $auth->resume($done['deviceToken'], 'peer');
         $unlocked = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $done['deviceToken']);
-        check($unlocked['deviceToken'] !== $done['deviceToken'] && $unlocked['deviceMaxAge'] === 2592000 - 1800);
+        check($unlocked['deviceToken'] !== $done['deviceToken'] && $unlocked['deviceMaxAge'] === 34560000);
         expectError(fn() => $auth->verify(['challengeToken' => $other['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $done['deviceToken']), 'device_expired');
         expectError(fn() => $auth->resume($done['deviceToken'], 'peer'), 'device_expired');
-        $app['clock']->now += 2592000000;
-        expectError(fn() => $auth->resume($unlocked['deviceToken'], 'peer'), 'device_expired');
+        $auth->logout($unlocked['token'], 'peer');
+        check($auth->session($unlocked['token']) === null);
+        $app['clock']->now += 2592000001;
+        $auth = new CafeAuth($app['directory'], $app['config']);
+        $pending = $auth->resume($unlocked['deviceToken'], 'peer');
+        $again = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $unlocked['deviceToken']);
+        check($again['authenticated'] && $again['deviceMaxAge'] === 34560000);
+        $record = state($app)['devices'][hash('sha256', $again['deviceToken'])];
+        check($record['persistent'] === true && !isset($record['expiresAt']));
     });
     runTest('device recovery bypass, forgotten token, five wrong codes and changed credentials are rejected', function () {
         $app = fixture(); $setup = enroll($app); $auth = $app['auth']; $app['clock']->now += 30000;
@@ -273,6 +280,10 @@ try {
         $recovery = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => $setup['done']['recoveryCodes'][0]], 'peer');
         check(!isset($recovery['deviceToken']));
         for ($i = 0; $i < 4; $i++) expectError(fn() => $auth->verify(['challengeToken' => $resumed['challengeToken'], 'code' => 'bad'], 'peer', $done['deviceToken']), $i === 3 ? 'challenge_expired' : 'invalid_code');
+        $pending = $auth->login(credentials(), 'peer');
+        $recovery = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => $setup['done']['recoveryCodes'][1]], 'peer', $done['deviceToken']);
+        check(!isset($recovery['deviceToken']));
+        expectError(fn() => $auth->resume($done['deviceToken'], 'peer'), 'device_expired');
         $auth->forgetDevice($done['deviceToken']); expectError(fn() => $auth->resume($done['deviceToken'], 'peer'), 'device_expired');
         $app['clock']->now += 30000;
         $pending = $auth->login(credentials(), 'peer');
@@ -286,6 +297,64 @@ try {
         $app['auth']->installAdditionalAccount(['version' => 1, 'username' => 'expired@example.test', 'passwordHash' => $passwordHash, 'credentialVersion' => bin2hex(random_bytes(32)), 'totp' => null, 'recovery' => [], 'temporaryPassword' => true, 'initialExpiresAt' => TEST_NOW]);
         expectError(fn() => $app['auth']->login(['username' => 'expired@example.test', 'password' => TEST_PASSWORD], 'peer'), 'invalid_credentials');
         check($app['auth']->login(credentials(), 'peer')['mfaRequired']);
+    });
+    runTest('15-minute idle lock ignores polling; CSRF-protected activity extends it without extending eight-hour cap', function () {
+        $app = fixture(); $setup = enroll($app); $auth = $app['auth']; $done = $setup['done'];
+        check($done['session'] === ['idleTimeoutMs' => 900000, 'idleExpiresAt' => TEST_NOW + 900000, 'expiresAt' => TEST_NOW + 28800000, 'serverNow' => TEST_NOW]);
+        $app['clock']->now += 899999;
+        check($auth->status($done['token'])['authenticated']);
+        check($auth->requireSession($done['token']) !== null);
+        expectError(fn() => $auth->activity($done['token'], 'bad'), 'csrf');
+        $app['clock']->now++;
+        check(!$auth->status($done['token'], $done['deviceToken'])['authenticated']);
+        check($auth->status(null, $done['deviceToken'])['trustedUsername'] === 'v.utra@yandex.ru');
+        expectError(fn() => $auth->activity($done['token'], $done['csrfToken']), 'unauthorized');
+        $pending = $auth->resume($done['deviceToken'], 'peer');
+        $done = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $done['deviceToken']);
+        $absolute = $done['session']['expiresAt'];
+        for ($i = 0; $i < 35; $i++) {
+            $app['clock']->now += 800000;
+            $activity = $auth->activity($done['token'], $done['csrfToken']);
+            check($activity['authenticated'] && $activity['session']['expiresAt'] === $absolute);
+            check($activity['session']['idleExpiresAt'] === min($app['clock']->now + 900000, $absolute));
+        }
+        $app['clock']->now = $absolute;
+        expectError(fn() => $auth->activity($done['token'], $done['csrfToken']), 'unauthorized');
+        check($auth->status(null, $done['deviceToken'])['trustedUsername'] === 'v.utra@yandex.ru');
+    });
+    runTest('legacy device upgrades only after valid OTP; expired old device never becomes persistent', function () {
+        $app = fixture(); $setup = enroll($app); $auth = $app['auth']; $token = $setup['done']['deviceToken'];
+        $saved = state($app); $key = hash('sha256', $token);
+        unset($saved['devices'][$key]['persistent']); $saved['devices'][$key]['expiresAt'] = TEST_NOW + 2592000000;
+        $expired = bin2hex(random_bytes(32));
+        $saved['devices'][hash('sha256', $expired)] = array_replace($saved['devices'][$key], ['expiresAt' => TEST_NOW - 1]);
+        CafeStorage::atomicJson($app['directory'] . '/auth-state.json', $saved);
+        expectError(fn() => $auth->resume($expired, 'peer'), 'device_expired');
+        check($auth->status(null, $token)['trustedUsername'] === 'v.utra@yandex.ru');
+        check(!isset(state($app)['devices'][$key]['persistent']));
+        $app['clock']->now += 30000;
+        $pending = $auth->resume($token, 'peer');
+        expectError(fn() => $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => 'bad'], 'peer', $token), 'invalid_code');
+        check(!isset(state($app)['devices'][$key]['persistent']));
+        $done = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $token);
+        check(state($app)['devices'][hash('sha256', $done['deviceToken'])]['persistent'] === true);
+    });
+    runTest('mutations reauthorize after body receipt and cannot commit after idle expiry or logout', function () {
+        $app = fixture(); $setup = enroll($app); $auth = $app['auth']; $done = $setup['done'];
+        $committed = false;
+        $operation = function () use (&$committed) { $committed = true; return 'saved'; };
+        check($auth->authorizedOperation($done['token'], $done['csrfToken'], $operation) === 'saved');
+        $committed = false;
+        expectError(fn() => $auth->authorizedOperation($done['token'], 'bad', $operation), 'csrf');
+        check(!$committed);
+        $app['clock']->now += 900000;
+        expectError(fn() => $auth->authorizedOperation($done['token'], $done['csrfToken'], $operation), 'unauthorized');
+        check(!$committed);
+        $pending = $auth->resume($done['deviceToken'], 'peer');
+        $done = $auth->verify(['challengeToken' => $pending['challengeToken'], 'code' => CafeAuth::totp($setup['started']['secret'], $app['clock']->now)], 'peer', $done['deviceToken']);
+        $auth->logout($done['token'], 'peer');
+        expectError(fn() => $auth->authorizedOperation($done['token'], $done['csrfToken'], $operation), 'unauthorized');
+        check(!$committed);
     });
     echo "{$passed} PHP authentication tests passed.\n";
 } finally {

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
-import { createAuthService, makeEnrolledAccount, atomicAuthWrite, additionalAccountFile, DEVICE_MS } from '../server/auth.mjs';
+import { createAuthService, makeEnrolledAccount, atomicAuthWrite, additionalAccountFile, DEVICE_COOKIE_MAX_AGE } from '../server/auth.mjs';
 import { addAdministrator } from '../server/add-admin.mjs';
 import { totp } from '../server/totp.mjs';
 
@@ -33,10 +33,13 @@ async function fixture(t, { owner = true } = {}) {
 test('a device is remembered automatically, survives restart and idle expiry but never authorizes a session alone', async (t) => {
   const app = await fixture(t); let auth = app.service();
   const remembered = await app.login(auth);
-  assert.equal(remembered.deviceMaxAge, DEVICE_MS / 1000);
+  assert.equal(remembered.deviceMaxAge, DEVICE_COOKIE_MAX_AGE);
   const disk = await readFile(path.join(app.dataDir, 'auth-devices.json'), 'utf8');
   assert.ok(!disk.includes(remembered.deviceToken));
-  app.advance(31 * 60000);
+  const record = Object.values(JSON.parse(disk).devices)[0];
+  assert.equal(record.persistent, true);
+  assert.equal(Object.hasOwn(record, 'expiresAt'), false);
+  app.advance(31 * 86400000);
   assert.equal(await auth.session(remembered.token), null);
   auth = app.service();
   assert.equal((await auth.status(undefined, remembered.deviceToken)).trustedUsername, 'owner@example.test');
@@ -49,10 +52,42 @@ test('a device is remembered automatically, survives restart and idle expiry but
   const unlocked = await auth.verify({ challengeToken: retry.challengeToken, code: app.code() }, 'peer', remembered.deviceToken);
   assert.ok(await auth.session(unlocked.token));
   assert.notEqual(unlocked.deviceToken, remembered.deviceToken);
-  assert.equal(unlocked.deviceMaxAge, DEVICE_MS / 1000 - 31 * 60);
+  assert.equal(unlocked.deviceMaxAge, DEVICE_COOKIE_MAX_AGE);
   await assert.rejects(auth.resume(remembered.deviceToken, 'peer'), { code: 'device_expired' });
-  app.advance(DEVICE_MS);
-  await assert.rejects(auth.resume(unlocked.deviceToken, 'peer'), { code: 'device_expired' });
+  await auth.logout(unlocked.token, 'peer');
+  assert.equal((await auth.status(unlocked.token, unlocked.deviceToken)).trustedUsername, 'owner@example.test');
+  assert.equal((await auth.status(unlocked.token, unlocked.deviceToken)).authenticated, false);
+  app.advance(401 * 86400000);
+  // Even beyond the cookie's technical browser lifetime, server trust remains
+  // until revoked. In a browser the missing/expired cookie requires a password.
+  assert.equal((await auth.resume(unlocked.deviceToken, 'peer')).mfaRequired, true);
+});
+
+test('valid legacy devices upgrade only after real TOTP; expired legacy devices cannot revive', async (t) => {
+  const app = await fixture(t); const auth = app.service(); const entry = await app.login(auth);
+  const file = path.join(app.dataDir, 'auth-devices.json');
+  const stored = JSON.parse(await readFile(file, 'utf8'));
+  const key = createHash('sha256').update(entry.deviceToken).digest('hex');
+  delete stored.devices[key].persistent;
+  stored.devices[key].expiresAt = TIME + 30 * 86400000;
+  const expiredToken = randomBytes(32).toString('hex');
+  const expiredKey = createHash('sha256').update(expiredToken).digest('hex');
+  stored.devices[expiredKey] = { ...stored.devices[key], expiresAt: TIME };
+  await atomicAuthWrite(file, stored);
+  const before = await readFile(file, 'utf8');
+  await assert.rejects(auth.resume(expiredToken, 'peer'), { code: 'device_expired' });
+  assert.equal((await auth.status(undefined, entry.deviceToken)).trustedUsername, 'owner@example.test');
+  assert.equal(await readFile(file, 'utf8'), before);
+  app.advance(30000);
+  const challenge = await auth.resume(entry.deviceToken, 'peer');
+  await assert.rejects(auth.verify({ challengeToken: challenge.challengeToken, code: 'bad' }, 'peer', entry.deviceToken), { code: 'invalid_code' });
+  assert.equal(await readFile(file, 'utf8'), before);
+  const completed = await auth.verify({ challengeToken: challenge.challengeToken, code: app.code() }, 'peer', entry.deviceToken);
+  assert.equal(completed.deviceMaxAge, DEVICE_COOKIE_MAX_AGE);
+  const after = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(after.devices[key], undefined);
+  assert.equal(after.devices[expiredKey], undefined);
+  assert.deepEqual(Object.values(after.devices).map(({ persistent, expiresAt }) => ({ persistent, expiresAt })), [{ persistent: true, expiresAt: undefined }]);
 });
 
 test('forget and credential replacement revoke remembered browsers; concurrent unlock rotates only once', async (t) => {
@@ -76,11 +111,13 @@ test('recovery needs a password, never establishes trust, and device OTP attempt
   app.advance(30000);
   const resumed = await auth.resume(entry.deviceToken, 'peer');
   await assert.rejects(auth.verify({ challengeToken: resumed.challengeToken, code: app.primary.recoveryCodes[0] }, 'peer', entry.deviceToken), { code: 'invalid_code' });
-  const pending = await auth.login({ username: 'owner@example.test', password: PASSWORD }, 'peer');
-  const recovered = await auth.verify({ challengeToken: pending.challengeToken, code: app.primary.recoveryCodes[0] }, 'peer');
-  assert.equal(recovered.deviceToken, undefined);
   for (let i = 0; i < 4; i++) await assert.rejects(auth.verify({ challengeToken: resumed.challengeToken, code: 'bad' }, 'peer', entry.deviceToken), { code: i === 3 ? 'challenge_expired' : 'invalid_code' });
   await assert.rejects(auth.verify({ challengeToken: resumed.challengeToken, code: app.code() }, 'peer', entry.deviceToken), { code: 'challenge_expired' });
+  const pending = await auth.login({ username: 'owner@example.test', password: PASSWORD }, 'peer');
+  const recovered = await auth.verify({ challengeToken: pending.challengeToken, code: app.primary.recoveryCodes[0] }, 'peer', entry.deviceToken);
+  assert.equal(recovered.deviceToken, undefined);
+  assert.equal((await auth.status(undefined, entry.deviceToken)).trustedUsername, undefined);
+  await assert.rejects(auth.resume(entry.deviceToken, 'peer'), { code: 'device_expired' });
 });
 
 test('an additional admin enrolls independently without replacing the owner or revoking the owner session', async (t) => {

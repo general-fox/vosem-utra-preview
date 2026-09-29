@@ -7,7 +7,8 @@ final class CafeAuth
 {
     private const CHALLENGE_MS = 300000;
     private const RATE_MS = 900000;
-    private const DEVICE_MS = 2592000000;
+    // Browser persistence, not an authenticated session. Renewed only after real TOTP.
+    private const DEVICE_COOKIE_SECONDS = 34560000;
     private string $directory;
     private array $config;
     private Closure $clock;
@@ -182,7 +183,10 @@ final class CafeAuth
             $state['devices'] ??= [];
             if (!is_array($state['accounts']) || !is_array($state['devices'])) throw new RuntimeException('Invalid account storage.');
             $this->checkpointed = false;
-            foreach (['sessions', 'challenges', 'enrollments', 'devices'] as $section) foreach ($state[$section] as $key => $value) if (($value['expiresAt'] ?? 0) <= $this->now()) unset($state[$section][$key]);
+            foreach (['sessions', 'challenges', 'enrollments', 'devices'] as $section) foreach ($state[$section] as $key => $value) {
+                if ($section === 'devices' && ($value['persistent'] ?? false) === true) continue;
+                if (($value['expiresAt'] ?? 0) <= $this->now()) unset($state[$section][$key]);
+            }
             foreach ($state['buckets'] as $key => $value) {
                 if (!is_array($value) || !is_int($value['until'] ?? null) || !is_int($value['count'] ?? null) || $value['count'] < 0) throw new RuntimeException('Invalid authentication limits.');
                 if ($value['until'] <= $this->now()) unset($state['buckets'][$key]);
@@ -236,17 +240,16 @@ final class CafeAuth
     {
         $key = self::tokenKey($token);
         $device = $key ? ($state['devices'][$key] ?? null) : null;
-        if (!$device || $device['expiresAt'] <= $this->now()) return null;
+        if (!$device || (($device['persistent'] ?? false) !== true && ($device['expiresAt'] ?? 0) <= $this->now())) return null;
         $fresh = $this->readiness($state, $device['username']);
         return $fresh['ready'] && $fresh['current']['username'] === $device['username'] && $fresh['current']['credentialVersion'] === $device['credentialVersion'] ? $device : null;
     }
-    private function rememberDevice(array &$state, array $account, ?string $oldToken = null, ?int $expiresAt = null): array
+    private function rememberDevice(array &$state, array $account, ?string $oldToken = null): array
     {
-        $expiresAt ??= $this->now() + self::DEVICE_MS;
         if ($key = self::tokenKey($oldToken)) unset($state['devices'][$key]);
         $token = self::token();
-        $this->boundedAdd($state['devices'], $token, ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'expiresAt' => $expiresAt]);
-        return ['deviceToken' => $token, 'deviceMaxAge' => max(0, (int)floor(($expiresAt - $this->now()) / 1000))];
+        $this->boundedAdd($state['devices'], $token, ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'persistent' => true]);
+        return ['deviceToken' => $token, 'deviceMaxAge' => self::DEVICE_COOKIE_SECONDS];
     }
     public function forgetDevice(?string $token): void
     {
@@ -256,7 +259,7 @@ final class CafeAuth
     {
         return $this->transaction(function (array &$state) use ($deviceToken, $peer) {
             $device = $this->trustedDevice($state, $deviceToken);
-            if (!$device) throw new CafeAuthException(401, 'Срок запоминания истёк. Войдите с паролем.', 'device_expired');
+            if (!$device) throw new CafeAuthException(401, 'Браузер не распознан. Войдите с почтой и паролем.', 'device_expired');
             $token = self::token();
             $this->boundedAdd($state['challenges'], $token, ['type' => 'mfa', 'username' => $device['username'], 'credentialVersion' => $device['credentialVersion'], 'deviceHash' => self::tokenKey($deviceToken), 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0, 'oldTokenHash' => null]);
             return ['mfaRequired' => true, 'challengeToken' => $token, 'trusted' => true, 'username' => $device['username']];
@@ -290,22 +293,28 @@ final class CafeAuth
         if (!$value || ($value['peer'] ?? '') !== hash('sha256', $peer) || ($value['expiresAt'] ?? 0) <= $this->now() || ($value['attempts'] ?? 5) >= 5 || ($type !== null && ($value['type'] ?? '') !== $type)) throw self::expired();
         return [$key, $value];
     }
-    private function sessionInState(array &$state, ?string $token, bool $touch = true): ?array
+    private function sessionInState(array &$state, ?string $token, bool $touch = false): ?array
     {
         $key = self::tokenKey($token); $session = $key !== null ? ($state['sessions'][$key] ?? null) : null;
         if ($session === null) return null;
         $fresh = $this->readiness($state, $session['username']);
-        if (!$fresh['ready'] || $session['credentialVersion'] !== $fresh['current']['credentialVersion'] || $session['expiresAt'] <= $this->now() || $session['lastSeen'] + ($this->config['idle_ms'] ?? 1800000) <= $this->now()) { unset($state['sessions'][$key]); return null; }
-        if ($touch) $state['sessions'][$key]['lastSeen'] = $this->now();
+        if (!$fresh['ready'] || $session['credentialVersion'] !== $fresh['current']['credentialVersion'] || $session['expiresAt'] <= $this->now() || $session['lastSeen'] + ($this->config['idle_ms'] ?? 900000) <= $this->now()) { unset($state['sessions'][$key]); return null; }
+        if ($touch) $session['lastSeen'] = $state['sessions'][$key]['lastSeen'] = $this->now();
         return $session + ['token' => $token];
+    }
+    private function sessionTiming(array $session): array
+    {
+        $idleMs = $this->config['idle_ms'] ?? 900000;
+        return ['idleTimeoutMs' => $idleMs, 'idleExpiresAt' => min($session['lastSeen'] + $idleMs, $session['expiresAt']), 'expiresAt' => $session['expiresAt'], 'serverNow' => $this->now()];
     }
     private function issue(array &$state, array $account, string $peer, ?string $oldToken = null): array
     {
         if ($oldKey = self::tokenKey($oldToken)) unset($state['sessions'][$oldKey]);
         $token = self::token(); $csrfToken = self::token();
-        $this->boundedAdd($state['sessions'], $token, ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'csrfToken' => $csrfToken, 'expiresAt' => $this->now() + ($this->config['session_ms'] ?? 28800000), 'lastSeen' => $this->now()]);
+        $session = ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'csrfToken' => $csrfToken, 'expiresAt' => $this->now() + ($this->config['session_ms'] ?? 28800000), 'lastSeen' => $this->now()];
+        $this->boundedAdd($state['sessions'], $token, $session);
         $this->audit('login.succeeded', $peer, ['username' => $account['username']]);
-        return ['authenticated' => true, 'token' => $token, 'csrfToken' => $csrfToken];
+        return ['authenticated' => true, 'username' => $account['username'], 'token' => $token, 'csrfToken' => $csrfToken, 'session' => $this->sessionTiming($session)];
     }
     public function audit(string $event, string $peer = '', array $detail = []): void
     {
@@ -325,7 +334,7 @@ final class CafeAuth
     {
         return $this->transaction(function (array &$state) use ($token, $deviceToken) {
             $session = $this->sessionInState($state, $token);
-            if ($session !== null) return ['authenticated' => true, 'csrfToken' => $session['csrfToken']];
+            if ($session !== null) return ['authenticated' => true, 'username' => $session['username'], 'csrfToken' => $session['csrfToken'], 'session' => $this->sessionTiming($session)];
             $fresh = $this->readiness($state);
             $device = $this->trustedDevice($state, $deviceToken);
             return ['authenticated' => false, 'configured' => $fresh['current'] !== null, 'mfaRequired' => true, 'production' => !($this->config['allow_http_dev'] ?? false), 'ready' => $fresh['ready'], 'enrollmentAvailable' => $fresh['enrollmentAvailable']] + ($device ? ['trustedUsername' => $device['username']] : []);
@@ -376,7 +385,28 @@ final class CafeAuth
             $this->audit('credentials.added', '', ['username' => $username]);
         });
     }
-    public function session(?string $token, bool $touch = true): ?array { return $this->transaction(fn(array &$state) => $this->sessionInState($state, $token, $touch)); }
+    public function session(?string $token, bool $touch = false): ?array { return $this->transaction(fn(array &$state) => $this->sessionInState($state, $token, $touch)); }
+    public function activity(?string $token, ?string $csrfToken): array
+    {
+        return $this->transaction(function (array &$state) use ($token, $csrfToken) {
+            $session = $this->sessionInState($state, $token);
+            if ($session === null) throw new CafeAuthException(401, 'Войдите в панель управления.', 'unauthorized');
+            if (!is_string($csrfToken) || !hash_equals($session['csrfToken'], $csrfToken)) throw new CafeAuthException(403, 'Сессия устарела. Обновите страницу.', 'csrf');
+            $session = $this->sessionInState($state, $token, true);
+            if ($session === null) throw new CafeAuthException(401, 'Войдите в панель управления.', 'unauthorized');
+            return ['authenticated' => true, 'username' => $session['username'], 'csrfToken' => $session['csrfToken'], 'session' => $this->sessionTiming($session)];
+        });
+    }
+    /** Lock order matches private backups: auth first, then menu/uploads. */
+    public function authorizedOperation(?string $token, ?string $csrfToken, callable $operation): mixed
+    {
+        return $this->transaction(function (array &$state) use ($token, $csrfToken, $operation) {
+            $session = $this->sessionInState($state, $token);
+            if ($session === null) throw new CafeAuthException(401, 'Войдите в панель управления.', 'unauthorized');
+            if (!is_string($csrfToken) || !hash_equals($session['csrfToken'], $csrfToken)) throw new CafeAuthException(403, 'Сессия устарела. Обновите страницу.', 'csrf');
+            return $operation();
+        });
+    }
     public function requireSession(?string $token, ?string $csrfToken = null, bool $mutation = false): array
     {
         $session = $this->session($token);
@@ -503,7 +533,8 @@ final class CafeAuth
             $this->saveAccount($state, $account); unset($state['challenges'][$key]);
             if ($pending['oldTokenHash']) unset($state['sessions'][$pending['oldTokenHash']]);
             $this->refund($state, $reservation); $this->audit('mfa.succeeded', $peer, ['method' => $method]);
-            $deviceResult = $method === 'totp' ? $this->rememberDevice($state, $account, $deviceToken, $device['expiresAt'] ?? null) : [];
+            if ($method === 'recovery' && ($deviceKey = self::tokenKey($deviceToken))) unset($state['devices'][$deviceKey]);
+            $deviceResult = $method === 'totp' ? $this->rememberDevice($state, $account, $deviceToken) : [];
             return $this->issue($state, $account, $peer) + $deviceResult;
         });
     }

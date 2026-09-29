@@ -230,12 +230,54 @@ test('sessions have idle and absolute expiry and revoke immediately on credentia
   app.advance(101);
   assert.equal(await service.session(session.token), null);
   session = await authenticate();
-  for (let index = 0; index < 3; index++) { app.advance(80); assert.ok(await service.session(session.token)); }
+  for (let index = 0; index < 3; index++) { app.advance(80); assert.equal((await service.activity(session.token)).authenticated, true); }
   app.advance(11);
   assert.equal(await service.session(session.token), null);
   session = await authenticate();
   await atomicAuthWrite(path.join(app.dataDir, 'admin-auth.json'), { ...account, credentialVersion: randomUUID() });
   assert.equal(await service.session(session.token), null);
+});
+
+test('session status never extends the fifteen-minute idle deadline; activity cannot bypass expiry', async (t) => {
+  const app = await fixture(t, { encryptionKey: KEY.toString('hex') });
+  await app.enroll();
+  const service = app.service();
+  const pending = await service.login(loginData, 'peer');
+  const done = await service.verify({ challengeToken: pending.challengeToken, code: totp(SECRET, { time: TIME }) }, 'peer');
+  assert.deepEqual(done.session, { idleTimeoutMs: 900000, idleExpiresAt: TIME + 900000, expiresAt: TIME + 28800000, serverNow: TIME });
+  for (let index = 0; index < 14; index++) {
+    app.advance(60000);
+    const status = await service.status(done.token);
+    assert.equal(status.authenticated, true);
+    assert.equal(status.session.idleExpiresAt, TIME + 900000);
+    assert.equal(status.session.serverNow, TIME + (index + 1) * 60000);
+  }
+  app.advance(60000);
+  assert.equal((await service.status(done.token, done.deviceToken)).authenticated, false);
+  assert.equal((await service.status(done.token, done.deviceToken)).trustedUsername, 'owner');
+  await assert.rejects(service.activity(done.token), { code: 'unauthorized' });
+});
+
+test('logout wins over session checks already awaiting the account read', async (t) => {
+  const app = await fixture(t, { encryptionKey: KEY.toString('hex') });
+  const { recoveryCodes } = await app.enroll();
+  const service = app.service();
+  async function authenticate() {
+    const pending = await service.login(loginData, 'peer');
+    return service.verify({ challengeToken: pending.challengeToken, code: recoveryCodes.shift() }, 'peer');
+  }
+  let done = await authenticate();
+  const activity = service.activity(done.token);
+  const rejected = assert.rejects(activity, { code: 'unauthorized', status: 401 });
+  await service.logout(done.token, 'peer');
+  await rejected;
+  assert.equal(await service.session(done.token), null);
+
+  done = await authenticate();
+  const status = service.status(done.token);
+  await service.logout(done.token, 'peer');
+  assert.equal((await status).authenticated, false);
+  assert.equal(await service.session(done.token), null);
 });
 
 test('TOTP encryption rejects tampering; local key creation is unavailable in production', async (t) => {

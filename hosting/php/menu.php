@@ -57,9 +57,10 @@ function cafe_request_body(int $limit): string {
     if (strlen($body) > $limit) throw new CafeMenuException(413, 'Файл или запрос слишком большой.', 'too_large');
     return $body;
 }
-function cafe_json_body(): array {
-    if (trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]) !== 'application/json') throw new CafeMenuException(415, 'Ожидается JSON.', 'content_type');
+function cafe_json_body(bool $allowEmpty = false): array {
     $body = cafe_request_body(1024 * 1024);
+    if ($allowEmpty && $body === '') return [];
+    if (trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]) !== 'application/json') throw new CafeMenuException(415, 'Ожидается JSON.', 'content_type');
     try {
         if (!str_starts_with(ltrim($body), '{')) throw new RuntimeException();
         $value = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
@@ -201,8 +202,11 @@ final class CafeMenu {
             if (!in_array($method, ['GET','HEAD'], true)) $this->origin();
             if (in_array($pathname, ['/api/menu','/data/menu.json'], true) && in_array($method, ['GET','HEAD'], true)) { cafe_json_response($this->catalog()); return true; }
             if ($pathname === '/api/admin/session' && $method === 'GET') { cafe_json_response($this->auth->status($this->token(), $this->deviceToken())); return true; }
+            if ($pathname === '/api/admin/activity' && $method === 'POST') { cafe_json_response($this->auth->activity($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)); return true; }
             if ($pathname === '/api/admin/resume' && $method === 'POST') { cafe_json_response($this->auth->resume($this->deviceToken(), $this->peer()), 202); return true; }
             if ($pathname === '/api/admin/forget-device' && $method === 'POST') {
+                if ($this->auth->session($this->token())) $this->requireSession(true);
+                $this->auth->logout($this->token(), $this->peer()); $this->cookie('', 0);
                 $this->auth->forgetDevice($this->deviceToken()); $this->cookie('', 0, 'vosem_admin_device');
                 cafe_json_response(['forgotten' => true]); return true;
             }
@@ -225,22 +229,27 @@ final class CafeMenu {
                 return true;
             }
             if ($pathname === '/api/admin/logout' && $method === 'POST') {
+                $body = cafe_json_body(true);
                 if ($this->auth->session($this->token())) $this->requireSession(true);
                 $this->auth->logout($this->token(), $this->peer()); $this->cookie('', 0);
-                $this->auth->forgetDevice($this->deviceToken()); $this->cookie('', 0, 'vosem_admin_device');
-                cafe_json_response(['authenticated'=>false]); return true;
+                if (($body['forgetDevice'] ?? false) === true) {
+                    $this->auth->forgetDevice($this->deviceToken()); $this->cookie('', 0, 'vosem_admin_device');
+                }
+                cafe_json_response($this->auth->status(null, $this->deviceToken())); return true;
             }
             if ($pathname === '/api/admin/menu' && $method === 'GET') { $this->requireSession(); cafe_json_response($this->read()); return true; }
             if ($pathname === '/api/admin/menu' && $method === 'PUT') {
                 $this->requireSession(true); $body = cafe_json_body();
                 $items = cafe_validate_items($body['items'] ?? null);
-                $updated = $this->update($items, $body['revision'] ?? null);
+                $updated = $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, fn() => $this->update($items, $body['revision'] ?? null));
                 $this->auth->audit('menu.updated', $this->peer(), ['revision'=>$updated['revision'], 'count'=>count($items)]);
                 cafe_json_response($updated); return true;
             }
             if ($pathname === '/api/admin/upload' && $method === 'POST') {
                 $this->requireSession(true);
-                $url = $this->storeImage(cafe_request_body(5 * 1024 * 1024), trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
+                $bytes = cafe_request_body(5 * 1024 * 1024);
+                $mime = trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]);
+                $url = $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, fn() => $this->storeImage($bytes, $mime));
                 $this->auth->audit('image.uploaded', $this->peer()); cafe_json_response(['url'=>$url], 201); return true;
             }
             throw new CafeMenuException(404, 'Адрес API не найден.', 'not_found');

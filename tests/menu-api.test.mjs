@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createMenuMiddleware, makePasswordRecord } from '../server/menu-api.mjs';
@@ -52,7 +52,7 @@ async function fixture(t, options = {}) {
     if (result.value.enrollmentRequired) {
       const started = await request('/api/admin/enroll/start', { method: 'POST', body: { challengeToken: result.value.challengeToken, username: 'admin' }, authenticated: false });
       assert.equal(started.status, 200);
-      result = await request('/api/admin/enroll/confirm', { method: 'POST', body: { enrollmentToken: started.value.enrollmentToken, code: totp(started.value.secret) }, authenticated: false });
+      result = await request('/api/admin/enroll/confirm', { method: 'POST', body: { enrollmentToken: started.value.enrollmentToken, code: totp(started.value.secret, { time: options.now?.() ?? Date.now() }) }, authenticated: false });
       fixtureAccess.set(dataDir, { recoveryCodes: result.value.recoveryCodes });
     } else if (result.value.mfaRequired) {
       result = await request('/api/admin/verify', { method: 'POST', body: { challengeToken: result.value.challengeToken, code: fixtureAccess.get(dataDir)?.recoveryCodes.shift() }, authenticated: false });
@@ -90,41 +90,143 @@ async function fixture(t, options = {}) {
     for (const entry of pending) entry.req.end(entry.body);
     return Promise.all(pending.map((entry) => entry.response));
   }
-  return { request, login, overlappingLogins, stop, start, dataDir, seedPath };
+  async function slowRequest(route, { method = 'PUT', body, raw, contentType = 'application/json' } = {}) {
+    const buffer = raw ?? Buffer.from(JSON.stringify(body));
+    let ready;
+    const bodyReadStarted = new Promise((resolve) => { ready = resolve; });
+    // Wait for the real middleware's body reader, not an arbitrary sleep. Its
+    // first session check has finished before it subscribes to request data.
+    server.once('request', (incoming) => {
+      const originalOn = incoming.on;
+      incoming.on = function (type, listener) {
+        const result = originalOn.call(this, type, listener);
+        if (type === 'data') { incoming.on = originalOn; ready(); }
+        return result;
+      };
+    });
+    let req;
+    const response = new Promise((resolve, reject) => {
+      req = http.request(`${base}${route}`, { method, headers: { ...auth, Origin: base, 'Content-Type': contentType, 'Content-Length': buffer.length } }, (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode, value: JSON.parse(Buffer.concat(chunks).toString()) }));
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.flushHeaders();
+    });
+    t.after(() => req.destroy());
+    let timer;
+    try {
+      await Promise.race([bodyReadStarted, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Request never reached its body reader')), 3000); })]);
+    } finally { clearTimeout(timer); }
+    return { finish: () => { req.end(buffer); return response; } };
+  }
+  return { request, login, overlappingLogins, slowRequest, stop, start, dataDir, seedPath };
 }
 
-test('HTTP remembered-device cookie is secure and private, cannot read menu alone, rotates, and expires on logout', async (t) => {
+test('HTTP device trust survives normal logout; explicit forget revokes the active session and device', async (t) => {
   let now = 1800000000000;
   const origin = 'https://cafe.example';
   const app = await fixture(t, { production: true, publicOrigin: origin, encryptionKey: '22'.repeat(32), now: () => now });
-  const send = (route, body = {}, cookie = '') => app.request(route, { method: 'POST', origin, authenticated: false, body, headers: { Cookie: cookie } });
+  const send = (route, body = {}, cookie = '', csrfToken = '') => app.request(route, { method: 'POST', origin, authenticated: false, body, headers: { Cookie: cookie, 'X-CSRF-Token': csrfToken } });
   const login = await send('/api/admin/login', { username: 'admin', password: PASSWORD });
   assert.equal(login.status, 202);
   const setup = await send('/api/admin/enroll/start', { challengeToken: login.value.challengeToken, username: 'owner@example.test' });
   const done = await send('/api/admin/enroll/confirm', { enrollmentToken: setup.value.enrollmentToken, code: totp(setup.value.secret, { time: now }) });
   assert.equal(done.status, 200);
   const header = done.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device='));
-  assert.match(header, /Path=\/api\/admin; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure/);
+  assert.match(header, /Path=\/api\/admin; HttpOnly; SameSite=Strict; Max-Age=34560000; Secure/);
   const device = header.split(';')[0];
   assert.equal(done.value.deviceToken, undefined); assert.equal(done.value.token, undefined);
   assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: device } })).status, 401);
   const known = await app.request('/api/admin/session', { headers: { Cookie: device } });
   assert.equal(known.value.trustedUsername, 'owner@example.test'); assert.equal(known.value.authenticated, false);
   assert.equal((await app.request('/api/admin/resume', { method: 'POST', body: {}, headers: { Cookie: device }, origin: 'https://evil.example' })).status, 403);
-  now += 31 * 60000;
+  now += 31 * 86400000;
   const pending = await send('/api/admin/resume', {}, device);
   assert.equal(pending.status, 202);
   const unlocked = await send('/api/admin/verify', { challengeToken: pending.value.challengeToken, code: totp(setup.value.secret, { time: now }) }, device);
   assert.equal(unlocked.status, 200);
   const rotated = unlocked.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')).split(';')[0];
   assert.notEqual(rotated, device);
+  assert.match(unlocked.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')), /Max-Age=34560000/);
   assert.equal((await send('/api/admin/resume', {}, device)).status, 401);
   const sessionCookie = unlocked.headers.getSetCookie().find((value) => value.startsWith('vosem_admin=')).split(';')[0];
   assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: sessionCookie } })).status, 200);
-  const out = await send('/api/admin/logout', {}, rotated);
+  const allCookies = `${sessionCookie}; ${rotated}`;
+  assert.equal((await send('/api/admin/logout', {}, allCookies)).status, 403);
+  const out = await send('/api/admin/logout', {}, allCookies, unlocked.value.csrfToken);
   assert.equal(out.status, 200);
-  assert.match(out.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')), /Max-Age=0/);
+  assert.equal(out.value.authenticated, false);
+  assert.equal(out.value.trustedUsername, 'owner@example.test');
+  assert.equal(out.headers.getSetCookie().some((value) => value.startsWith('vosem_admin_device=')), false);
+  assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: allCookies } })).status, 401);
+  now += 30000;
+  const again = await send('/api/admin/resume', {}, rotated);
+  assert.equal(again.status, 202);
+  const relogin = await send('/api/admin/verify', { challengeToken: again.value.challengeToken, code: totp(setup.value.secret, { time: now }) }, rotated);
+  const newCookies = relogin.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+  assert.equal((await send('/api/admin/forget-device', {}, newCookies)).status, 403);
+  const forgotten = await send('/api/admin/forget-device', {}, newCookies, relogin.value.csrfToken);
+  assert.equal(forgotten.status, 200);
+  assert.equal(forgotten.value.authenticated, false);
+  assert.equal(forgotten.value.trustedUsername, undefined);
+  assert.equal(forgotten.headers.getSetCookie().length, 2);
+  for (const cleared of forgotten.headers.getSetCookie()) assert.match(cleared, /Max-Age=0/);
+  assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: newCookies } })).status, 401);
+  assert.equal((await send('/api/admin/resume', {}, newCookies)).status, 401);
   assert.equal((await send('/api/admin/resume', {}, rotated)).status, 401);
+});
+
+test('HTTP status and menu reads do not keep a session alive; explicit activity requires session, origin and CSRF', async (t) => {
+  let now = 1800000000000;
+  const initialTime = now;
+  const app = await fixture(t, { now: () => now });
+  const login = await app.login();
+  assert.equal(login.status, 200);
+  assert.equal(login.value.username, 'admin');
+  assert.deepEqual(login.value.session, { idleTimeoutMs: 900000, idleExpiresAt: now + 900000, expiresAt: now + 28800000, serverNow: now });
+  now += 10 * 60000;
+  assert.equal((await app.request('/api/admin/session')).value.session.idleExpiresAt, initialTime + 900000);
+  assert.equal((await app.request('/api/admin/session')).value.username, 'admin');
+  assert.equal((await app.request('/api/admin/menu')).status, 200);
+  assert.equal((await app.request('/api/admin/activity', { method: 'POST', authenticated: false })).status, 401);
+  assert.equal((await app.request('/api/admin/activity', { method: 'POST', headers: { 'X-CSRF-Token': '' } })).status, 403);
+  assert.equal((await app.request('/api/admin/activity', { method: 'POST', origin: 'https://evil.example' })).status, 403);
+  assert.equal((await app.request('/api/admin/session')).value.session.idleExpiresAt, initialTime + 900000);
+  const activity = await app.request('/api/admin/activity', { method: 'POST', body: {} });
+  assert.equal(activity.status, 200);
+  assert.equal(activity.value.authenticated, true);
+  assert.equal(activity.value.username, 'admin');
+  assert.equal(activity.value.session.idleExpiresAt, now + 900000);
+  assert.equal(activity.value.session.expiresAt, initialTime + 28800000);
+  assert.equal(activity.headers.get('set-cookie'), null);
+  for (let minute = 1; minute < 15; minute++) {
+    now += 60000;
+    assert.equal((await app.request('/api/admin/session')).value.authenticated, true);
+    assert.equal((await app.request('/api/admin/menu')).status, 200);
+  }
+  now += 60000;
+  assert.equal((await app.request('/api/admin/session')).value.authenticated, false);
+  assert.equal((await app.request('/api/admin/activity', { method: 'POST', body: {} })).status, 401);
+  assert.equal((await app.request('/api/admin/menu')).status, 401);
+});
+
+test('logout forgetDevice flag clears both cookies and cannot be abused cross-origin or without CSRF', async (t) => {
+  const app = await fixture(t);
+  const logged = await app.login();
+  const cookies = logged.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
+  const headers = { Cookie: cookies };
+  assert.equal((await app.request('/api/admin/logout', { method: 'POST', body: { forgetDevice: true }, headers, origin: 'https://evil.example' })).status, 403);
+  assert.equal((await app.request('/api/admin/logout', { method: 'POST', body: { forgetDevice: true }, headers: { ...headers, 'X-CSRF-Token': '' } })).status, 403);
+  const out = await app.request('/api/admin/logout', { method: 'POST', body: { forgetDevice: true }, headers });
+  assert.equal(out.status, 200);
+  assert.equal(out.value.trustedUsername, undefined);
+  assert.equal(out.headers.getSetCookie().length, 2);
+  for (const cookie of out.headers.getSetCookie()) assert.match(cookie, /Max-Age=0/);
+  assert.equal((await app.request('/api/admin/session', { headers })).value.authenticated, false);
+  assert.equal((await app.request('/api/admin/resume', { method: 'POST', body: {}, headers })).status, 401);
 });
 
 test('public menu omits drafts; admin API requires login and secure cookie settings', async (t) => {
@@ -266,6 +368,32 @@ test('logout invalidates the cookie and expired sessions stop authorizing reques
   await app.login();
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal((await app.request('/api/admin/menu')).status, 401);
+});
+
+test('a delayed mutation body cannot save after idle expiry or explicit logout', async (t) => {
+  await t.test('menu body received after the fifteen-minute deadline leaves the catalog unchanged', async (t) => {
+    let now = Date.now();
+    const app = await fixture(t, { now: () => now });
+    await app.login();
+    const menu = (await app.request('/api/admin/menu')).value;
+    const pending = await app.slowRequest('/api/admin/menu', { body: { revision: menu.revision, items: menu.items.map((item) => ({ ...item, name: 'Must not be saved' })) } });
+    now += 900000;
+    const denied = await pending.finish();
+    assert.equal(denied.status, 401);
+    assert.equal(denied.value.code, 'unauthorized');
+    assert.deepEqual(JSON.parse(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8')), menu);
+  });
+  await t.test('upload body received after logout cannot create a file', async (t) => {
+    const app = await fixture(t);
+    await app.login();
+    const pending = await app.slowRequest('/api/admin/upload', { method: 'POST', raw: Buffer.from([0xff, 0xd8, 0xff, 0xe0]), contentType: 'image/jpeg' });
+    assert.equal((await app.request('/api/admin/logout', { method: 'POST' })).status, 200);
+    const denied = await pending.finish();
+    assert.equal(denied.status, 401);
+    assert.equal(denied.value.code, 'unauthorized');
+    const images = await readdir(path.join(app.dataDir, 'uploads')).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
+    assert.deepEqual(images, []);
+  });
 });
 
 test('password login is rate limited', async (t) => {

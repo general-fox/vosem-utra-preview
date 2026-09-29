@@ -8,10 +8,12 @@ const scrypt = promisify(scryptCallback);
 export const SCRYPT_PARAMS = Object.freeze({ N: 131072, r: 8, p: 1, maxmem: 160 * 1024 * 1024 });
 const LEGACY_PARAMS = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 };
 const ABSOLUTE_MS = 8 * 60 * 60 * 1000;
-const IDLE_MS = 30 * 60 * 1000;
+const IDLE_MS = 15 * 60 * 1000;
 const CHALLENGE_MS = 5 * 60 * 1000;
 const WINDOW_MS = 15 * 60 * 1000;
-export const DEVICE_MS = 30 * 24 * 60 * 60 * 1000;
+// Browser-cookie retention only. Server-side trust has no expiry; revocation and
+// credential changes invalidate it, and every unlock still requires a fresh TOTP.
+export const DEVICE_COOKIE_MAX_AGE = 400 * 24 * 60 * 60;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 export const additionalAccountFile = (dataDir, username) => path.join(dataDir, 'admin-users', `${hash(normalizeUsername(username))}.json`);
 let activeHashes = 0;
@@ -245,30 +247,41 @@ export function createAuthService(options) {
   async function deviceStore() {
     const saved = await optionalJson(devicesFile) ?? { version: 1, devices: {} };
     if (saved.version !== 1 || !saved.devices || typeof saved.devices !== 'object' || Array.isArray(saved.devices)) throw new Error('Invalid trusted device storage');
-    for (const [key, device] of Object.entries(saved.devices)) if (device.expiresAt <= now()) delete saved.devices[key];
+    for (const [key, device] of Object.entries(saved.devices)) {
+      if (!/^[a-f0-9]{64}$/.test(key) || !device || typeof device !== 'object' || Array.isArray(device)
+        || normalizeUsername(device.username) !== device.username || typeof device.credentialVersion !== 'string'
+        || !device.credentialVersion || (device.persistent === true ? Object.hasOwn(device, 'expiresAt')
+          : Object.hasOwn(device, 'persistent') || !Number.isSafeInteger(device.expiresAt))) throw new Error('Invalid trusted device record');
+      if (device.persistent !== true && device.expiresAt <= now()) delete saved.devices[key];
+    }
     return saved;
   }
   async function trustedDevice(token, saved) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
     const device = (saved ?? await deviceStore()).devices[hash(token)];
-    if (!device || device.expiresAt <= now()) return null;
+    if (!device || (device.persistent !== true && device.expiresAt <= now())) return null;
     const fresh = await state(device.username);
     return fresh.ready && fresh.current.username === device.username && fresh.current.credentialVersion === device.credentialVersion ? device : null;
   }
-  // Caller holds the account lock. Rotation never extends the original 30-day deadline.
-  async function rememberDevice(current, oldToken, expiresAt = now() + DEVICE_MS) {
+  // Caller holds the account lock. Only confirmed TOTP may issue/rotate trust,
+  // including upgrading a still-valid old expiring token to persistent trust.
+  async function rememberDevice(current, oldToken) {
     const saved = await deviceStore();
     if (oldToken) delete saved.devices[hash(oldToken)];
     const token = randomBytes(32).toString('hex');
     if (Object.keys(saved.devices).length >= 100) delete saved.devices[Object.keys(saved.devices)[0]];
-    saved.devices[hash(token)] = { username: current.username, credentialVersion: current.credentialVersion, expiresAt };
+    saved.devices[hash(token)] = { username: current.username, credentialVersion: current.credentialVersion, persistent: true };
     await atomicAuthWrite(devicesFile, saved);
-    return { deviceToken: token, deviceMaxAge: Math.max(0, Math.floor((expiresAt - now()) / 1000)) };
+    return { deviceToken: token, deviceMaxAge: DEVICE_COOKIE_MAX_AGE };
+  }
+  async function removeRememberedDevice(token) {
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return;
+    const saved = await deviceStore(); delete saved.devices[hash(token)]; await atomicAuthWrite(devicesFile, saved);
   }
   async function forgetDevice(token) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return;
     await serial(() => withAccountLock(dataDir, async () => {
-      const saved = await deviceStore(); delete saved.devices[hash(token)]; await atomicAuthWrite(devicesFile, saved);
+      await removeRememberedDevice(token);
     }));
   }
   async function resume(deviceToken, ip) {
@@ -318,13 +331,23 @@ export function createAuthService(options) {
     });
   }
 
-  async function session(token, { touch = true } = {}) {
+  async function session(token, { touch = false } = {}) {
     const value = sessions.get(token);
     if (!value) return null;
     const fresh = await state(value.username);
+    // A logout may have removed the session while its account was read.
+    if (sessions.get(token) !== value) return null;
     if (!fresh.ready || fresh.current.credentialVersion !== value.credentialVersion || value.expiresAt <= now() || value.lastSeen + idleMs <= now()) { sessions.delete(token); return null; }
     if (touch) value.lastSeen = now();
     return { ...value, token };
+  }
+  function sessionMetadata(value) {
+    return { idleTimeoutMs: idleMs, idleExpiresAt: Math.min(value.lastSeen + idleMs, value.expiresAt), expiresAt: value.expiresAt, serverNow: now() };
+  }
+  async function activity(token) {
+    const current = await session(token, { touch: true });
+    if (!current) throw new AuthError(401, 'Войдите в панель управления.', 'unauthorized');
+    return { authenticated: true, username: current.username, csrfToken: current.csrfToken, session: sessionMetadata(current) };
   }
   async function issue(current, ip, oldToken) {
     const fresh = await state(current.username);
@@ -333,9 +356,10 @@ export function createAuthService(options) {
     if (sessions.size >= 100) sessions.delete(sessions.keys().next().value);
     if (oldToken) sessions.delete(oldToken);
     const token = randomBytes(32).toString('hex'); const csrfToken = randomBytes(32).toString('hex');
-    sessions.set(token, { csrfToken, username: current.username, credentialVersion: current.credentialVersion, expiresAt: now() + sessionMs, lastSeen: now() });
+    const value = { csrfToken, username: current.username, credentialVersion: current.credentialVersion, expiresAt: now() + sessionMs, lastSeen: now() };
+    sessions.set(token, value);
     await audit('login.succeeded', ip, { username: current.username });
-    return { authenticated: true, token, csrfToken };
+    return { authenticated: true, username: current.username, token, csrfToken, session: sessionMetadata(value) };
   }
 
   async function login({ username, password }, ip, oldToken) {
@@ -405,8 +429,8 @@ export function createAuthService(options) {
       await saveAccount(current);
       challenges.delete(challengeToken);
       await audit('mfa.succeeded', ip, { method });
-      const deviceResult = method === 'totp'
-        ? await rememberDevice(current, deviceToken, device?.expiresAt) : {};
+      const deviceResult = method === 'totp' ? await rememberDevice(current, deviceToken) : {};
+      if (method !== 'totp') await removeRememberedDevice(deviceToken);
       return { current, oldToken: challenge.oldToken, deviceResult };
     }));
     await refund(reservation);
@@ -491,10 +515,10 @@ export function createAuthService(options) {
   }
 
   return {
-    production, sessionMs, audit, session, login, verify, enrollmentStart, enrollmentConfirm, enrollmentCancel, resume, forgetDevice,
+    production, sessionMs, audit, session, activity, login, verify, enrollmentStart, enrollmentConfirm, enrollmentCancel, resume, forgetDevice,
     async status(token, deviceToken) {
-      const currentSession = await session(token);
-      if (currentSession) return { authenticated: true, csrfToken: currentSession.csrfToken };
+      const currentSession = await session(token, { touch: false });
+      if (currentSession) return { authenticated: true, username: currentSession.username, csrfToken: currentSession.csrfToken, session: sessionMetadata(currentSession) };
       const fresh = await state();
       const device = await trustedDevice(deviceToken);
       return { authenticated: false, configured: Boolean(fresh.current), mfaRequired: production || Boolean(fresh.current), production, ready: fresh.ready, enrollmentAvailable: fresh.enrollmentAvailable, ...(device ? { trustedUsername: device.username } : {}) };

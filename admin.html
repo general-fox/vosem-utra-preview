@@ -16,7 +16,7 @@
   <a class="skip-link" href="#main">К управлению меню</a>
   <header class="admin-header">
     <a href="index.html" class="admin-logo" aria-label="Восемь утра — на главную"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"></a>
-    <div class="admin-header-actions"><a href="index.html#menu" class="text-link" target="_blank" rel="noopener">Открыть сайт <span aria-hidden="true">↗</span><span class="visually-hidden"> в новой вкладке</span></a><button class="button button-outline button-small" id="logout" type="button" hidden>Выйти</button></div>
+    <div class="admin-header-actions"><a href="index.html#menu" class="text-link" target="_blank" rel="noopener">Открыть сайт <span aria-hidden="true">↗</span><span class="visually-hidden"> в новой вкладке</span></a><div class="admin-signout" id="signout-actions" hidden><button class="button button-outline button-small" id="logout" type="button" hidden>Выйти</button><button class="admin-forget-device" id="logout-forget" type="button">Выйти и забыть устройство</button></div></div>
   </header>
   <main id="main" class="admin-main">
     <p class="connection-status" id="connection-status" role="status">Проверяем подключение…</p>
@@ -27,12 +27,12 @@
         <p class="login-brand-note">Забота о деталях — наша хорошая привычка.</p>
       </div>
       <div class="login-form-wrap">
-        <p class="eyebrow">УПРАВЛЕНИЕ МЕНЮ</p><h2 id="auth-heading" tabindex="-1">Рады видеть вас</h2><p class="muted" id="auth-description">Войдите, чтобы добавлять блюда, обновлять фотографии и цены.</p>
+        <p class="eyebrow">УПРАВЛЕНИЕ МЕНЮ</p><h2 id="auth-heading" tabindex="-1">Рады видеть вас</h2><p class="muted" id="auth-description">Войдите, чтобы добавлять блюда, обновлять фотографии и цены.</p><p class="session-lock-note field-help" id="session-lock-note" role="status" hidden></p>
         <div class="auth-setup" id="auth-setup" role="status" hidden><p>Вход пока недоступен. Обратитесь к администратору сервера, чтобы подготовить защищённое подключение.</p><button type="button" class="text-link" id="check-setup">Проверить готовность ↻</button></div>
         <form id="login-form" aria-labelledby="auth-heading">
           <div class="admin-field"><label for="username">Почта или логин</label><input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.ru или логин" required minlength="3" maxlength="254" title="Введите почту администратора или ранее настроенный логин."></div>
           <div class="admin-field"><label for="password">Пароль</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024"><button id="password-toggle" class="password-toggle" type="button" aria-controls="password" aria-label="Показать пароль" aria-pressed="false" title="Показать пароль"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="password-eye-slash" d="m3 3 18 18"/></svg></button></div></div>
-          <p class="field-help" id="device-login-help">Запомним браузер на 30 дней. На чужом устройстве обязательно нажмите «Выйти» после работы.</p>
+          <p class="field-help" id="device-login-help">Запомним этот браузер: в следующий раз понадобится только код из приложения. На чужом устройстве выберите «Выйти и забыть устройство».</p>
           <p class="admin-message error" id="login-error" role="alert" hidden></p>
           <button type="submit" class="button button-dark" id="login-submit">Продолжить <span aria-hidden="true">↗</span></button>
         </form>
@@ -41,7 +41,7 @@
           <div class="admin-field"><label for="verification-code" id="verification-label">Код из Яндекс ID (Ключ)</label><input id="verification-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" pattern="[0-9]{6}" minlength="6" maxlength="6" required aria-describedby="verification-help"><p class="field-help" id="verification-help">В Яндекс ID (Ключ) выберите «Восемь утра» и введите 6 цифр. Код можно вставить целиком.</p></div>
           <p class="admin-message error" id="verification-error" role="alert" hidden></p>
           <button type="submit" class="button button-dark" id="verify-submit">Подтвердить вход <span aria-hidden="true">↗</span></button>
-          <div class="auth-secondary-actions"><button type="button" class="text-link" id="code-mode">Использовать резервный код</button><button type="button" class="text-link" id="auth-back">← К почте и паролю</button></div>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="code-mode">Использовать резервный код</button><button type="button" class="text-link" id="auth-back">← К почте и паролю</button><button type="button" class="text-link" id="auth-forget-device" hidden>Забыть это устройство</button></div>
         </form>
         <form id="enrollment-form" aria-labelledby="auth-heading" hidden>
           <p class="auth-step">1 из 3 · Данные для входа</p>

@@ -190,11 +190,17 @@ export function createMenuMiddleware(options = {}) {
       if (pathname === '/api/admin/session' && req.method === 'GET') {
         return sendJson(res, 200, await auth.status(sessionToken(req), deviceToken(req)));
       }
+      if (pathname === '/api/admin/activity' && req.method === 'POST') {
+        await requireSession(req, true);
+        return sendJson(res, 200, await auth.activity(sessionToken(req)));
+      }
       if (pathname === '/api/admin/resume' && req.method === 'POST') return sendJson(res, 202, await auth.resume(deviceToken(req), peer(req)));
       if (pathname === '/api/admin/forget-device' && req.method === 'POST') {
+        if (await auth.session(sessionToken(req))) await requireSession(req, true);
+        await auth.logout(sessionToken(req), peer(req));
         await auth.forgetDevice(deviceToken(req));
-        res.setHeader('Set-Cookie', cookie(req, '', 0, DEVICE_COOKIE));
-        return sendJson(res, 200, { forgotten: true });
+        res.setHeader('Set-Cookie', [cookie(req, '', 0), cookie(req, '', 0, DEVICE_COOKIE)]);
+        return sendJson(res, 200, { ...await auth.status(), forgotten: true });
       }
       if (pathname === '/api/admin/enroll/start' && req.method === 'POST') {
         const result = await auth.enrollmentStart(await readJson(req), peer(req));
@@ -208,16 +214,18 @@ export function createMenuMiddleware(options = {}) {
         if (result.mfaRequired || result.enrollmentRequired) return sendJson(res, 202, result);
         await auth.forgetDevice(deviceToken(req));
         res.setHeader('Set-Cookie', [cookie(req, result.token, Math.floor(auth.sessionMs / 1000)), cookie(req, result.deviceToken ?? '', result.deviceMaxAge ?? 0, DEVICE_COOKIE)]);
-        return sendJson(res, 200, { authenticated: true, csrfToken: result.csrfToken, ...(result.recoveryCodes ? { recoveryCodes: result.recoveryCodes } : {}) });
+        return sendJson(res, 200, { authenticated: true, username: result.username, csrfToken: result.csrfToken, session: result.session, ...(result.recoveryCodes ? { recoveryCodes: result.recoveryCodes } : {}) });
       }
       if (pathname === '/api/admin/logout' && req.method === 'POST') {
-        // An already idle session must still be able to forget this browser.
+        // An already idle session may log out/forget; active sessions need CSRF.
+        const body = req.headers['content-type'] || Number(req.headers['content-length'] || 0) > 0 ? await readJson(req) : {};
+        if (Object.hasOwn(body, 'forgetDevice') && typeof body.forgetDevice !== 'boolean') fail(400, 'Некорректный запрос.', 'invalid_request');
         const active = await auth.session(sessionToken(req));
         if (active) await requireSession(req, true);
         await auth.logout(sessionToken(req), peer(req));
-        await auth.forgetDevice(deviceToken(req));
-        res.setHeader('Set-Cookie', [cookie(req, '', 0), cookie(req, '', 0, DEVICE_COOKIE)]);
-        return sendJson(res, 200, { authenticated: false });
+        if (body.forgetDevice === true) await auth.forgetDevice(deviceToken(req));
+        res.setHeader('Set-Cookie', [cookie(req, '', 0), ...(body.forgetDevice === true ? [cookie(req, '', 0, DEVICE_COOKIE)] : [])]);
+        return sendJson(res, 200, await auth.status(undefined, body.forgetDevice === true ? undefined : deviceToken(req)));
       }
       if (pathname === '/api/admin/menu' && req.method === 'GET') { await requireSession(req); return sendJson(res, 200, await readSavedMenu()); }
       if (pathname === '/api/admin/menu' && req.method === 'PUT') {
@@ -230,6 +238,9 @@ export function createMenuMiddleware(options = {}) {
           const menu = await readSavedMenu();
           if (body.revision !== menu.revision) fail(409, 'Меню уже изменено в другой вкладке. Загрузите актуальную версию.', 'conflict');
           const updated = { items, revision: menu.revision + 1 };
+          // The body/queue may outlive an idle timeout or an explicit logout.
+          // Recheck immediately before committing, without extending the deadline.
+          await requireSession(req, true);
           await atomicWrite(menuFile, updated);
           await auth.audit('menu.updated', peer(req), { revision: updated.revision, count: items.length });
           return updated;
@@ -243,6 +254,7 @@ export function createMenuMiddleware(options = {}) {
         if (!MIME_EXT[mime]) fail(415, 'Поддерживаются JPG, PNG и WebP.', 'invalid_image_type');
         const buffer = await readBody(req, MAX_IMAGE_BYTES);
         if (detectedImage(buffer) !== mime) fail(400, 'Файл не соответствует выбранному формату фотографии.', 'invalid_image');
+        await requireSession(req, true);
         await mkdir(uploadsDir, { recursive: true });
         const name = `${randomUUID()}.${MIME_EXT[mime]}`;
         await writeFile(path.join(uploadsDir, name), buffer, { flag: 'wx', mode: 0o600 });

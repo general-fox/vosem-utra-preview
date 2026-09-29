@@ -106,6 +106,8 @@ test('Vite PHP transport protects login, cookies and CSRF; menu changes survive 
   assert.equal((await request('/api/menu')).json.revision, 8);
   const orderSettings = await request('/api/ordering'); assert.equal(orderSettings.status, 200); assert.equal(orderSettings.json.mode, 'development');
   assert.equal((await request('/api/admin/logout', { body: {} })).status, 200);
+  assert.equal((await request('/api/admin/session')).json.trustedUsername, 'owner@example.test');
+  assert.equal((await request('/api/admin/logout', { body: { forgetDevice: true } })).status, 200);
   assert.equal((await request('/api/admin/session')).json.trustedUsername, undefined);
 
   // Consume a recovery code BEFORE export; it must never become reusable again.

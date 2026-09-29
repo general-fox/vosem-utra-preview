@@ -10,8 +10,56 @@ const state = { items: [], revision: null, csrfToken: '', busy: false, loaded: f
 // Authentication challenges and entered codes live only in this page's memory.
 const auth = { challengeToken: '', recovery: false, busy: false, setupRequired: false, production: false, mfaRequired: false,
   enrollmentAvailable: false, enrollmentToken: '', enrollmentPhase: '', enrollmentTimer: null, generation: 0,
-  requiresNewPassword: false, recoveryPending: false, trustedUsername: '' };
+  requiresNewPassword: false, recoveryPending: false, trustedUsername: '', logoutPending: false };
 const draft = { id: null, isNew: true, image: '', file: null, previewUrl: '', dirty: false, resume: false };
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const ACTIVITY_THROTTLE_MS = 30 * 1000;
+const idle = { active: false, generation: 0, deadline: 0, absoluteDeadline: 0, timeoutMs: IDLE_TIMEOUT_MS,
+  lastActivity: 0, lastSent: -Infinity, lastAcknowledged: 0, activityTimer: null, timer: null, pending: false,
+  username: '', requests: new Set(), suspended: false, dashboardWasVisible: false };
+const timingObservedAt = new WeakMap();
+let remoteLogoutTimer = null;
+const LOCK_STORAGE_KEY = 'vosem-utra-admin-locked';
+let pendingLogoutWake = null;
+const wallClockOrigin = Date.now();
+const monotonicOrigin = globalThis.performance?.now();
+// Wall time catches a sleeping laptop; monotonic time also handles a clock moved backwards.
+function sessionNow() {
+  return Math.max(Date.now(), wallClockOrigin + (monotonicOrigin === undefined ? 0 : globalThis.performance.now() - monotonicOrigin));
+}
+function readLockMarker() {
+  try {
+    const value = JSON.parse(globalThis.localStorage?.getItem(LOCK_STORAGE_KEY) || 'null');
+    return value && Number.isFinite(value.at) && Number.isFinite(value.pendingUntil) ? value : null;
+  } catch { return null; }
+}
+function rememberLocked(forgetDevice, pending = false) {
+  try {
+    globalThis.localStorage?.setItem(LOCK_STORAGE_KEY, JSON.stringify({ at: Date.now(), forgetDevice,
+      pendingUntil: pending ? Date.now() + 25000 : 0 }));
+  } catch { /* Private browsing can disable storage; this tab still fails closed. */ }
+}
+function finishRememberedLogout() {
+  const marker = readLockMarker();
+  if (marker) rememberLocked(marker.forgetDevice === true);
+  pendingLogoutWake?.();
+}
+function clearLockMarker() {
+  try { globalThis.localStorage?.removeItem(LOCK_STORAGE_KEY); } catch { /* Optional local marker, never a credential. */ }
+}
+async function waitForPendingLogout() {
+  const marker = readLockMarker();
+  if (!marker || marker.pendingUntil <= Date.now()) return;
+  setAuthBusy(true);
+  await new Promise((resolve) => {
+    const timer = setTimeout(done, Math.min(25000, marker.pendingUntil - Date.now()));
+    function done() { clearTimeout(timer); pendingLogoutWake = null; resolve(); }
+    pendingLogoutWake = done;
+  });
+  setAuthBusy(false);
+}
+let authChannel = null;
+try { if (typeof BroadcastChannel === 'function') authChannel = new BroadcastChannel('vosem-utra-admin-session'); } catch { /* Optional, never required for locking. */ }
 let deleteId = null;
 const passwordFields = [
   ['password', 'пароль'],
@@ -60,12 +108,177 @@ class ApiError extends Error {
   }
 }
 
-async function api(path, { method = 'GET', body, raw = false } = {}) {
+function stopIdleSession() {
+  idle.active = false;
+  idle.generation += 1;
+  clearTimeout(idle.timer);
+  clearTimeout(idle.activityTimer);
+  idle.timer = idle.activityTimer = null;
+  idle.pending = false;
+  for (const controller of idle.requests) controller.abort();
+  idle.requests.clear();
+}
+
+function broadcastAuth(message) {
+  try { authChannel?.postMessage(message); } catch { /* Local timeout still works without other tabs. */ }
+}
+
+function scheduleIdleLock() {
+  clearTimeout(idle.timer);
+  if (!idle.active) return;
+  const remaining = Math.min(idle.deadline, idle.absoluteDeadline) - sessionNow();
+  if (remaining <= 0) {
+    if (document.visibilityState === 'hidden' || remaining < -1000) {
+      suspendProtectedUi();
+      void checkVisibleSession();
+    } else void lockSession({ reason: sessionNow() >= idle.absoluteDeadline ? 'expired' : 'idle' });
+    return;
+  }
+  idle.timer = setTimeout(() => { if (idle.active) scheduleIdleLock(); }, remaining);
+}
+
+function acceptSessionTiming(data, { initial = false, activity = false } = {}) {
+  const timing = data?.session;
+  if (!timing || !['idleTimeoutMs', 'idleExpiresAt', 'expiresAt', 'serverNow'].every((key) => Number.isFinite(timing[key]))
+    || timing.idleTimeoutMs <= 0 || timing.idleTimeoutMs > IDLE_TIMEOUT_MS
+    || timing.idleExpiresAt <= timing.serverNow || timing.expiresAt <= timing.serverNow) {
+    throw new ApiError('Не удалось подтвердить срок защищённой сессии. Войдите снова.', 401, 'invalid_session_timing');
+  }
+  const now = timingObservedAt.get(data) ?? sessionNow();
+  if (initial) {
+    stopIdleSession();
+    idle.active = true;
+    idle.username = validUsername(data.username) ? data.username : $('username').value.trim();
+    idle.lastActivity = now - Math.max(0, timing.idleTimeoutMs - (timing.idleExpiresAt - timing.serverNow));
+    idle.lastAcknowledged = idle.lastActivity;
+    idle.lastSent = -Infinity;
+    idle.suspended = false;
+  }
+  if (!idle.active) return;
+  idle.timeoutMs = timing.idleTimeoutMs;
+  const absolute = now + timing.expiresAt - timing.serverNow;
+  idle.absoluteDeadline = initial ? absolute : Math.min(idle.absoluteDeadline, absolute);
+  // The server acknowledgement never extends the UI past 15 minutes of real activity.
+  idle.deadline = Math.min(now + timing.idleExpiresAt - timing.serverNow, idle.lastActivity + idle.timeoutMs, idle.absoluteDeadline);
+  if (idle.deadline <= sessionNow()) {
+    if (initial) stopIdleSession();
+    throw new ApiError('Сессия завершилась. Войдите снова.', 401, 'invalid_session_timing');
+  }
+  scheduleIdleLock();
+  if (activity && idle.active) broadcastAuth({ type: 'activity', username: idle.username, deadline: idle.deadline });
+}
+
+function showLockedIdentity(username, note = '') {
+  if (typeof username === 'string' && validUsername(username)) {
+    auth.setupRequired = false;
+    showVerification('', username);
+    $('verification-code').focus();
+  } else $('password').focus();
+  message($('session-lock-note'), note);
+}
+
+async function lockSession({ reason = 'idle', forgetDevice = false, remote = false, pending = false, persist = !remote } = {}) {
+  if (!state.csrfToken && !idle.active && reason === 'idle') return;
+  // Capture before showLogin clears it. Requests already in flight cannot reopen protected UI.
+  const csrfToken = state.csrfToken;
+  const username = idle.username || auth.trustedUsername || $('username').value.trim();
+  draft.resume = draft.resume || $('editor-dialog').open;
+  $('editor-dialog').close();
+  $('delete-dialog').close();
+  deleteId = null;
+  showLogin();
+  if (persist) rememberLocked(forgetDevice, !remote);
+  if (!remote || pending) auth.logoutPending = true;
+  if (remote && pending) {
+    clearTimeout(remoteLogoutTimer);
+    remoteLogoutTimer = setTimeout(() => { auth.logoutPending = false; setAuthBusy(false); }, 25000);
+  }
+  setBusy(false);
+  setAuthBusy(false);
+  const note = reason === 'idle'
+    ? `Панель закрыта после 15 минут без действий.${draft.resume ? ' Черновик сохранён в этой вкладке.' : ''}`
+    : reason === 'expired' ? `Сессия завершилась.${draft.resume ? ' Черновик сохранён в этой вкладке.' : ''}`
+      : `Вы вышли из панели.${draft.resume ? ' Черновик сохранён в этой вкладке.' : ''}`;
+  if (forgetDevice) { idle.username = ''; $('username').value = ''; }
+  showLockedIdentity(forgetDevice ? '' : username, note);
+  if (!remote) broadcastAuth({ type: 'lock', forgetDevice, pending: true });
+  const generation = idle.generation;
+  const authGeneration = auth.generation;
+  try {
+    const result = remote ? null : await api('logout', { method: 'POST', body: { forgetDevice }, csrfToken, allowAfterLock: true });
+    if (generation !== idle.generation || authGeneration !== auth.generation) return;
+    if (result) {
+      if (!forgetDevice && validUsername(result.trustedUsername)) showLockedIdentity(result.trustedUsername, note);
+      else { showLogin(); if (forgetDevice) $('username').value = ''; message($('session-lock-note'), note); }
+    }
+  } catch {
+    // Fail closed even offline. No automatic re-entry based on an old session response.
+    if (generation === idle.generation) message($('session-lock-note'), `${note} Для нового входа понадобится соединение с сервером.`);
+  } finally {
+    if (!remote) {
+      auth.logoutPending = false;
+      finishRememberedLogout();
+      setAuthBusy(false);
+      broadcastAuth({ type: 'logout-complete' });
+    }
+  }
+}
+
+async function sendActivity() {
+  idle.activityTimer = null;
+  if (!idle.active || idle.pending || idle.lastActivity <= idle.lastAcknowledged) return;
+  if (sessionNow() >= idle.deadline || sessionNow() >= idle.absoluteDeadline) { suspendProtectedUi(); void checkVisibleSession(); return; }
+  const generation = idle.generation;
+  const activityAt = idle.lastActivity;
+  idle.pending = true;
+  idle.lastSent = sessionNow();
+  try {
+    const data = await api('activity', { method: 'POST', body: {} });
+    if (generation !== idle.generation || !idle.active) return;
+    if (data.authenticated !== true) throw new ApiError('Сессия завершилась.', 401);
+    idle.lastAcknowledged = activityAt;
+    acceptSessionTiming(data, { activity: true });
+  } catch (error) {
+    if (generation !== idle.generation) return;
+    if (error.status === 401 || error.status === 403) {
+      // Another tab may have completed fresh MFA and replaced our CSRF token.
+      // Hide this view, but never revoke that newer shared-cookie session blindly.
+      suspendProtectedUi();
+      await checkVisibleSession();
+    }
+    // No retries or keepalive while idle. The last confirmed deadline still locks offline.
+  } finally {
+    if (generation === idle.generation) {
+      idle.pending = false;
+      if (idle.active && idle.lastActivity > activityAt && !idle.activityTimer) {
+        idle.activityTimer = setTimeout(sendActivity, Math.max(0, ACTIVITY_THROTTLE_MS - (sessionNow() - idle.lastSent)));
+      }
+    }
+  }
+}
+
+function recordActivity(event) {
+  if (!event.isTrusted || document.visibilityState === 'hidden' || !idle.active) return;
+  if (idle.suspended) { void checkVisibleSession(); return; }
+  const now = sessionNow();
+  if (now >= idle.deadline || now >= idle.absoluteDeadline) { suspendProtectedUi(); void checkVisibleSession(); return; }
+  idle.lastActivity = now;
+  if (idle.pending || idle.activityTimer) return;
+  const wait = Math.min(Math.max(0, ACTIVITY_THROTTLE_MS - (now - idle.lastSent)), Math.max(0, idle.deadline - now - 1000));
+  if (!wait) void sendActivity();
+  else idle.activityTimer = setTimeout(sendActivity, wait);
+}
+
+async function api(path, { method = 'GET', body, raw = false, csrfToken = state.csrfToken, allowAfterLock = false } = {}) {
+  const startedAt = sessionNow();
   const controller = new AbortController();
+  const generation = idle.generation;
+  const protectedRequest = Boolean(csrfToken) && !allowAfterLock;
+  if (protectedRequest) idle.requests.add(controller);
   const timeout = setTimeout(() => controller.abort(), 20000);
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = raw ? body.type : 'application/json';
-  if (method !== 'GET' && state.csrfToken) headers['X-CSRF-Token'] = state.csrfToken;
+  if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
   try {
     const response = await fetch(`/api/admin/${path}`, {
       method, headers, credentials: 'same-origin', cache: 'no-store',
@@ -74,17 +287,21 @@ async function api(path, { method = 'GET', body, raw = false } = {}) {
     const isJson = response.headers.get('content-type')?.includes('application/json');
     if (!isJson) throw new ApiError('Сервер управления меню недоступен. Статическая версия сайта не сохраняет изменения. Откройте панель на сервере с настроенным доступом администратора.', response.status);
     const data = await response.json();
+    if (data && typeof data === 'object') timingObservedAt.set(data, startedAt);
+    if (protectedRequest && generation !== idle.generation) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
     if (!response.ok) {
       const detail = typeof data.error === 'string' ? data.error : data.error?.message || data.message;
       throw new ApiError(detail || `Не удалось выполнить запрос (${response.status}). Попробуйте ещё раз.`, response.status, data.code || data.error?.code || '');
     }
     return data;
   } catch (error) {
+    if (protectedRequest && generation !== idle.generation) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
     if (error instanceof ApiError) throw error;
     throw new ApiError(error.name === 'AbortError'
       ? 'Сервер не ответил вовремя. Проверьте подключение и попробуйте ещё раз.'
       : 'Не удалось связаться с сервером меню. Проверьте подключение и повторите попытку.');
   } finally {
+    idle.requests.delete(controller);
     clearTimeout(timeout);
   }
 }
@@ -106,18 +323,19 @@ function setBusy(busy) {
   $('dashboard').setAttribute('aria-busy', String(busy));
   $('item-form').setAttribute('aria-busy', String(busy));
   $('editor-fields').disabled = busy;
-  for (const id of ['logout', 'add-item', 'refresh', 'retry-load', 'close-editor', 'cancel-editor', 'refresh-draft', 'cancel-delete', 'confirm-delete']) $(id).disabled = busy;
+  for (const id of ['logout', 'logout-forget', 'add-item', 'refresh', 'retry-load', 'close-editor', 'cancel-editor', 'refresh-draft', 'cancel-delete', 'confirm-delete']) $(id).disabled = busy;
   $('save-item').disabled = busy || state.conflict || !state.loaded;
   $('save-item').textContent = busy ? 'Сохраняем…' : 'Сохранить блюдо';
   document.querySelectorAll('[data-item-action]').forEach((button) => { button.disabled = busy || state.conflict || !state.loaded; });
 }
 
 function setAuthBusy(busy) {
+  busy = busy || auth.logoutPending;
   auth.busy = busy;
   if (busy) hidePasswords();
   for (const id of ['username', 'password', 'password-toggle', 'enrollment-password-toggle', 'enrollment-password-confirm-toggle', 'login-submit', 'verification-code', 'verify-submit', 'code-mode', 'auth-back', 'check-setup',
     'enrollment-username', 'enrollment-password', 'enrollment-password-confirm', 'enrollment-start', 'enrollment-back',
-    'enrollment-code', 'enrollment-confirm', 'enrollment-cancel', 'saved-recovery-codes', 'recovery-logout']) {
+    'enrollment-code', 'enrollment-confirm', 'enrollment-cancel', 'saved-recovery-codes', 'recovery-logout', 'auth-forget-device']) {
     $(id).disabled = busy || (auth.setupRequired && id !== 'check-setup');
   }
   for (const id of ['login-form', 'verify-form', 'enrollment-form', 'enrollment-verify-form', 'enrollment-recovery-form']) $(id).setAttribute('aria-busy', String(busy));
@@ -179,11 +397,13 @@ function clearChallenge() {
 }
 
 function showLogin(error = '') {
+  stopIdleSession();
   clearChallenge();
   state.csrfToken = '';
   state.loaded = false;
   $('dashboard').hidden = true;
   $('logout').hidden = true;
+  $('signout-actions').hidden = true;
   $('connection-status').hidden = true;
   $('login-panel').hidden = false;
   $('login-form').hidden = auth.setupRequired;
@@ -193,6 +413,7 @@ function showLogin(error = '') {
     ? 'Для работы с меню нужен защищённый аккаунт администратора.'
     : 'Войдите, чтобы добавлять блюда, обновлять фотографии и цены.';
   message($('login-error'), error);
+  message($('session-lock-note'), '');
   setAuthBusy(auth.busy);
 }
 
@@ -206,6 +427,7 @@ function showVerification(challengeToken, trustedUsername = '') {
   $('auth-heading').textContent = 'Подтвердите, что это вы';
   $('auth-description').textContent = 'Остался ещё один шаг: код для «Восемь утра» из Яндекс ID (Ключ) или резервный код.';
   $('code-mode').hidden = Boolean(trustedUsername);
+  $('auth-forget-device').hidden = !trustedUsername;
   $('auth-back').textContent = trustedUsername ? 'Войти с паролем / другой аккаунт' : '← К почте и паролю';
   if (trustedUsername) {
     $('username').value = trustedUsername;
@@ -299,6 +521,8 @@ function showRecoveryCodes(data) {
   }
   const username = $('enrollment-username').value.trim();
   clearChallenge();
+  acceptSessionTiming(data, { initial: true });
+  clearLockMarker();
   state.csrfToken = data.csrfToken;
   auth.recoveryPending = true;
   auth.enrollmentPhase = 'recovery';
@@ -328,8 +552,19 @@ async function cancelEnrollment(error = '') {
 }
 
 async function checkSession() {
+  await waitForPendingLogout();
+  const generation = idle.generation;
   const session = await api('session');
+  if (generation !== idle.generation) return;
   if (session.authenticated === true && typeof session.csrfToken === 'string' && session.csrfToken) {
+    const locked = readLockMarker();
+    if (locked) {
+      state.csrfToken = session.csrfToken;
+      idle.username = validUsername(session.username) ? session.username : '';
+      await lockSession({ reason: 'logout', forgetDevice: locked.forgetDevice === true });
+      return;
+    }
+    acceptSessionTiming(session, { initial: true });
     state.csrfToken = session.csrfToken;
     await enterDashboard();
     return;
@@ -348,20 +583,9 @@ async function checkSession() {
 
 function sessionExpired(error) {
   if (error.status !== 401) return false;
+  if (error.code === 'client_locked') return true;
   if (!state.csrfToken) return true;
-  draft.resume = $('editor-dialog').open;
-  $('editor-dialog').close();
-  $('delete-dialog').close();
-  showLogin('Сессия завершилась. Войдите снова, чтобы продолжить. Черновик блюда сохранён в открытой вкладке.');
-  $('password').focus();
-  const generation = auth.generation;
-  void api('session').then((session) => {
-    if (generation !== auth.generation || auth.busy || $('password').value) return;
-    if (typeof session.trustedUsername === 'string' && validUsername(session.trustedUsername)) {
-      showVerification('', session.trustedUsername);
-      $('verification-code').focus();
-    }
-  }).catch(() => { /* Password login remains available if the connection is lost. */ });
+  void lockSession({ reason: 'expired' });
   return true;
 }
 
@@ -491,12 +715,16 @@ async function loadMenu({ preserveDraft = false } = {}) {
 }
 
 async function enterDashboard() {
+  if (!idle.active || !state.csrfToken) return;
+  const generation = idle.generation;
   clearChallenge();
   $('login-panel').hidden = true;
   $('connection-status').hidden = true;
   $('dashboard').hidden = false;
   $('logout').hidden = false;
+  $('signout-actions').hidden = false;
   await loadMenu({ preserveDraft: draft.resume });
+  if (generation !== idle.generation || !idle.active || idle.suspended) return;
   if (draft.resume && state.csrfToken) {
     draft.resume = false;
     $('editor-dialog').showModal();
@@ -636,6 +864,8 @@ $('verify-form').addEventListener('submit', async (event) => {
     const data = await api('verify', { method: 'POST', body: { challengeToken: auth.challengeToken, code } });
     if (generation !== auth.generation) return;
     if (data.authenticated !== true || typeof data.csrfToken !== 'string' || !data.csrfToken) throw new ApiError('Сервер не подтвердил вход. Попробуйте ещё раз.');
+    acceptSessionTiming(data, { initial: true });
+    clearLockMarker();
     state.csrfToken = data.csrfToken;
     await enterDashboard();
   } catch (error) {
@@ -665,14 +895,23 @@ $('code-mode').addEventListener('click', () => {
 
 $('auth-back').addEventListener('click', async () => {
   if (auth.busy) return;
-  if (auth.trustedUsername) {
-    setAuthBusy(true);
-    try { await api('forget-device', { method: 'POST', body: {} }); }
-    catch (error) { message($('verification-error'), error.message); return; }
-    finally { setAuthBusy(false); }
-  }
   showLogin();
   $('password').focus();
+});
+
+$('auth-forget-device').addEventListener('click', async () => {
+  if (auth.busy) return;
+  setAuthBusy(true);
+  try {
+    await api('forget-device', { method: 'POST', body: {} });
+    rememberLocked(true);
+    broadcastAuth({ type: 'lock', forgetDevice: true });
+    idle.username = '';
+    showLogin();
+    $('username').value = '';
+    $('username').focus();
+  } catch (error) { message($('verification-error'), error.message); }
+  finally { setAuthBusy(false); }
 });
 
 $('enrollment-form').addEventListener('submit', async (event) => {
@@ -782,33 +1021,13 @@ $('check-setup').addEventListener('click', async () => {
   }
 });
 
-async function logout() {
+async function logout(forgetDevice = false) {
   if (state.busy || auth.busy) return;
-  setBusy(true);
-  setAuthBusy(true);
-  try {
-    await api('logout', { method: 'POST' });
-    state.items = [];
-    state.revision = null;
-    state.loaded = false;
-    state.conflict = false;
-    draft.dirty = false;
-    draft.resume = false;
-    clearPreviewUrl();
-    showLogin();
-    $('password').focus();
-  } catch (error) {
-    if (!sessionExpired(error)) {
-      if (auth.recoveryPending) message($('recovery-error'), error.message);
-      else notice(error.message, { error: true });
-    }
-  } finally {
-    setBusy(false);
-    setAuthBusy(false);
-  }
+  await lockSession({ reason: 'logout', forgetDevice });
 }
-$('logout').addEventListener('click', logout);
-$('recovery-logout').addEventListener('click', logout);
+$('logout').addEventListener('click', () => logout());
+$('logout-forget').addEventListener('click', () => logout(true));
+$('recovery-logout').addEventListener('click', () => logout());
 
 $('add-item').addEventListener('click', () => openEditor());
 $('search').addEventListener('input', render);
@@ -951,6 +1170,82 @@ window.addEventListener('pagehide', () => {
   // A back/forward cache entry must never retain a QR secret or one-time recovery list.
   if (auth.enrollmentPhase || auth.challengeToken || auth.busy) showLogin();
   else clearChallenge();
+});
+
+for (const type of ['pointerdown', 'pointermove', 'keydown', 'input', 'wheel', 'touchstart', 'touchmove']) {
+  document.addEventListener(type, recordActivity, { capture: true, passive: true });
+}
+
+let checkingVisibleSession = false;
+function suspendProtectedUi() {
+  if (!idle.active || idle.suspended) return;
+  idle.suspended = true;
+  idle.dashboardWasVisible = !$('dashboard').hidden;
+  $('dashboard').hidden = true;
+  draft.resume = draft.resume || $('editor-dialog').open;
+  $('editor-dialog').close();
+  $('delete-dialog').close();
+  clearTimeout(idle.timer);
+}
+
+async function checkVisibleSession() {
+  if (document.visibilityState === 'hidden' || !idle.active || checkingVisibleSession) return;
+  if (sessionNow() >= idle.deadline || sessionNow() >= idle.absoluteDeadline) suspendProtectedUi();
+  const generation = idle.generation;
+  checkingVisibleSession = true;
+  try {
+    // This endpoint never refreshes idle expiry. Focus/visibility is not user activity.
+    const data = await api('session');
+    if (generation !== idle.generation || !idle.active) return;
+    if (data.authenticated !== true || data.csrfToken !== state.csrfToken) {
+      if (validUsername(data.trustedUsername)) idle.username = data.trustedUsername;
+      void lockSession({ reason: 'expired', remote: true });
+      return;
+    }
+    const timing = data.session;
+    if (timing && Number.isFinite(timing.idleExpiresAt) && Number.isFinite(timing.serverNow) && Number.isFinite(timing.idleTimeoutMs)) {
+      // Another open tab may have sent actual activity while this one was suspended.
+      idle.lastActivity = Math.max(idle.lastActivity, (timingObservedAt.get(data) ?? sessionNow()) + timing.idleExpiresAt - timing.serverNow - timing.idleTimeoutMs);
+    }
+    acceptSessionTiming(data);
+    if (idle.active && idle.suspended) {
+      idle.suspended = false;
+      if (idle.dashboardWasVisible) {
+        $('dashboard').hidden = false;
+        if (draft.resume && state.loaded) { draft.resume = false; $('editor-dialog').showModal(); }
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'client_locked' && generation === idle.generation && state.csrfToken) {
+      void lockSession({ reason: 'expired', remote: true, persist: true });
+    }
+  } finally { checkingVisibleSession = false; }
+}
+document.addEventListener('visibilitychange', checkVisibleSession);
+window.addEventListener('focus', checkVisibleSession);
+window.addEventListener('pageshow', checkVisibleSession);
+
+if (authChannel) authChannel.onmessage = ({ data }) => {
+  if (!data || typeof data !== 'object') return;
+  if (data.type === 'lock') {
+    if (idle.active || auth.trustedUsername) void lockSession({ reason: 'logout', forgetDevice: data.forgetDevice === true, remote: true, pending: data.pending === true });
+  } else if (data.type === 'logout-complete') {
+    clearTimeout(remoteLogoutTimer);
+    remoteLogoutTimer = null;
+    if (auth.logoutPending) { auth.logoutPending = false; setAuthBusy(false); }
+    pendingLogoutWake?.();
+  } else if (data.type === 'activity' && idle.active && data.username === idle.username && Number.isFinite(data.deadline)) {
+    const deadline = Math.min(data.deadline, idle.absoluteDeadline, sessionNow() + idle.timeoutMs);
+    if (deadline > idle.deadline) {
+      idle.deadline = deadline;
+      idle.lastActivity = Math.max(idle.lastActivity, deadline - idle.timeoutMs);
+      idle.lastAcknowledged = Math.max(idle.lastAcknowledged, idle.lastActivity);
+      scheduleIdleLock();
+    }
+  }
+};
+window.addEventListener('storage', (event) => {
+  if (event.key === LOCK_STORAGE_KEY && !readLockMarker()?.pendingUntil) pendingLogoutWake?.();
 });
 
 try {

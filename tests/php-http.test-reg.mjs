@@ -36,7 +36,7 @@ test('REG.RU consent receipts hash the current archived documents, not removed p
   const privateDir = path.join(root, 'dist-reg/vosem-utra-private');
   const registration = await readFile(path.join(privateDir, 'app/templates/registration.html'), 'utf8');
   const version = registration.match(/name="ConsentVersion" value="([^"]+)"/)[1];
-  assert.equal(version, '2026-09-29-reg4');
+  assert.equal(version, '2026-09-29-reg5');
   const result = spawnSync(phpBinary, ['-r', 'require $argv[1]; echo json_encode([CONSENT_VERSION, consent_document_hash("privacy"), consent_document_hash("consent")]);', path.join(site, 'api/consent-log.php')], { encoding: 'utf8', env: phpEnvironment });
   assert.equal(result.status, 0, result.stderr);
   const hashes = JSON.parse(result.stdout);
@@ -156,6 +156,17 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
     });
     let menu; let uploaded;
     await t.test('CSRF, revision conflicts, upload validation and escaped live menu', async () => {
+      const before = (await request('/api/admin/session', { auth: true })).json;
+      assert.equal(before.session.idleTimeoutMs, 900000);
+      assert.equal((await request('/api/admin/activity', { method: 'POST', auth: true })).status, 403);
+      assert.equal((await request('/api/admin/activity', { method: 'POST', auth: true, token: true, headers: { Origin: 'https://attacker.example' } })).status, 403);
+      assert.equal((await request('/api/admin/session', { auth: true })).json.session.idleExpiresAt, before.session.idleExpiresAt);
+      const active = await request('/api/admin/activity', { method: 'POST', auth: true, token: true });
+      assert.equal(active.status, 200); assert.equal(active.json.authenticated, true);
+      assert.ok(active.json.session.idleExpiresAt > before.session.idleExpiresAt);
+      assert.equal(active.json.session.expiresAt, before.session.expiresAt);
+      assert.equal(active.response.headers.get('set-cookie'), null, 'Activity never refreshes a device cookie');
+      assert.equal((await request('/api/admin/forget-device', { method: 'POST', auth: true })).status, 403);
       menu = (await request('/api/admin/menu', { auth: true })).json;
       assert.equal((await request('/api/admin/menu', { method: 'PUT', auth: true, body: menu })).status, 403);
       const photoPath = menu.items.find((item) => item.image).image;
@@ -185,7 +196,7 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       const again = await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password } });
       assert.equal((await request('/api/admin/verify', { method: 'POST', body: { challengeToken: again.json.challengeToken, code: recovery[0] } })).status, 401);
     });
-    await t.test('offline employee add preserves owner; HTTP enrollment sets private device cookie and logout revokes it', async () => {
+    await t.test('offline employee add preserves owner; normal logout retains private device cookie and explicit forget revokes it', async () => {
       const before = JSON.parse(await readFile(path.join(privateDir, 'admin-data/auth-state.json'), 'utf8')).account;
       const command = [path.join(privateDir, 'app/add-admin.php'), privateDir, 'ira@example.test'];
       const created = spawnSync(phpBinary, command, { encoding: 'utf8' });
@@ -204,7 +215,7 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.equal(done.status, 200, done.text);
       assert.equal(done.json.deviceToken, undefined); assert.equal(done.json.token, undefined);
       const deviceHeader = done.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device='));
-      assert.match(deviceHeader, /HttpOnly/i); assert.match(deviceHeader, /SameSite=Strict/i); assert.match(deviceHeader, /path=\/api\/admin/i); assert.match(deviceHeader, /Max-Age=25920\d\d/i);
+      assert.match(deviceHeader, /HttpOnly/i); assert.match(deviceHeader, /SameSite=Strict/i); assert.match(deviceHeader, /path=\/api\/admin/i); assert.match(deviceHeader, /Max-Age=34560000/i);
       const deviceCookie = deviceHeader.split(';')[0];
       const known = await request('/api/admin/session', { headers: { Cookie: deviceCookie } });
       assert.equal(known.json.authenticated, false); assert.equal(known.json.trustedUsername, 'ira@example.test');
@@ -218,9 +229,17 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.notEqual(rotated, deviceCookie);
       assert.equal(unlocked.json.deviceToken, undefined);
       assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie } })).status, 401);
-      // With only the device cookie (no active session), logout must still forget it.
-      const out = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: rotated }, body: {} });
-      assert.equal(out.status, 200); assert.match(out.response.headers.get('Set-Cookie'), /vosem_admin_device=deleted/);
+      const unlockedSession = unlocked.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin=')).split(';')[0];
+      const unlockedCookies = `${unlockedSession}; ${rotated}`;
+      const out = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: unlockedCookies, 'X-CSRF-Token': unlocked.json.csrfToken }, body: {} });
+      assert.equal(out.status, 200); assert.equal(out.json.trustedUsername, 'ira@example.test');
+      assert.doesNotMatch(out.response.headers.get('Set-Cookie'), /vosem_admin_device=/);
+      assert.equal((await request('/api/admin/menu', { headers: { Cookie: unlockedCookies } })).status, 401);
+      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: rotated } })).status, 202);
+      // Locked clients can explicitly forget the browser even without a live session.
+      const forgotten = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: rotated }, body: { forgetDevice: true } });
+      assert.equal(forgotten.status, 200); assert.equal(forgotten.json.trustedUsername, undefined);
+      assert.match(forgotten.response.headers.get('Set-Cookie'), /vosem_admin_device=deleted/);
       assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: rotated } })).status, 401);
     });
   } finally {

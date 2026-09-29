@@ -10,15 +10,22 @@ const source = await readFile(new URL('../admin.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 
 // Exercise the real event handlers without opening a browser or making network calls.
-async function page(session = { authenticated: false, configured: true, mfaRequired: true, production: true }, { qrRenderer = QRCode.toDataURL } = {}) {
+async function page(session = { authenticated: false, configured: true, mfaRequired: true, production: true },
+  { qrRenderer = QRCode.toDataURL, storage = new Map(), responsesAfterSession = [] } = {}) {
+  let now = 2_000_000_000_000;
   const nodes = new Map();
   const calls = [];
-  const responses = [{ body: session }];
+  const responses = [{ body: session }, ...responsesAfterSession];
   const timers = new Map();
   const windowHandlers = new Map();
+  const documentHandlers = new Map();
+  const broadcasts = [];
+  let channel;
   const qrCalls = [];
   const document = {
     activeElement: null,
+    visibilityState: 'visible',
+    addEventListener(name, handler) { documentHandlers.set(name, handler); },
     getElementById(id) {
       assert.ok(nodes.has(id), `Missing HTML element: ${id}`);
       return nodes.get(id);
@@ -52,10 +59,13 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
   }
   const context = vm.createContext({
     document, Intl, URL, AbortController, crypto: { randomUUID: () => 'new-dish-test-id' },
-    setTimeout(callback, delay) { const id = Symbol(); timers.set(id, { callback, delay }); return id; },
+    Date: class extends Date { static now() { return now; } },
+    localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) },
+    BroadcastChannel: class { constructor() { channel = this; } postMessage(data) { broadcasts.push(data); } },
+    setTimeout(callback, delay) { const id = Symbol(); timers.set(id, { callback, delay, at: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
     location: { href: 'https://example.test/admin.html', origin: 'https://example.test' },
-    window: { addEventListener(name, handler) { windowHandlers.set(name, handler); } },
+    window: { addEventListener(name, handler) { windowHandlers.set(name, handler); }, confirm: () => true },
     // Inject the installed renderer at the module-loading boundary; production uses a Vite local chunk.
     __loadLocalQr: async () => ({ default: { toDataURL: async (text, options) => { qrCalls.push({ text, options }); return qrRenderer(text, options); } } }),
     fetch: async (url, options) => {
@@ -63,14 +73,39 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       const response = responses.shift();
       assert.ok(response, `Unexpected request: ${url}`);
       if (response.wait) await response.wait;
+      if (response.error) throw response.error;
       const status = response.status || 200;
-      return { ok: status >= 200 && status < 300, status, headers: { get: () => 'application/json' }, json: async () => response.body };
+      const body = response.body?.authenticated === true && !Object.hasOwn(response.body, 'session')
+        ? { ...response.body, session: { idleTimeoutMs: 900000, idleExpiresAt: now + 900000, expiresAt: now + 28800000, serverNow: now } }
+        : response.body;
+      return { ok: status >= 200 && status < 300, status, headers: { get: () => 'application/json' }, json: async () => body };
     },
   });
   const runtimeSource = source.replace("await import('qrcode')", 'await __loadLocalQr()');
-  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, sessionExpired, validUsername, validateMenu, openEditor, itemCard };\n})()`, { filename: 'admin.js' }).runInContext(context);
+  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, idle, sessionExpired, validUsername, validateMenu, openEditor, itemCard, loadMenu, lockSession, checkSession };\n})()`, { filename: 'admin.js' }).runInContext(context);
+  async function settle() { for (let index = 0; index < 20; index += 1) await Promise.resolve(); }
   return {
-    ...runtime, calls, responses, timers, qrCalls,
+    ...runtime, calls, responses, timers, qrCalls, broadcasts, document, storage,
+    now: () => now,
+    settle,
+    async activity(type = 'pointerdown', isTrusted = true) { documentHandlers.get(type)?.({ isTrusted }); await settle(); },
+    async documentEvent(type) { await documentHandlers.get(type)?.({}); await settle(); },
+    async remote(data) { channel.onmessage?.({ data }); await settle(); },
+    async advance(ms, { suspended = false } = {}) {
+      const target = now + ms;
+      if (!suspended) {
+        while (true) {
+          const next = [...timers.entries()].filter(([, timer]) => timer.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+          if (!next) break;
+          now = next[1].at;
+          timers.delete(next[0]);
+          next[1].callback();
+          await settle();
+        }
+      }
+      now = target;
+      await settle();
+    },
     node: (id) => document.getElementById(id),
     async trigger(id, event = 'click') {
       const handler = document.getElementById(id).handlers.get(event);
@@ -211,12 +246,13 @@ test('session expiry clears challenge/code state while preserving an open menu d
   app.state.csrfToken = 'expired-session';
   app.node('editor-dialog').open = true;
   app.node('verification-code').value = '123456';
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'cafe-admin' } });
   app.sessionExpired({ status: 401 });
   assert.equal(app.auth.challengeToken, '');
   assert.equal(app.node('verification-code').value, '');
   assert.equal(app.state.csrfToken, '');
   assert.equal(app.draft.resume, true);
-  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.node('verify-form').hidden, false);
 });
 
 test('an expired challenge returns to the password step and cannot be reused', async () => {
@@ -425,7 +461,8 @@ test('wrong enrollment codes cannot open the menu and recovery codes must be sav
   assert.equal(app.node('dashboard').hidden, false);
   assert.equal(app.node('enrollment-recovery-codes').children.length, 0);
   assert.equal(app.auth.recoveryPending, false);
-  assert.equal(app.timers.size, 0);
+  assert.equal(app.idle.active, true);
+  assert.equal(app.timers.size, 1, 'Only the idle lock timer remains after enrollment');
 });
 
 test('cancelling enrollment clears QR and manual secret even when server cancellation fails', async () => {
@@ -576,7 +613,8 @@ test('malformed availability from the menu server is rejected rather than silent
 test('remembering the browser is automatic with no checkbox or opt-in request flag', async () => {
   const app = await page();
   assert.doesNotMatch(html, /id="remember-device"/);
-  assert.match(html, /Запомним браузер на 30 дней/);
+  assert.match(html, /Запомним этот браузер/);
+  assert.doesNotMatch(html, /браузер на 30 дней/);
   await passwordStep(app);
   assert.deepEqual(app.calls[1].body, { username: 'cafe-admin', password: 'example-password-only-for-tests' });
   app.node('verification-code').value = '001234'; successfulVerify(app);
@@ -642,7 +680,7 @@ test('trusted browser shows saved identity and code only, then requests a cookie
   assert.equal(app.auth.trustedUsername, '');
 });
 
-test('expired device requires password; switching accounts forgets the server-side device', async () => {
+test('expired device requires password; forgetting the device is an explicit separate action', async () => {
   const app = await page({ authenticated: false, configured: true, ready: true, trustedUsername: 'ira@example.test' });
   app.node('verification-code').value = '001234';
   app.responses.push({ status: 401, body: { code: 'device_expired', error: 'Войдите с паролем.' } });
@@ -651,7 +689,7 @@ test('expired device requires password; switching accounts forgets the server-si
   assert.equal(app.node('verify-form').hidden, true);
   const other = await page({ authenticated: false, configured: true, ready: true, trustedUsername: 'ira@example.test' });
   other.responses.push({ body: { forgotten: true } });
-  await other.trigger('auth-back');
+  await other.trigger('auth-forget-device');
   assert.equal(other.calls.at(-1).url, '/api/admin/forget-device');
   assert.equal(other.node('login-form').hidden, false);
 });
@@ -674,4 +712,285 @@ test('additional account enrollment uses the authenticated email instead of the 
   await app.trigger('login-form', 'submit');
   assert.equal(app.node('enrollment-username').value, 'ira@example.test');
   assert.equal(app.node('enrollment-password').required, true);
+});
+
+async function signedIn(options) {
+  const app = await page(undefined, options);
+  await passwordStep(app, 'ira@example.test');
+  app.node('verification-code').value = '001234';
+  successfulVerify(app);
+  await app.trigger('verify-form', 'submit');
+  return app;
+}
+
+test('15 minutes without real activity automatically hides dashboard and dialogs, retaining draft and captured logout CSRF', async () => {
+  const app = await signedIn();
+  app.openEditor();
+  app.node('item-name').value = 'Новый тост';
+  app.draft.dirty = true;
+  app.node('delete-dialog').open = true;
+  await app.advance(899999);
+  assert.equal(app.node('dashboard').hidden, false);
+  assert.equal(app.calls.some((call) => call.url.endsWith('/activity')), false, 'No idle keepalive requests');
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.advance(1);
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.node('editor-dialog').open, false);
+  assert.equal(app.node('delete-dialog').open, false);
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.draft.resume, true);
+  assert.equal(app.draft.dirty, true);
+  assert.equal(app.node('item-name').value, 'Новый тост');
+  assert.equal(app.state.csrfToken, '');
+  assert.equal(app.calls.at(-1).url, '/api/admin/logout');
+  assert.equal(app.calls.at(-1).headers['X-CSRF-Token'], 'csrf-after-mfa');
+  assert.deepEqual(app.calls.at(-1).body, { forgetDevice: false });
+  assert.equal(app.idle.active, false);
+});
+
+test('only trusted user events refresh idle, activity is throttled and stops completely when user stops', async () => {
+  const app = await signedIn();
+  await app.advance(1000);
+  await app.activity('pointerdown', false);
+  assert.equal(app.calls.filter((call) => call.url.endsWith('/activity')).length, 0);
+  app.responses.push({ body: { authenticated: true } });
+  await app.activity('keydown');
+  assert.equal(app.calls.at(-1).url, '/api/admin/activity');
+  assert.equal(app.calls.at(-1).headers['X-CSRF-Token'], 'csrf-after-mfa');
+  await app.advance(1000);
+  await app.activity('pointermove');
+  await app.activity('input');
+  assert.equal(app.calls.filter((call) => call.url.endsWith('/activity')).length, 1);
+  app.responses.push({ body: { authenticated: true } });
+  await app.advance(29000);
+  assert.equal(app.calls.filter((call) => call.url.endsWith('/activity')).length, 2);
+  await app.advance(60000);
+  assert.equal(app.calls.filter((call) => call.url.endsWith('/activity')).length, 2, 'A trailing acknowledgement must not start a keepalive loop');
+  assert.equal(app.idle.deadline, 2_000_000_000_000 + 2000 + 900000, 'Last real event, not response time, controls local inactivity');
+});
+
+test('acknowledged activity extends idle but network failures cannot keep protected UI unlocked', async () => {
+  const app = await signedIn();
+  await app.advance(840000);
+  app.responses.push({ body: { authenticated: true } });
+  await app.activity();
+  await app.advance(60000);
+  assert.equal(app.node('dashboard').hidden, false, 'Activity at minute 14 extends the session');
+  const offline = await signedIn();
+  await offline.advance(840000);
+  offline.responses.push({ error: new Error('offline') });
+  await offline.activity();
+  offline.responses.push({ error: new Error('still offline') });
+  await offline.advance(60000);
+  assert.equal(offline.node('dashboard').hidden, true);
+  assert.equal(offline.state.csrfToken, '');
+  assert.equal(offline.node('verify-form').hidden, false);
+  assert.match(offline.node('session-lock-note').textContent, /соединение/);
+});
+
+test('return from sleep hides protected UI and checks read-only status without treating wakeup as activity', async () => {
+  const app = await signedIn();
+  const count = app.calls.length;
+  await app.advance(910000, { suspended: true });
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.windowEvent('pageshow');
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.calls.length, count + 1);
+  assert.equal(app.calls.at(-1).url, '/api/admin/session');
+  await app.activity();
+  assert.equal(app.calls.length, count + 1);
+});
+
+test('ordinary logout keeps code-only entry while explicit forget removes the saved identity', async () => {
+  const app = await signedIn();
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.trigger('logout');
+  assert.deepEqual(app.calls.at(-1).body, { forgetDevice: false });
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.node('login-form').hidden, true);
+  const shared = await signedIn();
+  shared.responses.push({ body: { authenticated: false } });
+  await shared.trigger('logout-forget');
+  assert.deepEqual(shared.calls.at(-1).body, { forgetDevice: true });
+  assert.equal(shared.node('login-form').hidden, false);
+  assert.equal(shared.node('verify-form').hidden, true);
+  assert.equal(shared.node('username').value, '');
+});
+
+test('a late menu response cannot repopulate or reopen protected UI after automatic lock', async () => {
+  const app = await signedIn();
+  let release;
+  app.responses.push({ body: { items: [{ id: 'late', name: 'Поздний ответ' }], revision: 99 }, wait: new Promise((resolve) => { release = resolve; }) });
+  const pending = app.loadMenu();
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.advance(900000);
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.calls.findLast((call) => call.url === '/api/admin/menu').signal.aborted, true);
+  release();
+  await pending;
+  assert.equal(app.state.loaded, false);
+  assert.equal(app.state.items.some((item) => item.id === 'late'), false);
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.node('editor-dialog').open, false);
+});
+
+test('malformed authenticated timing never opens a dashboard and absolute expiry is respected', async () => {
+  const app = await page();
+  await passwordStep(app);
+  app.node('verification-code').value = '001234';
+  app.responses.push({ body: { authenticated: true, csrfToken: 'bad', session: null } });
+  await app.trigger('verify-form', 'submit');
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.state.csrfToken, '');
+  const absolute = await page();
+  await passwordStep(absolute);
+  absolute.node('verification-code').value = '001234';
+  absolute.responses.push({ body: { authenticated: true, csrfToken: 'short-absolute', session: {
+    serverNow: absolute.now(), idleTimeoutMs: 900000, idleExpiresAt: absolute.now() + 900000, expiresAt: absolute.now() + 40000,
+  } } });
+  absolute.responses.push({ body: { items: [], revision: 1 } });
+  await absolute.trigger('verify-form', 'submit');
+  absolute.responses.push({ body: { authenticated: false, trustedUsername: 'cafe-admin' } });
+  await absolute.advance(40000);
+  assert.equal(absolute.node('dashboard').hidden, true);
+  assert.match(absolute.node('session-lock-note').textContent, /Сессия завершилась/);
+});
+
+test('other tab acknowledged activity synchronizes deadline without a network keepalive; remote logout locks all views', async () => {
+  const app = await signedIn();
+  await app.advance(100000);
+  const count = app.calls.length;
+  await app.remote({ type: 'activity', username: 'ira@example.test', deadline: app.now() + 900000 });
+  assert.equal(app.idle.deadline, app.now() + 900000);
+  assert.equal(app.calls.length, count);
+  app.openEditor();
+  app.draft.dirty = true;
+  await app.remote({ type: 'lock', forgetDevice: true });
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.node('editor-dialog').open, false);
+  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.node('username').value, '');
+  assert.equal(app.calls.length, count, 'Other tabs must not redundantly invalidate a newly established server session');
+});
+
+test('switching to password entry does not silently revoke a trusted browser', async () => {
+  const app = await page({ authenticated: false, configured: true, ready: true, trustedUsername: 'ira@example.test' });
+  await app.trigger('auth-back');
+  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.calls.length, 1);
+});
+
+test('a sleeping tab does not log out a shared session extended by real activity in another tab', async () => {
+  const app = await signedIn();
+  app.openEditor();
+  app.node('item-name').value = 'Черновик до сна';
+  app.draft.dirty = true;
+  await app.advance(910000, { suspended: true });
+  let release;
+  app.responses.push({ body: { authenticated: true, csrfToken: 'csrf-after-mfa', username: 'ira@example.test' },
+    wait: new Promise((resolve) => { release = resolve; }) });
+  const checking = app.windowEvent('pageshow');
+  assert.equal(app.node('dashboard').hidden, true, 'The stale UI is hidden before the status check finishes');
+  assert.equal(app.node('editor-dialog').open, false);
+  release();
+  await checking;
+  assert.equal(app.node('dashboard').hidden, false);
+  assert.equal(app.node('editor-dialog').open, true);
+  assert.equal(app.node('item-name').value, 'Черновик до сна');
+  assert.equal(app.calls.at(-1).url, '/api/admin/session');
+  assert.equal(app.calls.some((call) => call.url.endsWith('/logout') || call.url.endsWith('/activity')), false);
+});
+
+test('logout blocks reauthentication until its cookie-clearing response finishes, including other open tabs', async () => {
+  const app = await signedIn();
+  let release;
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' },
+    wait: new Promise((resolve) => { release = resolve; }) });
+  const exiting = app.trigger('logout');
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.node('verify-submit').disabled, true);
+  app.node('verification-code').value = '001234';
+  const count = app.calls.length;
+  await app.trigger('verify-form', 'submit');
+  assert.equal(app.calls.length, count, 'New authentication cannot race the old Set-Cookie logout response');
+  const other = await signedIn();
+  await other.remote(app.broadcasts.at(-1));
+  assert.equal(other.node('verify-submit').disabled, true);
+  release();
+  await exiting;
+  assert.equal(app.node('verify-submit').disabled, false);
+  assert.equal(app.broadcasts.at(-1).type, 'logout-complete');
+  await other.remote(app.broadcasts.at(-1));
+  assert.equal(other.node('verify-submit').disabled, false);
+});
+
+test('a stale request rejected after fresh OTP must not lock or revoke the new session', async () => {
+  const app = await signedIn();
+  let release;
+  app.responses.push({ body: { items: [], revision: 'old-response' }, wait: new Promise((resolve) => { release = resolve; }) });
+  const oldRequest = app.loadMenu();
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.advance(900000);
+  app.node('verification-code').value = '002345';
+  app.responses.push({ body: { mfaRequired: true, challengeToken: 'fresh-challenge' } });
+  app.responses.push({ body: { authenticated: true, csrfToken: 'new-session-csrf' } });
+  app.responses.push({ body: { items: [], revision: 'new-session-menu' } });
+  await app.trigger('verify-form', 'submit');
+  assert.equal(app.node('dashboard').hidden, false);
+  release();
+  await oldRequest;
+  assert.equal(app.state.csrfToken, 'new-session-csrf');
+  assert.equal(app.state.revision, 'new-session-menu');
+  assert.equal(app.node('dashboard').hidden, false);
+  assert.equal(app.calls.filter((call) => call.url.endsWith('/logout')).length, 1);
+});
+
+test('offline logout persists only a nonsensitive lock marker and reload cannot reopen the old server session', async () => {
+  const storage = new Map();
+  const app = await signedIn({ storage });
+  app.responses.push({ error: new Error('offline') });
+  await app.trigger('logout');
+  const marker = JSON.parse(storage.get('vosem-utra-admin-locked'));
+  assert.deepEqual(Object.keys(marker).sort(), ['at', 'forgetDevice', 'pendingUntil']);
+  assert.equal(marker.pendingUntil, 0);
+  assert.doesNotMatch(JSON.stringify(marker), /ira|csrf|password|challenge/i);
+  const reload = await page({ authenticated: true, csrfToken: 'old-server-csrf', username: 'ira@example.test' }, {
+    storage, responsesAfterSession: [{ body: { authenticated: false, trustedUsername: 'ira@example.test' } }],
+  });
+  assert.equal(reload.node('dashboard').hidden, true);
+  assert.equal(reload.node('verify-form').hidden, false);
+  assert.deepEqual(reload.calls.map((call) => call.url), ['/api/admin/session', '/api/admin/logout']);
+  assert.equal(reload.calls[1].headers['X-CSRF-Token'], 'old-server-csrf');
+  reload.node('verification-code').value = '001234';
+  reload.responses.push({ body: { mfaRequired: true, challengeToken: 'reload-challenge' } });
+  successfulVerify(reload);
+  await reload.trigger('verify-form', 'submit');
+  assert.equal(storage.has('vosem-utra-admin-locked'), false, 'Only successful fresh MFA clears the browser lock');
+  assert.equal(reload.node('dashboard').hidden, false);
+});
+
+test('network loss while checking a stale tab never restores its dashboard', async () => {
+  const app = await signedIn();
+  await app.advance(910000, { suspended: true });
+  app.responses.push({ error: new Error('offline') });
+  await app.windowEvent('pageshow');
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.state.csrfToken, '');
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.storage.has('vosem-utra-admin-locked'), true);
+  assert.equal(app.calls.at(-1).url, '/api/admin/session');
+});
+
+test('stale-tab CSRF rejection does not revoke or mark a newer shared session as logged out', async () => {
+  const app = await signedIn();
+  await app.advance(1000);
+  app.responses.push({ status: 403, body: { code: 'csrf', error: 'CSRF mismatch' } });
+  app.responses.push({ body: { authenticated: true, csrfToken: 'fresh-other-tab-csrf', username: 'ira@example.test' } });
+  await app.activity();
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.state.csrfToken, '');
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.calls.at(-1).url, '/api/admin/session');
+  assert.equal(app.calls.some((call) => call.url.endsWith('/logout')), false);
+  assert.equal(app.storage.has('vosem-utra-admin-locked'), false);
 });

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const CONSENT_VERSION = '2026-09-29-reg4';
+const CONSENT_VERSION = '2026-09-29-reg5';
 
 function consent_document_hash(string $document): string {
     if (!in_array($document, ['consent', 'privacy'], true)) throw new RuntimeException('consent_document_invalid');
