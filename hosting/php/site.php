@@ -115,9 +115,11 @@ function cafe_security_headers(bool $production): void {
 function cafe_secure_html(string $html, string $page): string {
     $nonce = base64_encode(random_bytes(24));
     $captcha = $page === 'registration';
-    $policy = ["default-src 'self'", "script-src 'self' 'nonce-".$nonce."'".($captcha ? ' https://www.recaptcha.net https://www.gstatic.com' : ''),
+    $telegram = $page === 'staff';
+    if ($telegram) { header_remove('X-Frame-Options'); header('Referrer-Policy: no-referrer'); }
+    $policy = ["default-src 'self'", "script-src 'self' 'nonce-".$nonce."'".($captcha ? ' https://www.recaptcha.net https://www.gstatic.com' : '').($telegram ? ' https://telegram.org' : ''),
         "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'", "connect-src 'self'".($captcha ? ' https://www.recaptcha.net' : ''),
-        $captcha ? 'frame-src https://www.recaptcha.net https://recaptcha.google.com' : "frame-src 'none'", "object-src 'none'", "base-uri 'self'", "frame-ancestors 'none'", "form-action 'self'"];
+        $captcha ? 'frame-src https://www.recaptcha.net https://recaptcha.google.com' : "frame-src 'none'", "object-src 'none'", "base-uri 'self'", $telegram ? 'frame-ancestors https://web.telegram.org' : "frame-ancestors 'none'", "form-action 'self'"];
     header('Content-Security-Policy: '.implode('; ', $policy));
     return preg_replace_callback('~<script\b([^>]*)>~i', static function (array $match) use ($nonce): string {
         $attributes = preg_replace('~\s+nonce\s*=\s*(?:"[^"]*"|\x27[^\x27]*\x27|[^\s>]+)~i', '', $match[1]);
@@ -163,8 +165,12 @@ function cafe_run_site(string $privateDir): void {
         if ($forbidden || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path)) throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
         if (!$indexing) header('X-Robots-Tag: noindex, nofollow');
         $menu = new CafeMenu($privateDir, $config);
-        if (preg_match('~^/api/(?:ordering|orders(?:/.*)?)$~D', $path)) {
-            $orders = new CafeOrders($privateDir, $config, static fn(): array => $menu->catalog());
+        if (preg_match('~^/api/(?:ordering|orders(?:/.*)?|staff(?:/.*)?|telegram/webhook)$~D', $path)) {
+            $orders = new CafeOrders($privateDir, $config, static fn(): array => $menu->catalog(), null, static fn(callable $operation): mixed => $menu->withLockedSnapshot($operation));
+            if (str_starts_with($path, '/api/staff/') || $path === '/api/telegram/webhook') {
+                require_once __DIR__.'/staff-api.php';
+                if (cafe_staff_dispatch($path, $method, $privateDir, $config, $orders)) return;
+            }
             if ($orders->dispatch($path, $method)) return;
         }
         if ($menu->dispatch($path, $method)) return;
@@ -179,7 +185,7 @@ function cafe_run_site(string $privateDir): void {
         if ($path === '/sitemap.xml') {
             cafe_respond(200, 'application/xml; charset=utf-8', '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'.($indexing ? "\n  <url><loc>".CAFE_SITE_URL."</loc></url>\n" : '')."</urlset>\n", 'no-cache'); return;
         }
-        $pages = ['/'=>'index','/admin.html'=>'admin','/registration.html'=>'registration','/privacy.html'=>'privacy','/consent.html'=>'consent','/checkout.html'=>'checkout','/order-terms.html'=>'order-terms'];
+        $pages = ['/'=>'index','/admin.html'=>'admin','/registration.html'=>'registration','/privacy.html'=>'privacy','/consent.html'=>'consent','/checkout.html'=>'checkout','/order-terms.html'=>'order-terms','/staff.html'=>'staff','/staff-demo.html'=>'staff-demo'];
         if (!isset($pages[$path])) throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
         $page = $pages[$path];
         $html = @file_get_contents($privateDir.'/app/templates/'.$page.'.html');

@@ -14,23 +14,26 @@ final class CafeOrders
     private array $config;
     private array $site;
     private Closure $menuProvider;
+    private ?Closure $menuLocker;
     private ?DateTimeZone $zone = null;
     private bool $enabled = false;
+    private bool $configurationReady = false;
     private const QUOTE_SECONDS = 300;
     private const GUEST_SECONDS = 28800;
     private const BODY_LIMIT = 32768;
 
-    public function __construct(string $privateDir, array $siteConfig, callable $menuProvider, ?array $ordersConfig = null)
+    public function __construct(string $privateDir, array $siteConfig, callable $menuProvider, ?array $ordersConfig = null, ?callable $menuLocker = null)
     {
         $this->directory = rtrim($privateDir, '/\\').'/orders-data';
         $this->site = $siteConfig;
         $this->menuProvider = Closure::fromCallable($menuProvider);
+        $this->menuLocker = $menuLocker === null ? null : Closure::fromCallable($menuLocker);
         if ($ordersConfig === null && is_file($privateDir.'/orders-config.php')) {
             $loaded = require $privateDir.'/orders-config.php';
             $ordersConfig = is_array($loaded) ? $loaded : [];
         }
         $this->config = $ordersConfig ?? [];
-        try { $this->enabled = $this->validateConfig(); } catch (Throwable) { $this->enabled = false; }
+        try { $this->configurationReady = $this->validateConfig(); $this->enabled = ($this->config['enabled'] ?? false) === true && $this->configurationReady; } catch (Throwable) { $this->enabled = false; }
     }
 
     /** Deliberately fictional conditions, enabled only on the explicit local development host. */
@@ -77,7 +80,7 @@ final class CafeOrders
     private function validateConfig(): bool
     {
         $c = $this->config;
-        if (($c['enabled'] ?? false) !== true || !$this->secureConfigured()) return false;
+        if (!$this->secureConfigured()) return false;
         $mode = $c['mode'] ?? 'production';
         if (!in_array($mode, ['production', 'development'], true) || ($mode === 'development' ? !$this->devAllowed() : ($c['termsApproved'] ?? false) !== true)) return false;
         try { $this->zone = new DateTimeZone($c['timezone'] ?? ''); } catch (Throwable) { return false; }
@@ -122,7 +125,7 @@ final class CafeOrders
     {
         if ($this->db !== null) return $this->db;
         if (!is_dir($this->directory) && !@mkdir($this->directory, 0700, true) && !is_dir($this->directory)) throw new RuntimeException('Order storage unavailable');
-        $real = realpath($this->directory); $web = realpath((string)($this->site['document_root'] ?? ($_SERVER['DOCUMENT_ROOT'] ?? '')));
+        $real = realpath($this->directory); $webPath = (string)($this->site['document_root'] ?? ($_SERVER['DOCUMENT_ROOT'] ?? '')); $web = $webPath === '' ? false : realpath($webPath);
         if (!$real || ($web && ($real === $web || str_starts_with(strtolower(str_replace('\\', '/', $real)).'/', strtolower(str_replace('\\', '/', $web)).'/')))) throw new RuntimeException('Order storage must be private');
         $db = new PDO('sqlite:'.$this->directory.'/orders.sqlite', null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
         @chmod($this->directory.'/orders.sqlite', 0600);
@@ -137,7 +140,36 @@ final class CafeOrders
             CREATE INDEX IF NOT EXISTS orders_created ON orders(created_at DESC);
             CREATE INDEX IF NOT EXISTS quotes_expiry ON quotes(expires_at);
             CREATE INDEX IF NOT EXISTS guests_expiry ON guests(expires_at);');
-        return $this->db = $db;
+        $this->db = $db;
+        $this->transaction(function (): void {
+            $columns = array_column($this->database()->query('PRAGMA table_info(orders)')->fetchAll(), 'name');
+            foreach (['version'=>'INTEGER NOT NULL DEFAULT 1','assignee_id'=>'TEXT','staff_snapshot'=>'TEXT','accepted_snapshot'=>'TEXT','environment'=>'TEXT'] as $name=>$type) if (!in_array($name,$columns,true)) $this->database()->exec('ALTER TABLE orders ADD COLUMN '.$name.' '.$type);
+            if (!in_array('environment',$columns,true)) $this->statement('UPDATE orders SET environment=? WHERE environment IS NULL',[$this->environment()]);
+            $this->database()->exec('CREATE INDEX IF NOT EXISTS orders_assignee ON orders(assignee_id,status);
+                CREATE TABLE IF NOT EXISTS order_sequences (name TEXT PRIMARY KEY,value INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS staff_idempotency (scope TEXT NOT NULL,key_hash TEXT NOT NULL,payload_hash TEXT NOT NULL,result TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(scope,key_hash));
+                CREATE TABLE IF NOT EXISTS staff_price_confirmations (token_hash TEXT PRIMARY KEY,staff_id TEXT NOT NULL,order_id TEXT NOT NULL,version INTEGER NOT NULL,payload_hash TEXT NOT NULL,price_hash TEXT NOT NULL,expires_at INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS integration_events (id TEXT PRIMARY KEY,environment TEXT NOT NULL,order_id TEXT NOT NULL REFERENCES orders(id),event_type TEXT NOT NULL,schema_version INTEGER NOT NULL,order_version INTEGER NOT NULL,created_at INTEGER NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt_at INTEGER,last_error TEXT,UNIQUE(environment,order_id,event_type));');
+        });
+        return $db;
+    }
+    /** Internal server capabilities: callers must apply their own authenticated boundary. */
+    public function connection(): PDO { return $this->database(); }
+    public function atomic(callable $operation): mixed { return $this->transaction($operation); }
+    public function configuration(): array { return $this->config; }
+    public function timestamp(): int { return $this->now(); }
+    public function timeString(int $timestamp): string { return $this->iso($timestamp); }
+    public function environment(): string { return in_array($this->site['orders_environment'] ?? null,['staging','production'],true) ? $this->site['orders_environment'] : (($this->config['mode'] ?? 'production') === 'production' ? 'production' : 'staging'); }
+    public function withMenuSnapshot(callable $operation, bool $requireLock = false): mixed
+    {
+        if ($this->menuLocker !== null) return ($this->menuLocker)($operation);
+        if ($requireLock) throw new CafeOrderException(503,'Синхронизация каталога требует настройки сервера.','menu_lock_required');
+        return $operation(($this->menuProvider)());
+    }
+    public function staffSettings(): array
+    {
+        if (!$this->configurationReady) throw new CafeOrderException(503,'Условия заказов требуют настройки.','ordering_disabled');
+        return ['timezone'=>$this->config['timezone'],'availability'=>['pickup'=>$this->availability('pickup',true),'delivery'=>$this->availability('delivery',true)],'delivery'=>$this->config['delivery'],'maxLines'=>$this->config['maxLines'],'maxQuantity'=>$this->config['maxQuantity'],'serverNow'=>$this->iso($this->now())];
     }
     private function statement(string $sql, array $parameters = []): PDOStatement { $s = $this->database()->prepare($sql); $s->execute($parameters); return $s; }
     private function transaction(callable $operation): mixed
@@ -195,12 +227,12 @@ final class CafeOrders
         foreach ($this->config['schedule'][$type][(int)$date->format('N')] as [$start,$end]) if ($minute >= self::minute($start) && $minute < self::minute($end)) return true;
         return false;
     }
-    private function availability(string $type): array
+    private function availability(string $type, bool $staff = false): array
     {
         $now = $this->now(); $min = $now + $this->config['minDelayMinutes'][$type] * 60;
         $asap = $this->open('acceptance', $now) && $this->open($type, $now) && $this->open($type, $min);
         $slots = [];
-        if ($this->open('acceptance', $now) || $this->config['allowPreorderOutsideHours']) {
+        if ($staff || $this->open('acceptance', $now) || $this->config['allowPreorderOutsideHours']) {
             $day = (new DateTimeImmutable('@'.$now))->setTimezone($this->zone)->setTime(0,0);
             for ($n=0; $n <= $this->config['maxPreorderDays']; $n++, $day=$day->modify('+1 day')) {
                 $end = $day->modify('+1 day')->getTimestamp();
@@ -219,7 +251,7 @@ final class CafeOrders
         if (($required && $value === '') || preg_match_all('/./us', $value) > $max) throw new CafeOrderException(422, 'Проверьте поля заказа.', 'invalid_order', ['field'=>$name]);
         return $value;
     }
-    private function draft(array $body): array
+    private function draft(array $body, bool $staff = false): array
     {
         $rawItems = $body['items'] ?? null;
         if (!is_array($rawItems) || !array_is_list($rawItems) || count($rawItems) < 1 || count($rawItems) > $this->config['maxLines']) throw new CafeOrderException(422, 'Проверьте состав корзины.', 'invalid_order', ['field'=>'items']);
@@ -234,7 +266,7 @@ final class CafeOrders
         if ($f['timing'] === 'asap') {
             if (!array_key_exists('requestedAt', $f) || $f['requestedAt'] !== null) throw new CafeOrderException(422, 'Для ближайшего времени дата не указывается.', 'invalid_time');
             $requested = null; $now = $this->now();
-            if (!$this->open('acceptance', $now) || !$this->open($f['type'], $now) || !$this->open($f['type'], $now + $this->config['minDelayMinutes'][$f['type']] * 60)) throw new CafeOrderException(422, 'Ближайшее время недоступно. Выберите время из расписания.', 'invalid_time');
+            if (!$staff && (!$this->open('acceptance', $now) || !$this->open($f['type'], $now) || !$this->open($f['type'], $now + $this->config['minDelayMinutes'][$f['type']] * 60))) throw new CafeOrderException(422, 'Ближайшее время недоступно. Выберите время из расписания.', 'invalid_time');
         } else {
             $raw = $f['requestedAt'] ?? null;
             if (!is_string($raw) || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::00)?(?:Z|[+-]\d{2}:\d{2})$/D', $raw)) throw new CafeOrderException(422, 'Укажите дату и время из расписания.', 'invalid_time');
@@ -243,7 +275,7 @@ final class CafeOrders
             if ($errors && ($errors['warning_count'] || $errors['error_count'])) throw new CafeOrderException(422, 'Укажите корректную дату и время.', 'invalid_time');
             $date = $date->setTimezone($this->zone); $now = $this->now();
             $last = (new DateTimeImmutable('@'.$now))->setTimezone($this->zone)->modify('+'.$this->config['maxPreorderDays'].' days')->format('Y-m-d');
-            if ((!$this->open('acceptance', $now) && !$this->config['allowPreorderOutsideHours']) || $date->getTimestamp() < $now + $this->config['minDelayMinutes'][$f['type']] * 60 || $date->format('Y-m-d') > $last || ((int)$date->format('G') * 60 + (int)$date->format('i')) % $this->config['slotMinutes'] !== 0 || !$this->open($f['type'], $date->getTimestamp())) throw new CafeOrderException(422, 'Выбранное время уже недоступно. Выберите другой слот.', 'invalid_time');
+            if (!$staff && ((!$this->open('acceptance', $now) && !$this->config['allowPreorderOutsideHours']) || $date->getTimestamp() < $now + $this->config['minDelayMinutes'][$f['type']] * 60 || $date->format('Y-m-d') > $last || ((int)$date->format('G') * 60 + (int)$date->format('i')) % $this->config['slotMinutes'] !== 0 || !$this->open($f['type'], $date->getTimestamp()))) throw new CafeOrderException(422, 'Выбранное время уже недоступно. Выберите другой слот.', 'invalid_time');
             $requested = $date->format(DateTimeInterface::ATOM);
         }
         $address = null;
@@ -264,9 +296,9 @@ final class CafeOrders
         if (($body['consent']['accepted'] ?? null) !== true || ($body['consent']['version'] ?? null) !== $this->config['consent']['version']) throw new CafeOrderException(422, 'Подтвердите актуальные условия оформления.', 'consent_required');
         return ['items'=>$items, 'fulfilment'=>['type'=>$f['type'],'timing'=>$f['timing'],'requestedAt'=>$requested,'address'=>$address,'courierInstructions'=>$courier], 'contact'=>['phone'=>'+'.$digits,'name'=>self::field($contact['name'] ?? '', 'name', 100)], 'orderComment'=>self::field($body['orderComment'] ?? '', 'orderComment', 1000), 'consent'=>['accepted'=>true,'version'=>$this->config['consent']['version']]];
     }
-    private function calculate(array $draft): array
+    private function calculate(array $draft, ?array $menu = null): array
     {
-        $menu = ($this->menuProvider)();
+        $menu ??= ($this->menuProvider)();
         if (!is_array($menu) || !is_array($menu['items'] ?? null) || !is_int($menu['revision'] ?? null)) throw new CafeOrderException(503, 'Актуальное меню недоступно. Попробуйте позже.', 'menu_unavailable');
         $catalog = []; foreach ($menu['items'] as $item) $catalog[$item['id']] = $item;
         $lines = []; $unavailable = []; $subtotal = 0;
@@ -285,6 +317,27 @@ final class CafeOrders
         $fee = $draft['fulfilment']['type'] === 'pickup' ? 0 : ($delivery['mode'] === 'confirm_by_phone' ? null : (($delivery['freeFromMinor'] ?? null) !== null && $subtotal >= $delivery['freeFromMinor'] ? 0 : $delivery['feeMinor']));
         return ['menuRevision'=>$menu['revision'],'currency'=>'RUB','items'=>$lines,'subtotalMinor'=>$subtotal,'deliveryFeeMinor'=>$fee,'totalMinor'=>$fee === null ? null : $subtotal + $fee,'fulfilment'=>$draft['fulfilment']];
     }
+    public function recalculateStaff(array $body, array $catalog): array
+    {
+        if (!$this->configurationReady) throw new CafeOrderException(503,'Условия заказов требуют настройки.','ordering_disabled');
+        $body['consent'] = ['accepted'=>true,'version'=>$this->config['consent']['version']];
+        $draft = $this->draft($body,true); $snapshot = $this->calculate($draft,$catalog);
+        $confirmed = $body['fulfilment']['confirmedAt'] ?? null;
+        if ($confirmed !== null) {
+            $test = $body; $test['fulfilment']['timing'] = 'scheduled'; $test['fulfilment']['requestedAt'] = $confirmed;
+            $validated = $this->draft($test,true); $confirmed = $validated['fulfilment']['requestedAt'];
+            $date = new DateTimeImmutable($confirmed); $now = $this->now();
+            $last = (new DateTimeImmutable('@'.$now))->setTimezone($this->zone)->modify('+'.$this->config['maxPreorderDays'].' days')->format('Y-m-d');
+            if ($date->getTimestamp() < $now + $this->config['minDelayMinutes'][$draft['fulfilment']['type']] * 60 || $date->format('Y-m-d') > $last || ((int)$date->format('G') * 60 + (int)$date->format('i')) % $this->config['slotMinutes'] !== 0 || !$this->open($draft['fulfilment']['type'],$date->getTimestamp())) throw new CafeOrderException(422,'Проверьте согласованное время получения.','invalid_time');
+        }
+        $snapshot['fulfilment']['confirmedAt'] = $confirmed;
+        if ($draft['fulfilment']['type'] === 'delivery' && $this->config['delivery']['mode'] === 'confirm_by_phone') {
+            $fee = $body['deliveryFeeMinor'] ?? null;
+            if ($fee !== null && (!is_int($fee) || $fee < 0 || $fee > 100000000)) throw new CafeOrderException(422,'Укажите корректную стоимость доставки в копейках.','invalid_delivery_fee');
+            $snapshot['deliveryFeeMinor'] = $fee; $snapshot['totalMinor'] = $fee === null ? null : $snapshot['subtotalMinor'] + $fee;
+        }
+        return $snapshot + ['contact'=>$draft['contact'],'orderComment'=>$draft['orderComment']];
+    }
     private function saveQuote(array $draft, array $snapshot, string $guest): array
     {
         $token = bin2hex(random_bytes(32)); $expires = $this->now() + self::QUOTE_SECONDS;
@@ -295,8 +348,10 @@ final class CafeOrders
     public function quote(array $body, ?string $guestToken, string $csrf, string $peer): array
     {
         $this->requireEnabled(); $guest = $this->guest($guestToken, $csrf); $this->limit('quote', $peer, 60, 1200);
-        $draft = $this->draft($body); $snapshot = $this->calculate($draft);
-        return ['quote'=>$this->transaction(fn(): array => $this->saveQuote($draft,$snapshot,$guest))];
+        return $this->withMenuSnapshot(function (array $catalog) use ($body,$guest): array {
+            $draft = $this->draft($body); $snapshot = $this->calculate($draft,$catalog);
+            return ['quote'=>$this->transaction(fn(): array => $this->saveQuote($draft,$snapshot,$guest))];
+        });
     }
     public function create(array $body, ?string $guestToken, string $csrf, string $peer): array
     {
@@ -308,26 +363,29 @@ final class CafeOrders
         $previous = $this->statement('SELECT guest_hash,payload_hash,snapshot FROM orders WHERE idempotency_hash=?', [$keyHash])->fetch();
         if ($previous) return $this->replay($previous,$guest,$payload);
         $this->limit('create', $peer, 12, 240);
-        $result = $this->transaction(function () use ($body,$guest,$keyHash,$quoteId,$payload): array {
+        $result = $this->withMenuSnapshot(fn(array $catalog): array => $this->transaction(function () use ($body,$guest,$keyHash,$quoteId,$payload,$catalog): array {
             $previous = $this->statement('SELECT guest_hash,payload_hash,snapshot FROM orders WHERE idempotency_hash=?', [$keyHash])->fetch();
             if ($previous) return $this->replay($previous,$guest,$payload);
             $stored = $this->statement('SELECT * FROM quotes WHERE token_hash=?', [hash('sha256',$quoteId)])->fetch();
             if (!$stored || !hash_equals($stored['guest_hash'],$guest) || (int)$stored['expires_at'] <= $this->now()) throw new CafeOrderException(410, 'Расчёт устарел. Получите актуальную сумму.', 'quote_expired');
             if ($stored['order_id'] !== null) throw new CafeOrderException(409, 'Этот расчёт уже отправлен. Повторите первоначальный запрос.', 'quote_used');
-            $draft = $this->draft($body); $snapshot = $this->calculate($draft);
+            $draft = $this->draft($body); $snapshot = $this->calculate($draft,$catalog);
             if (!hash_equals($stored['payload_hash'],self::digest($draft)) || !hash_equals(self::digest(json_decode($stored['snapshot'],true,512,JSON_THROW_ON_ERROR)),self::digest($snapshot))) {
                 // Commit a replacement quote, then report a conflict outside the transaction.
                 return ['_changed'=>$this->saveQuote($draft,$snapshot,$guest)];
             }
-            $id = bin2hex(random_bytes(16)); $now = $this->now(); $number = (new DateTimeImmutable('@'.$now))->setTimezone($this->zone)->format('ymd').'-'.strtoupper(bin2hex(random_bytes(4)));
+            $id = bin2hex(random_bytes(16)); $now = $this->now();
+            $this->statement("INSERT INTO order_sequences(name,value) VALUES('order_number',1) ON CONFLICT(name) DO UPDATE SET value=value+1");
+            $sequence = (int)$this->statement("SELECT value FROM order_sequences WHERE name='order_number'")->fetchColumn();
+            $number = ($this->environment() === 'production' ? '' : 'TEST-').str_pad((string)$sequence,6,'0',STR_PAD_LEFT);
             $order = ['number'=>$number,'status'=>'new','createdAt'=>$this->iso($now),'payment'=>['method'=>null,'status'=>'not_configured','paidAmountMinor'=>null]] + $snapshot;
-            $this->statement('INSERT INTO orders VALUES(?,?,?,?,?,?,?,?,?)', [$id,$number,$guest,$keyHash,$payload,'new',$now,self::json($draft),self::json($order)]);
+            $this->statement('INSERT INTO orders(id,number,guest_hash,idempotency_hash,payload_hash,status,created_at,original_request,snapshot,environment) VALUES(?,?,?,?,?,?,?,?,?,?)', [$id,$number,$guest,$keyHash,$payload,'new',$now,self::json($draft),self::json($order),$this->environment()]);
             $this->statement('INSERT INTO order_history(order_id,event,author,created_at,snapshot) VALUES(?,?,?,?,?)', [$id,'created','guest',$now,self::json(['request'=>$draft,'order'=>$order])]);
             $this->statement('INSERT INTO notifications(id,order_id,channel,status,created_at) VALUES(?,?,NULL,?,?)', [bin2hex(random_bytes(16)),$id,'pending',$now]);
             $this->statement('INSERT INTO outbox VALUES(?,?,?,?,?,?)', [bin2hex(random_bytes(16)),$id,'order.created','pending',$now,self::json(['orderId'=>$id])]);
             $this->statement('UPDATE quotes SET order_id=? WHERE token_hash=?', [$id,hash('sha256',$quoteId)]);
             return ['order'=>$order,'_replayed'=>false];
-        });
+        }));
         if (isset($result['_changed'])) throw new CafeOrderException(409, 'Условия или состав заказа изменились. Проверьте новый расчёт и отправьте ещё раз.', 'quote_changed', ['quote'=>$result['_changed']]);
         return $result;
     }

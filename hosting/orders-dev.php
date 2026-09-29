@@ -29,8 +29,18 @@ try {
         usort($items, static fn(array $a, array $b): int => $a['order'] <=> $b['order']);
         return ['items'=>$items, 'revision'=>$revision];
     };
-    $orders = new CafeOrders($root.'/.data/orders-development', ['public_origin'=>$origin, 'production'=>false, 'allow_http_dev'=>true], $catalog, CafeOrders::developmentConfig());
+    $privateDir = $root.'/.data/orders-development';
+    $siteConfig = ['public_origin'=>$origin, 'production'=>false, 'allow_http_dev'=>true];
+    $orders = new CafeOrders($privateDir, $siteConfig, $catalog, CafeOrders::developmentConfig());
     $path = explode('?', $_SERVER['REQUEST_URI'] ?? '/')[0];
+    if (str_starts_with($path, '/api/staff/')) {
+        require_once __DIR__.'/php/staff-api.php';
+        $telegramConfig = static function () use ($root): array {
+            $file = $root.'/.data/telegram-config.php';
+            return is_file($file) ? require $file : [];
+        };
+        if (cafe_staff_dispatch($path, $_SERVER['REQUEST_METHOD'] ?? 'GET', $privateDir, $siteConfig, $orders, $telegramConfig)) return;
+    }
     if (!$orders->dispatch($path, $_SERVER['REQUEST_METHOD'] ?? 'GET')) cafe_json_response(['error'=>'Страница не найдена.','code'=>'not_found'], 404);
 } catch (Throwable) {
     cafe_json_response(['error'=>'Тестовое оформление временно недоступно.','code'=>'ordering_unavailable'], 503);

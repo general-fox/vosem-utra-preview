@@ -52,7 +52,7 @@ export function createOrdersDevMiddleware({ projectRoot = root, php = phpBinary 
   }
   async function middleware(req, res, next) {
     const pathname = (req.url || '').split('?')[0];
-    if (!/^\/api\/(?:ordering|orders(?:\/.*)?)$/.test(pathname)) return next();
+    if (!/^\/api\/(?:ordering|orders(?:\/.*)?|staff(?:\/.*)?)$/.test(pathname)) return next();
     if (!loopbackHost.test(req.headers.host || '') || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) {
       return error(res, 403, 'Тестовый сервис доступен только локально.');
     }
@@ -60,7 +60,7 @@ export function createOrdersDevMiddleware({ projectRoot = root, php = phpBinary 
       await start();
       if (res.destroyed || req.destroyed) return;
       const headers = { host: `127.0.0.1:${port}`, 'x-cafe-dev-bridge': secret, 'x-cafe-dev-origin': `http://${req.headers.host}` };
-      for (const key of ['content-type', 'content-length', 'cookie', 'origin', 'x-csrf-token', 'idempotency-key']) {
+      for (const key of ['content-type', 'content-length', 'cookie', 'origin', 'x-csrf-token', 'idempotency-key', 'authorization', 'sec-fetch-site']) {
         if (req.headers[key] !== undefined) headers[key] = req.headers[key];
       }
       const upstream = http.request({ host: '127.0.0.1', port, path: req.url, method: req.method, headers }, (response) => {

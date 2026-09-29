@@ -5,14 +5,16 @@ DirectoryIndex app.php
 # PHP receives HTTPS from the web server; client forwarded headers are not trusted.
 <IfModule mod_rewrite.c>
 RewriteEngine On
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 RewriteRule ^\.well-known/acme-challenge/ - [L]
 RewriteRule (^|/)\. - [F,L]
 RewriteRule (^|/)(vosem-utra-private|admin-data|orders?-data|node_modules|hosting-tools|server)(/|$) - [F,L,NC]
 RewriteRule ^(?:site-build\.json|composer\.(?:json|lock)|package(?:-lock)?\.json)$ - [F,L,NC]
 
 # Live HTML and menu always reach the controller, even if an old static copy remains.
-RewriteRule ^(?:index\.html|admin/?|admin\.html|registration\.html|privacy\.html|consent\.html|checkout\.html|order-terms\.html|robots\.txt|sitemap\.xml)$ app.php [END]
-RewriteRule ^(?:api/(?:admin(?:/.*)?|menu|ordering|orders(?:/.*)?)|uploads(?:/.*)?|data/menu\.json)$ app.php [END]
+RewriteRule ^(?:index\.html|admin/?|admin\.html|registration\.html|privacy\.html|consent\.html|checkout\.html|order-terms\.html|staff\.html|staff-demo\.html|robots\.txt|sitemap\.xml)$ app.php [END]
+RewriteRule ^(?:api/(?:admin(?:/.*)?|menu|ordering|orders(?:/.*)?|staff(?:/.*)?|telegram/webhook)|uploads(?:/.*)?|data/menu\.json)$ app.php [END]
 # Keep the existing, independently secured loyalty registration handler intact.
 RewriteRule ^api/register\.php$ - [END]
 RewriteRule ^api/.*\.php$ - [F,L,NC]
@@ -25,8 +27,12 @@ Require all denied
 </FilesMatch>
 <IfModule mod_headers.c>
 Header always set X-Content-Type-Options "nosniff"
-Header always set Referrer-Policy "strict-origin-when-cross-origin"
-Header always set X-Frame-Options "DENY"
+# Use the original request line: the controller rewrite can change REQUEST_URI.
+# Only the exact Mini App page has a Telegram-specific frame-ancestors policy.
+Header always set Referrer-Policy "strict-origin-when-cross-origin" "expr=%{THE_REQUEST} !~ m#^[A-Z]+ /staff[.]html[? ]#"
+Header always set Referrer-Policy "no-referrer" "expr=%{THE_REQUEST} =~ m#^[A-Z]+ /staff[.]html[? ]#"
+Header always set X-Frame-Options "DENY" "expr=%{THE_REQUEST} !~ m#^[A-Z]+ /staff[.]html[? ]#"
+Header always unset X-Frame-Options "expr=%{THE_REQUEST} =~ m#^[A-Z]+ /staff[.]html[? ]#"
 <FilesMatch "\.(html|js|css)$">
 Header set Cache-Control "no-cache"
 </FilesMatch>

@@ -63,7 +63,7 @@ return {
     outDir: production ? 'dist-hosting' : 'dist',
     rolldownOptions: {
       input: Object.fromEntries(
-        ['index', 'registration', 'privacy', 'consent', 'admin', 'checkout', 'order-terms'].map((page) => [
+        ['index', 'registration', 'privacy', 'consent', 'admin', 'checkout', 'order-terms', 'staff', 'staff-demo'].map((page) => [
           page,
           fileURLToPath(new URL(`./${page}.html`, import.meta.url)),
         ]),
