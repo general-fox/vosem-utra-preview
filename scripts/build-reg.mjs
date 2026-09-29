@@ -42,6 +42,16 @@ for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', 'che
   await rm(path.join(site, `${page}.html`));
 }
 // Public JSON also passes through PHP and cannot leak a hidden seed item.
+// Each registration receipt refers to an immutable copy of the displayed legal
+// documents. Keep earlier revisions; never relabel them with the current text.
+const consentLog = await readFile(path.join(site, 'api/consent-log.php'), 'utf8');
+const legalVersion = consentLog.match(/const CONSENT_VERSION = '([0-9]{4}-[0-9]{2}-[0-9]{2}-reg[0-9]+)';/)?.[1];
+if (!legalVersion) throw new Error('Missing legal document version');
+const legalArchive = path.join(privateRoot, 'legal-versions', legalVersion);
+await mkdir(legalArchive, { recursive: true });
+for (const page of ['privacy', 'consent']) {
+  await cp(path.join(app, 'templates', `${page}.html`), path.join(legalArchive, `${page}.html`), { force: false, errorOnExist: true });
+}
 await rm(path.join(site, 'data'), { recursive: true, force: true });
 await rm(path.join(site, 'site-build.json'), { force: true });
 await rm(path.join(site, 'robots.txt'), { force: true });
@@ -51,6 +61,7 @@ await cp(path.join(root, 'hosting/admin-config.example.php'), path.join(privateR
 await cp(path.join(root, 'hosting/orders-config.example.php'), path.join(privateRoot, 'orders-config.example.php'));
 await cp(path.join(root, 'hosting/prepare-access.php'), path.join(privateRoot, 'prepare-access.php'));
 await cp(path.join(root, 'docs/reg-upload.md'), path.join(output, 'READ-ME.md'));
+await cp(path.join(root, 'docs/local-runtime-and-transfer.md'), path.join(output, 'local-runtime-and-transfer.md'));
 await cp(path.join(root, 'docs/delivery.md'), path.join(output, 'delivery.md'));
 // A package never includes runtime data or the old integration credentials.
 for (const name of ['admin-config.php', 'admin-data', 'orders-config.php', 'order-data', 'orders-data', 'loyalty.php', 'recaptcha.php', 'consents']) {

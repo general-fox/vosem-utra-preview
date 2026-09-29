@@ -23,3 +23,5 @@ orders-data/
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite-journal
+*.cafebackup
+*.key

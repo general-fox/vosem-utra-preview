@@ -22,7 +22,7 @@ banner.setAttribute('aria-label','Настройки cookie');
 banner.innerHTML = `
   <div class="cookie-banner-copy">
     <p id="cookie-banner-title" class="cookie-banner-title" tabindex="-1">Немного о cookie</p>
-    <p>Используем технические cookie. С вашего согласия при регистрации — Google reCAPTCHA: IP-адрес, данные браузера и cookie. <a href="privacy.html#cookies" target="_blank" rel="noopener">Подробнее<span class="visually-hidden"> (в новой вкладке)</span></a></p>
+    <p>Мы используем cookie. Подробнее — в <a href="privacy.html#cookies" target="_blank" rel="noopener">политике конфиденциальности<span class="visually-hidden"> (в новой вкладке)</span></a>.</p>
     <p class="cookie-banner-status" role="status" aria-live="polite"></p>
   </div>
   <div class="cookie-banner-actions">

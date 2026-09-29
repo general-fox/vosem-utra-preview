@@ -332,6 +332,23 @@ final class CafeAuth
         });
     }
     /** Offline migration/provisioning only. No HTTP route may expose this method. */
+    public function validatePortableState(array $state): void
+    {
+        if (PHP_SAPI !== 'cli') throw new RuntimeException('Offline validation only.');
+        if (($state['version'] ?? null) !== 1 || !is_array($state['accounts'] ?? [])) throw new RuntimeException('Invalid account snapshot.');
+        $users = [];
+        if (($state['account'] ?? null) !== null) $users[] = $state['account']['username'] ?? '';
+        foreach ($state['accounts'] ?? [] as $username => $account) {
+            if (($account['username'] ?? null) !== $username || ($account['secondary'] ?? false) !== true || in_array($username, $users, true)) throw new RuntimeException('Invalid employee snapshot.');
+            $users[] = $username;
+        }
+        foreach ($users ?: [null] as $username) {
+            $fresh = $this->readiness($state, $username);
+            if ($fresh['current'] !== null && !$fresh['ready'] && !$fresh['enrollmentAvailable']) throw new RuntimeException('Account or encryption key cannot be restored.');
+            if ($username !== null && ($fresh['current']['username'] ?? null) !== $username) throw new RuntimeException('Invalid account snapshot.');
+        }
+    }
+
     public function installAccount(array $account): void
     {
         if (PHP_SAPI !== 'cli') throw new CafeAuthException(403, 'Настройка разрешена только локально.', 'forbidden');

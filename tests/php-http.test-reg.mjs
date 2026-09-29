@@ -11,8 +11,27 @@ import { randomBytes } from 'node:crypto';
 import { phpBinary } from '../scripts/php-runtime.mjs';
 import { totp } from '../server/totp.mjs';
 import { encryptTotp } from '../server/auth.mjs';
+import { createHash } from 'node:crypto';
+import { phpEnvironment } from '../scripts/php-runtime.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+test('REG.RU consent receipts hash the current archived documents, not removed public HTML', async () => {
+  const site = path.join(root, 'dist-reg/site');
+  const privateDir = path.join(root, 'dist-reg/vosem-utra-private');
+  const registration = await readFile(path.join(privateDir, 'app/templates/registration.html'), 'utf8');
+  const version = registration.match(/name="ConsentVersion" value="([^"]+)"/)[1];
+  assert.equal(version, '2026-09-29-reg4');
+  const result = spawnSync(phpBinary, ['-r', 'require $argv[1]; echo json_encode([CONSENT_VERSION, consent_document_hash("privacy"), consent_document_hash("consent")]);', path.join(site, 'api/consent-log.php')], { encoding: 'utf8', env: phpEnvironment });
+  assert.equal(result.status, 0, result.stderr);
+  const hashes = JSON.parse(result.stdout);
+  assert.equal(hashes[0], version);
+  for (const [index, page] of ['privacy', 'consent'].entries()) {
+    const displayed = await readFile(path.join(privateDir, 'app/templates', page + '.html'));
+    const archived = await readFile(path.join(privateDir, 'legal-versions', version, page + '.html'));
+    assert.deepEqual(archived, displayed);
+    assert.equal(hashes[index + 1], createHash('sha256').update(displayed).digest('hex'));
+  }
+});
 async function freePort() {
   const server = net.createServer().listen(0, '127.0.0.1');
   await once(server, 'listening'); const port = server.address().port;
