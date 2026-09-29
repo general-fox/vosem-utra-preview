@@ -20,10 +20,5 @@ async function lint(directory) {
 }
 await lint(path.join(root, 'hosting'));
 console.log('PHP syntax checks passed.');
-<<<<<<< HEAD
 for (const file of ['tests/php-auth.php', 'hosting/tests/menu-site-test.php', 'tests/php-orders.php', 'tests/php-staff-orders.php', 'tests/php-telegram.php']) run(phpBinary, [file]);
-run(process.execPath, ['--test', 'tests/php-http.test-reg.mjs', 'tests/orders-http.test-reg.mjs', 'tests/staff-http.test-reg.mjs']);
-=======
-for (const file of ['tests/php-auth.php', 'hosting/tests/menu-site-test.php', 'tests/php-orders.php']) run(phpBinary, [file]);
-run(process.execPath, ['--test', 'tests/php-http.test-reg.mjs', 'tests/orders-http.test-reg.mjs', 'tests/php-local.test-reg.mjs']);
->>>>>>> 8216fb2f4515f8556b59c62b27da785e1ad79b6b
+run(process.execPath, ['--test', 'tests/php-http.test-reg.mjs', 'tests/orders-http.test-reg.mjs', 'tests/php-local.test-reg.mjs', 'tests/staff-http.test-reg.mjs']);

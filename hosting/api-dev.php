@@ -24,9 +24,20 @@ try {
     cafe_security_headers(false);
     $menu = new CafeMenu($privateDir, $config);
     $path = explode('?', $_SERVER['REQUEST_URI'] ?? '/')[0];
-    if (preg_match('~^/api/(?:ordering|orders(?:/.*)?)$~D', $path)) {
+    if (preg_match('~^/api/(?:ordering|orders(?:/.*)?|staff(?:/.*)?)$~D', $path)) {
         // Local test orders remain opt-in and isolated from any transferred real DB.
-        $orders = new CafeOrders($privateDir, $config, static fn(): array => $menu->catalog(), CafeOrders::developmentConfig());
+        $config['orders_environment'] = 'staging';
+        $orders = new CafeOrders($privateDir, $config, static fn(): array => $menu->catalog(), CafeOrders::developmentConfig(), static fn(callable $operation): mixed => $menu->withLockedSnapshot($operation));
+        if (str_starts_with($path, '/api/staff/')) {
+            require_once __DIR__.'/php/staff-api.php';
+            $telegramConfig = static function () use ($privateDir, $root): array {
+                // Keep previously configured local bots usable after the runtime migration.
+                $file = $privateDir.'/telegram-config.php';
+                if (!is_file($file)) $file = $root.'/.data/telegram-config.php';
+                return is_file($file) ? require $file : [];
+            };
+            if (cafe_staff_dispatch($path, $_SERVER['REQUEST_METHOD'] ?? 'GET', $privateDir, $config, $orders, $telegramConfig)) exit;
+        }
         if ($orders->dispatch($path, $_SERVER['REQUEST_METHOD'] ?? 'GET')) exit;
     }
     if (!$menu->dispatch($path, $_SERVER['REQUEST_METHOD'] ?? 'GET')) cafe_json_response(['error'=>'Страница не найдена.','code'=>'not_found'], 404);

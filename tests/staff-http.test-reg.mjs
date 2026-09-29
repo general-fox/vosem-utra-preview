@@ -8,7 +8,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { phpBinary } from '../scripts/php-runtime.mjs';
+import { phpBinary, phpEnvironment } from '../scripts/php-runtime.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const publicOrigin = 'https://staff-test.invalid';
@@ -52,7 +52,7 @@ test('assembled staff API authenticates Telegram, isolates roles and commits acc
     const router = path.join(directory, 'test-router.php');
     const realRouter = path.join(root, 'hosting/dev-router.php').replaceAll('\\', '/').replaceAll("'", "\\'");
     await writeFile(router, `<?php $_SERVER['HTTPS']='on'; require '${realRouter}';\n`);
-    child = spawn(phpBinary, ['-S', `127.0.0.1:${port}`, '-t', site, router], { cwd: root, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, CAFE_ENV: '' } });
+    child = spawn(phpBinary, ['-S', `127.0.0.1:${port}`, '-t', site, router], { cwd: root, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env: { ...phpEnvironment, CAFE_ENV: '' } });
     child.stderr.on('data', chunk => { log += chunk.toString(); });
     for (let i = 0; i < 100; i++) {
       if (child.exitCode !== null) throw new Error('Fixture PHP server failed: ' + log);

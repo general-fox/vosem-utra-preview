@@ -10,7 +10,7 @@ import { phpBinary, phpEnvironment } from '../scripts/php-runtime.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const router = fileURLToPath(new URL('../hosting/api-dev.php', import.meta.url));
 const loopbackHost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?$/;
-const apiPath = /^\/(?:api\/(?:admin(?:\/.*)?|menu|ordering|orders(?:\/.*)?)|data\/menu\.json|uploads(?:\/.*)?)$/;
+const apiPath = /^\/(?:api\/(?:admin(?:\/.*)?|menu|ordering|orders(?:\/.*)?|staff(?:\/.*)?)|data\/menu\.json|uploads(?:\/.*)?)$/;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Vite serves editable assets only. Authentication, menu and orders run the SAME
@@ -60,7 +60,7 @@ export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary } =
       await start();
       if (res.destroyed || req.destroyed) return;
       const headers = { host: `127.0.0.1:${port}`, 'x-cafe-dev-bridge': secret, 'x-cafe-dev-origin': `http://${req.headers.host}` };
-      for (const key of ['content-type', 'content-length', 'cookie', 'origin', 'sec-fetch-site', 'x-csrf-token', 'idempotency-key']) {
+      for (const key of ['content-type', 'content-length', 'cookie', 'origin', 'sec-fetch-site', 'x-csrf-token', 'idempotency-key', 'authorization']) {
         if (req.headers[key] !== undefined) headers[key] = req.headers[key];
       }
       const upstream = http.request({ host: '127.0.0.1', port, path: req.url, method: req.method, headers }, (response) => {

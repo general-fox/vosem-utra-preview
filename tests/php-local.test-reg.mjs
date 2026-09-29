@@ -6,7 +6,7 @@ import os from 'node:os';
 import http from 'node:http';
 import { once } from 'node:events';
 import { spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { makeEnrolledAccount, atomicAuthWrite, additionalAccountFile } from '../server/auth.mjs';
 import { addAdministrator } from '../server/add-admin.mjs';
@@ -22,6 +22,64 @@ const PHOTO = '11111111-2222-4333-a444-555555555555.png';
 const KEY = randomBytes(32);
 const php = (args, input) => spawnSync(phpBinary, args, { env: phpEnvironment, input, encoding: 'utf8', windowsHide: true });
 const transfer = (...args) => php([path.join(root, 'hosting/php/private-data.php'), ...args]);
+
+test('unified local PHP shares guest orders with staff and forwards Telegram authorization', { timeout: 60000 }, async (t) => {
+  const app = await fixture(t);
+  await prepareLocalPhp({ projectRoot: app.project, passwordProvider: async () => PASSWORD });
+  const bridge = createPhpDevMiddleware({ projectRoot: app.project });
+  const server = http.createServer((req, res) => bridge.middleware(req, res, () => { res.writeHead(404); res.end(); })).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  app.beforeCleanup(async () => { await bridge.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const token = '123456789:' + randomBytes(32).toString('base64url');
+  const config = { enabled: true, environment: 'staging', botToken: token, botUsername: 'vosem_utra_bot',
+    webhookSecret: randomBytes(32).toString('hex'), webAppUrl: 'https://staff-test.invalid/staff.html',
+    notifications: { mode: 'private', groupChatId: null, miniAppName: '' }, responsibleContact: '',
+    staff: [{ id: '101', name: 'Тест', role: 'manager', active: true }] };
+  await writeFile(path.join(app.data, 'test-telegram.json'), JSON.stringify(config));
+  await writeFile(path.join(app.data, 'telegram-config.php'), "<?php return json_decode(file_get_contents(__DIR__.'/test-telegram.json'),true);\n");
+  let cookie = '', csrf = '';
+  async function request(route, { body, method = body ? 'POST' : 'GET', bearer, headers = {} } = {}) {
+    const response = await fetch(origin + route, { method, headers: { Origin: origin, Cookie: cookie,
+      ...(body ? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+    if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0];
+    const json = await response.json(); if (json.csrfToken) csrf = json.csrfToken;
+    return { status: response.status, json };
+  }
+  assert.equal((await request('/api/staff/session')).status, 401);
+  const data = { auth_date: String(Math.floor(Date.now() / 1000)), query_id: randomUUID(), user: JSON.stringify({ id: 101, first_name: 'Тест' }) };
+  const secret = createHmac('sha256', 'WebAppData').update(token).digest();
+  data.hash = createHmac('sha256', secret).update(Object.keys(data).sort().map(key => `${key}=${data[key]}`).join('\n')).digest('hex');
+  const initData = new URLSearchParams(data).toString();
+  assert.equal((await request('/api/staff/session', { body: { initData }, headers: { Origin: 'https://foreign.invalid' } })).status, 403);
+  const login = await request('/api/staff/session', { body: { initData } });
+  assert.equal(login.status, 200, JSON.stringify(login.json)); const bearer = login.json.token;
+  assert.equal((await request('/api/staff/session', { bearer })).json.staff.id, '101');
+  const settings = (await request('/api/ordering')).json;
+  const menu = (await request('/api/menu')).json;
+  const draft = { items: [{ id: menu.items[0].id, quantity: 1 }], contact: { name: 'Тест', phone: '+70000000000' },
+    fulfilment: { type: 'pickup', timing: 'asap', requestedAt: null, address: null, courierInstructions: '' }, orderComment: '',
+    consent: { accepted: true, version: settings.settings.consent.version } };
+  const quote = await request('/api/orders/quote', { body: draft }); assert.equal(quote.status, 200);
+  const created = await request('/api/orders', { body: { ...draft, quoteId: quote.json.quote.quoteId, idempotencyKey: randomUUID() } });
+  assert.equal(created.status, 201); assert.match(created.json.order.number, /^TEST-/);
+  const found = await request('/api/staff/orders/search', { bearer, body: { status: 'new', page: 1 } });
+  assert.equal(found.status, 200); assert.equal(found.json.total, 1);
+  let order = found.json.orders[0];
+  const claimed = await request(`/api/staff/orders/${order.id}/claim`, { bearer, body: { expectedVersion: order.version } });
+  assert.equal(claimed.status, 200); order = claimed.json.order;
+  const staffSettings = (await request('/api/staff/settings', { bearer })).json;
+  const saved = await request(`/api/staff/orders/${order.id}`, { bearer, method: 'PATCH', body: {
+    expectedVersion: order.version, items: order.items.map(({ id, quantity }) => ({ id, quantity })), contact: order.contact,
+    fulfilment: { ...order.fulfilment, confirmedAt: staffSettings.availability.pickup.slots[0] }, deliveryFeeMinor: 0, staffNote: '', fulfillmentComment: '' } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.json)); order = saved.json.order;
+  const accepted = await request(`/api/staff/orders/${order.id}/accept`, { bearer, body: { expectedVersion: order.version, agreed: true }, headers: { 'Idempotency-Key': randomUUID() } });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.json)); assert.equal(accepted.json.order.status, 'accepted');
+  // A new runtime config takes precedence over the old local path, even when disabled.
+  await writeFile(path.join(app.runtime, 'telegram-config.php'), "<?php return ['enabled'=>false];\n");
+  assert.equal((await request('/api/staff/session', { bearer })).status, 503);
+});
 async function fixture(t) {
   const project = await mkdtemp(path.join(os.tmpdir(), 'cafe-php-local-'));
   let cleanup = async () => {};

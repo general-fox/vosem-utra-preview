@@ -17,6 +17,17 @@ async function sourceText(directory, recursive = false) {
 }
 const sources = await sourceText(root) + await sourceText(path.join(root, 'hosting'), true) + await sourceText(path.join(root, 'server'), true);
 
+test('tracked source files contain no unresolved merge markers', async () => {
+  const tracked = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' });
+  assert.equal(tracked.status, 0, tracked.stderr);
+  const conflicts = [];
+  for (const file of tracked.stdout.split('\0').filter(Boolean)) {
+    if (!/\.(?:html|css|js|mjs|php|json|md|txt|yml|yaml)$/.test(file) && !/(?:^|\/)\.[^/]+$/.test(file)) continue;
+    if (/^(?:<{7} .+|={7}|>{7} .+|\|{7} .+)\r?$/m.test(await readFile(path.join(root, file), 'utf8'))) conflicts.push(file);
+  }
+  assert.deepEqual(conflicts, [], 'Resolve both versions before committing');
+});
+
 test('all stable image and font references resolve after cleanup', async () => {
   const references = new Set([...sources.matchAll(/\bassets\/([A-Za-z0-9_.-]+\.(?:svg|webp|png|jpg|woff2|ttf))/g)].map(match => match[1]));
   assert.ok(references.size >= 18, 'Check actual source references, not an empty list');
