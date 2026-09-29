@@ -39,7 +39,7 @@ await cp(path.join(root, 'style.css'), path.join(site, 'style.css'));
 await cp(path.join(root, 'site.js'), path.join(site, 'site.js'));
 await mkdir(path.join(app, 'seed'), { recursive: true });
 await cp(path.join(root, 'public/data/menu.json'), path.join(app, 'seed/menu.json'));
-for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', 'checkout', 'order-terms']) {
+for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', 'checkout', 'order-terms', 'staff', 'staff-demo']) {
   let html = await readFile(path.join(site, `${page}.html`), 'utf8');
   // The current homepage already includes cookies.js and its settings button.
   // Vite bundles that module: injecting the legacy URL too creates two banners.
@@ -65,12 +65,15 @@ await rm(path.join(site, 'sitemap.xml'), { force: true });
 await writeFile(path.join(privateRoot, '.htaccess'), 'Require all denied\n');
 await cp(path.join(root, 'hosting/admin-config.example.php'), path.join(privateRoot, 'admin-config.example.php'));
 await cp(path.join(root, 'hosting/orders-config.example.php'), path.join(privateRoot, 'orders-config.example.php'));
+await cp(path.join(root, 'hosting/telegram-config.example.php'), path.join(privateRoot, 'telegram-config.example.php'));
+for (const file of ['telegram-worker.php', 'telegram-setup.php']) await cp(path.join(root, 'hosting', file), path.join(privateRoot, file));
 await cp(path.join(root, 'hosting/prepare-access.php'), path.join(privateRoot, 'prepare-access.php'));
 await cp(path.join(root, 'docs/reg-upload.md'), path.join(output, 'READ-ME.md'));
 await cp(path.join(root, 'docs/local-runtime-and-transfer.md'), path.join(output, 'local-runtime-and-transfer.md'));
 await cp(path.join(root, 'docs/delivery.md'), path.join(output, 'delivery.md'));
+await cp(path.join(root, 'docs/telegram.md'), path.join(output, 'telegram.md'));
 // A package never includes runtime data or the old integration credentials.
-for (const name of ['admin-config.php', 'admin-data', 'orders-config.php', 'order-data', 'orders-data', 'loyalty.php', 'recaptcha.php', 'consents']) {
+for (const name of ['admin-config.php', 'admin-data', 'orders-config.php', 'telegram-config.php', 'telegram-access.txt', 'order-data', 'orders-data', 'loyalty.php', 'recaptcha.php', 'consents']) {
   if ((await readdir(privateRoot)).includes(name)) throw new Error(`Private runtime content leaked into package: ${name}`);
 }
 console.log('REG.RU package ready: dist-reg/site + dist-reg/vosem-utra-private (no passwords or integration keys).');

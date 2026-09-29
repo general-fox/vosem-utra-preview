@@ -118,6 +118,11 @@ final class CafeMenu {
     public function published(): array {
         return $this->catalog()['items'];
     }
+    /** Same lock as catalog edits. Always acquire this before an orders DB transaction. */
+    public function withLockedSnapshot(callable $operation): mixed {
+        $this->read(); // Seed, if necessary, before entering the non-reentrant lock.
+        return $this->menuLock(fn(): mixed => $operation($this->readSaved()));
+    }
     /** Published items and their revision must come from one authoritative read. */
     public function catalog(): array {
         $menu = $this->read();

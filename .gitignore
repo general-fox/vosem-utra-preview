@@ -23,6 +23,8 @@ admin-access-*.txt
 admin-data/
 vosem-utra-private/
 orders-config.php
+telegram-config.php
+telegram-access.txt
 order-data/
 orders-data/
 *.sqlite
