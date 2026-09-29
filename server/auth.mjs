@@ -39,8 +39,8 @@ async function boundedHash(password, salt, parameters) {
 }
 
 export async function makePasswordRecord(password, { legacyUpgrade = false } = {}) {
-  const minimum = legacyUpgrade ? 1 : 15;
-  if (typeof password !== 'string' || password.length < minimum || password.length > 1024) throw new Error('Пароль должен содержать от 15 до 1024 символов.');
+  const minimum = legacyUpgrade ? 1 : 8;
+  if (typeof password !== 'string' || password.length < minimum || password.length > 1024) throw new Error('Пароль должен содержать от 8 до 1024 символов.');
   const salt = randomBytes(32).toString('hex');
   const value = await boundedHash(password, salt, SCRYPT_PARAMS);
   return { version: 2, algorithm: 'scrypt', salt, hash: value.toString('hex'), N: SCRYPT_PARAMS.N, r: 8, p: 1 };
@@ -354,7 +354,7 @@ export function createAuthService(options) {
     if (challenges.size >= 100) challenges.delete(challenges.keys().next().value);
     const challengeToken = randomBytes(32).toString('hex');
     if (!current.totp) {
-      const requiresNewPassword = current.temporaryPassword === true || password.length < 15;
+      const requiresNewPassword = current.temporaryPassword === true || password.length < 8;
       const passwordRecord = requiresNewPassword ? null : current.password.version === 2 ? current.password : await makePasswordRecord(password);
       remember(challenges, challengeToken, { type: 'enrollment', credentialVersion: current.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, requiresNewPassword, passwordRecord, username: current.username, secondary: current.secondary === true });
       await audit('enrollment.authorized', ip);
@@ -428,7 +428,7 @@ export function createAuthService(options) {
     if (challenge.type !== 'enrollment') throw expired();
     let normalizedUsername;
     try { normalizedUsername = normalizeUsername(username); } catch { throw new AuthError(400, 'Укажите корректную почту или логин.', 'invalid_username'); }
-    if ((challenge.requiresNewPassword || password !== undefined) && (typeof password !== 'string' || password.length < 15 || password.length > 1024)) throw new AuthError(400, 'Новый пароль должен содержать от 15 до 1024 символов.', 'invalid_password');
+    if ((challenge.requiresNewPassword || password !== undefined) && (typeof password !== 'string' || password.length < 8 || password.length > 1024)) throw new AuthError(400, 'Новый пароль должен содержать от 8 до 1024 символов.', 'invalid_password');
     const fresh = await state(challenge.username);
     if (!fresh.enrollmentAvailable || fresh.current.credentialVersion !== challenge.credentialVersion) throw expired();
     if (fresh.current.temporaryPassword && await verifyPassword(password, fresh.current.password)) throw new AuthError(400, 'Задайте свой пароль, отличный от временного.', 'invalid_password');

@@ -230,8 +230,8 @@ function showEnrollment(data) {
   $('enrollment-password-confirm').required = auth.requiresNewPassword;
   $('enrollment-password-option').textContent = auth.requiresNewPassword ? 'обязательно' : 'необязательно';
   $('enrollment-password-help').textContent = auth.requiresNewPassword
-    ? 'Для защищённого входа задайте новый пароль — от 15 до 1024 символов.'
-    : 'Можно оставить текущий пароль или задать новый — не менее 15 символов.';
+    ? 'Для защищённого входа задайте новый пароль — от 8 до 1024 символов.'
+    : 'Можно оставить текущий пароль или задать новый — не менее 8 символов.';
   $('auth-heading').textContent = 'Подключим Яндекс ID (Ключ)';
   $('auth-description').textContent = 'Это первая настройка. Добавим вход по коду с телефона — в следующий раз QR-код уже не понадобится.';
   message($('login-error'), '');
@@ -686,8 +686,8 @@ $('enrollment-form').addEventListener('submit', async (event) => {
     $('enrollment-username').focus();
     return;
   }
-  if ((auth.requiresNewPassword || password) && (password.length < 15 || password.length > 1024)) {
-    message($('enrollment-error'), 'Новый пароль должен содержать от 15 до 1024 символов.');
+  if ((auth.requiresNewPassword || password) && (password.length < 8 || password.length > 1024)) {
+    message($('enrollment-error'), 'Новый пароль должен содержать от 8 до 1024 символов.');
     $('enrollment-password').focus();
     return;
   }

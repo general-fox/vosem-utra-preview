@@ -70,8 +70,8 @@ final class CafeAuth
     {
         $algorithm = self::passwordAlgorithm();
         $length = self::passwordLength($password);
-        if ($length < 15 || $length > 1024 || ($algorithm === PASSWORD_BCRYPT && strlen($password) > 72)) {
-            throw new CafeAuthException(400, $algorithm === PASSWORD_BCRYPT ? 'Пароль: от 15 символов, не более 72 байт UTF-8 на этом сервере.' : 'Пароль должен содержать от 15 до 1024 символов.', 'invalid_password');
+        if ($length < 8 || $length > 1024 || ($algorithm === PASSWORD_BCRYPT && strlen($password) > 72)) {
+            throw new CafeAuthException(400, $algorithm === PASSWORD_BCRYPT ? 'Пароль: от 8 символов, не более 72 байт UTF-8 на этом сервере.' : 'Пароль должен содержать от 8 до 1024 символов.', 'invalid_password');
         }
         $hash = password_hash($password, $algorithm, self::passwordOptions($algorithm));
         if (!is_string($hash)) throw new RuntimeException('Password hashing is unavailable.');
@@ -402,7 +402,7 @@ final class CafeAuth
             $token = self::token();
             $pending = ['username' => $account['username'], 'secondary' => ($account['secondary'] ?? false) === true, 'credentialVersion' => $account['credentialVersion'], 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0];
             if ($account['totp'] === null) {
-                $requiresNewPassword = ($account['temporaryPassword'] ?? false) === true || self::passwordLength($password) < 15;
+                $requiresNewPassword = ($account['temporaryPassword'] ?? false) === true || self::passwordLength($password) < 8;
                 $passwordHash = $requiresNewPassword ? null : (password_needs_rehash($account['passwordHash'], self::passwordAlgorithm(), self::passwordOptions(self::passwordAlgorithm())) ? self::hashPassword($password) : $account['passwordHash']);
                 $pending += ['type' => 'enrollment', 'requiresNewPassword' => $requiresNewPassword, 'passwordHash' => $passwordHash];
                 $this->boundedAdd($state['challenges'], $token, $pending);
@@ -425,7 +425,7 @@ final class CafeAuth
             if (($pending['secondary'] ?? false) && $username !== $pending['username']) throw new CafeAuthException(400, 'Для этой учётной записи нельзя изменить почту.', 'invalid_username');
             if (!($pending['secondary'] ?? false) && isset($state['accounts'][$username])) throw new CafeAuthException(400, 'Эта почта уже используется.', 'invalid_username');
             $reservation = $this->reserve($state, $peer, 'enrollment');
-            if ($pending['requiresNewPassword'] && !isset($body['password'])) throw new CafeAuthException(400, 'Укажите новый пароль от 15 символов.', 'invalid_password');
+            if ($pending['requiresNewPassword'] && !isset($body['password'])) throw new CafeAuthException(400, 'Укажите новый пароль от 8 символов.', 'invalid_password');
             if (($fresh['current']['temporaryPassword'] ?? false) && self::checkPassword($body['password'] ?? null, $fresh['current']['passwordHash'])) throw new CafeAuthException(400, 'Задайте свой пароль, отличный от временного.', 'invalid_password');
             $passwordHash = array_key_exists('password', $body) ? (is_string($body['password']) ? self::hashPassword($body['password']) : throw new CafeAuthException(400, 'Укажите новый пароль.', 'invalid_password')) : $pending['passwordHash'];
             $secret = self::base32Encode(random_bytes(20)); $token = self::token();

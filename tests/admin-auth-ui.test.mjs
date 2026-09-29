@@ -370,6 +370,30 @@ test('an available first enrollment permits password login but reveals setup dat
   assert.equal(app.node('enrollment-qr-image').getAttribute('src'), enrollmentStart.qrDataUrl);
 });
 
+test('new password minimum is eight in HTML, help and enrollment validation', async () => {
+  for (const required of [true, false]) {
+    const app = await page(enrollmentSession);
+    await enrollmentPasswordStep(app, required);
+    for (const id of ['enrollment-password', 'enrollment-password-confirm']) {
+      assert.equal(app.node(id).getAttribute('minlength'), '8');
+      assert.equal(app.node(id).getAttribute('maxlength'), '1024');
+      app.node(id).value = 'short-7';
+    }
+    assert.match(app.node('enrollment-password-help').textContent, /8/);
+    await app.trigger('enrollment-form', 'submit');
+    assert.equal(app.calls.length, 2, 'Seven characters must not reach the server');
+    assert.match(app.node('enrollment-error').textContent, /от 8 до 1024/);
+    app.node('enrollment-password').value = 'eight-8!';
+    app.node('enrollment-password-confirm').value = 'eight-8!';
+    app.responses.push({ body: enrollmentStart });
+    await app.trigger('enrollment-form', 'submit');
+    assert.equal(app.calls[2].body.password, 'eight-8!');
+    assert.equal(app.node('enrollment-verify-form').hidden, false);
+    assert.equal(app.node('dashboard').hidden, true, 'A valid password still needs TOTP');
+    assert.equal(app.state.csrfToken, '');
+  }
+});
+
 test('wrong enrollment codes cannot open the menu and recovery codes must be saved before continuing', async () => {
   const app = await page(enrollmentSession);
   await showTestQr(app);

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../hosting/php/auth.php';
 
-const TEST_PASSWORD = 'test-only-password-at-least-15';
+const TEST_PASSWORD = 'test-only-long-password';
 const TEST_NOW = 1800000000000;
 $passwordHash = CafeAuth::hashPassword(TEST_PASSWORD);
 $directories = [];
@@ -70,7 +70,9 @@ try {
         check(CafeAuth::normalizeUsername(' V.Utra@Yandex.RU ') === 'v.utra@yandex.ru');
         check(CafeAuth::normalizeUsername(' OWNER ') === 'owner');
         foreach (['a@@b.ru', '.a@b.ru', 'a..b@c.ru', 'a@-b.ru', "a@b.ru\n", str_repeat('a', 65) . '@b.ru'] as $value) expectError(fn() => CafeAuth::normalizeUsername($value), 'invalid_username');
-        expectError(fn() => CafeAuth::hashPassword('too-short'), 'invalid_password');
+        expectError(fn() => CafeAuth::hashPassword('short-7'), 'invalid_password');
+        expectError(fn() => CafeAuth::hashPassword(str_repeat('я', 7)), 'invalid_password');
+        foreach (['eight-8!', str_repeat('я', 8)] as $password) check(password_verify($password, CafeAuth::hashPassword($password)));
         check(password_verify(TEST_PASSWORD, $passwordHash));
         if (CafeAuth::passwordAlgorithm() === PASSWORD_ARGON2ID) check(password_get_info($passwordHash)['options']['memory_cost'] >= 65536);
         $app = fixture(['bootstrap_password_hash' => password_hash(str_repeat('x', 72), PASSWORD_BCRYPT, ['cost' => 12])]);
@@ -108,13 +110,25 @@ try {
         check(!isset($auth->status($done['token'])['recoveryCodes']));
     });
     runTest('weak bootstrap requires replacement; cancellation leaves account unchanged', function () {
-        $app = fixture(['bootstrap_password_hash' => password_hash('old-password', PASSWORD_BCRYPT)]); $auth = $app['auth'];
-        $pending = $auth->login(credentials('old-password'), 'peer'); check($pending['requiresNewPassword']);
+        $app = fixture(['bootstrap_password_hash' => password_hash('short-7', PASSWORD_BCRYPT)]); $auth = $app['auth'];
+        $pending = $auth->login(credentials('short-7'), 'peer'); check($pending['requiresNewPassword']);
         expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru'], 'peer'), 'invalid_password');
         $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru', 'password' => TEST_PASSWORD], 'peer');
         $auth->enrollCancel(['enrollmentToken' => $started['enrollmentToken']], 'peer');
         expectError(fn() => $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'peer'), 'challenge_expired');
         check(state($app)['account'] === null && state($app)['enrollments'] === []);
+    });
+    runTest('eight-character password can be retained and still requires TOTP', function () {
+        $password = 'eight-8!';
+        $app = fixture(['bootstrap_password_hash' => CafeAuth::hashPassword($password)]); $auth = $app['auth'];
+        $pending = $auth->login(credentials($password), 'peer');
+        check($pending['enrollmentRequired'] && !$pending['requiresNewPassword'] && !isset($pending['token']));
+        $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru'], 'peer');
+        check(state($app)['account'] === null);
+        $done = $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'peer');
+        check($done['authenticated'] && password_verify($password, state($app)['account']['passwordHash']));
+        $pending = $auth->login(credentials($password), 'peer');
+        check($pending['mfaRequired'] && !isset($pending['token']));
     });
     runTest('peer binding, expiry and five-code limit persist across PHP instances', function () {
         $app = fixture(); $auth = $app['auth'];
@@ -207,7 +221,9 @@ try {
         check($pending['requiresNewPassword']);
         expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'v.utra@yandex.ru', 'password' => TEST_PASSWORD], 'ira'), 'invalid_username');
         expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test'], 'ira'), 'invalid_password');
-        $newPassword = 'new-private-fixture-password';
+        expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => TEST_PASSWORD], 'ira'), 'invalid_password');
+        expectError(fn() => $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => 'short-7'], 'ira'), 'invalid_password');
+        $newPassword = 'eight-8!';
         $started = $auth->enrollStart(['challengeToken' => $pending['challengeToken'], 'username' => 'ira@example.test', 'password' => $newPassword], 'ira');
         $done = $auth->enrollConfirm(['enrollmentToken' => $started['enrollmentToken'], 'code' => CafeAuth::totp($started['secret'], TEST_NOW)], 'ira');
         check($done['authenticated'] && $done['deviceMaxAge'] === 2592000);
