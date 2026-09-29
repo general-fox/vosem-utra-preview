@@ -10,9 +10,34 @@ const state = { items: [], revision: null, csrfToken: '', busy: false, loaded: f
 // Authentication challenges and entered codes live only in this page's memory.
 const auth = { challengeToken: '', recovery: false, busy: false, setupRequired: false, production: false, mfaRequired: false,
   enrollmentAvailable: false, enrollmentToken: '', enrollmentPhase: '', enrollmentTimer: null, generation: 0,
-  requiresNewPassword: false, recoveryPending: false };
+  requiresNewPassword: false, recoveryPending: false, trustedUsername: '' };
 const draft = { id: null, isNew: true, image: '', file: null, previewUrl: '', dirty: false, resume: false };
 let deleteId = null;
+const passwordFields = [
+  ['password', 'пароль'],
+  ['enrollment-password', 'новый пароль'],
+  ['enrollment-password-confirm', 'повтор пароля'],
+];
+
+function setPasswordVisible(id, label, visible) {
+  $(id).type = visible ? 'text' : 'password';
+  const button = $(`${id}-toggle`);
+  const action = `${visible ? 'Скрыть' : 'Показать'} ${label}`;
+  button.setAttribute('aria-pressed', String(visible));
+  button.setAttribute('aria-label', action);
+  button.setAttribute('title', action);
+}
+
+function hidePasswords() {
+  for (const [id, label] of passwordFields) setPasswordVisible(id, label, false);
+}
+
+for (const [id, label] of passwordFields) {
+  $(`${id}-toggle`).addEventListener('click', () => {
+    if (auth.busy || auth.setupRequired) return;
+    setPasswordVisible(id, label, $(id).type === 'password');
+  });
+}
 
 // Match the server's email/legacy-login rules without type=email rejecting old logins.
 function validUsername(value) {
@@ -89,7 +114,8 @@ function setBusy(busy) {
 
 function setAuthBusy(busy) {
   auth.busy = busy;
-  for (const id of ['username', 'password', 'login-submit', 'verification-code', 'verify-submit', 'code-mode', 'auth-back', 'check-setup',
+  if (busy) hidePasswords();
+  for (const id of ['username', 'password', 'password-toggle', 'enrollment-password-toggle', 'enrollment-password-confirm-toggle', 'login-submit', 'verification-code', 'verify-submit', 'code-mode', 'auth-back', 'check-setup',
     'enrollment-username', 'enrollment-password', 'enrollment-password-confirm', 'enrollment-start', 'enrollment-back',
     'enrollment-code', 'enrollment-confirm', 'enrollment-cancel', 'saved-recovery-codes', 'recovery-logout']) {
     $(id).disabled = busy || (auth.setupRequired && id !== 'check-setup');
@@ -123,6 +149,7 @@ function setCodeMode(recovery) {
 }
 
 function clearEnrollment() {
+  hidePasswords();
   auth.generation += 1;
   clearTimeout(auth.enrollmentTimer);
   auth.enrollmentTimer = null;
@@ -144,6 +171,7 @@ function clearEnrollment() {
 
 function clearChallenge() {
   clearEnrollment();
+  auth.trustedUsername = '';
   auth.challengeToken = '';
   $('password').value = '';
   setCodeMode(false);
@@ -168,14 +196,22 @@ function showLogin(error = '') {
   setAuthBusy(auth.busy);
 }
 
-function showVerification(challengeToken) {
+function showVerification(challengeToken, trustedUsername = '') {
   clearChallenge();
   auth.challengeToken = challengeToken;
+  auth.trustedUsername = trustedUsername;
   $('login-form').hidden = true;
   $('auth-setup').hidden = true;
   $('verify-form').hidden = false;
   $('auth-heading').textContent = 'Подтвердите, что это вы';
   $('auth-description').textContent = 'Остался ещё один шаг: код для «Восемь утра» из Яндекс ID (Ключ) или резервный код.';
+  $('code-mode').hidden = Boolean(trustedUsername);
+  $('auth-back').textContent = trustedUsername ? 'Войти с паролем / другой аккаунт' : '← К почте и паролю';
+  if (trustedUsername) {
+    $('username').value = trustedUsername;
+    $('auth-heading').textContent = 'С возвращением';
+    $('auth-description').textContent = `${trustedUsername} · Устройство знакомо. Введите код из приложения, чтобы продолжить.`;
+  }
   message($('login-error'), '');
 }
 
@@ -189,7 +225,7 @@ function showEnrollment(data) {
   $('auth-setup').hidden = true;
   $('enrollment-form').hidden = false;
   // This preset appears only after the server has verified the existing password.
-  $('enrollment-username').value = 'v.utra@yandex.ru';
+  $('enrollment-username').value = data.username?.includes('@') ? data.username : 'v.utra@yandex.ru';
   $('enrollment-password').required = auth.requiresNewPassword;
   $('enrollment-password-confirm').required = auth.requiresNewPassword;
   $('enrollment-password-option').textContent = auth.requiresNewPassword ? 'обязательно' : 'необязательно';
@@ -303,6 +339,11 @@ async function checkSession() {
   auth.enrollmentAvailable = session.enrollmentAvailable === true;
   auth.setupRequired = !auth.enrollmentAvailable && (session.ready === false || (auth.production && session.configured === false));
   showLogin();
+  if (typeof session.trustedUsername === 'string' && validUsername(session.trustedUsername)) {
+    auth.setupRequired = false;
+    showVerification('', session.trustedUsername);
+    setAuthBusy(false);
+  }
 }
 
 function sessionExpired(error) {
@@ -313,6 +354,14 @@ function sessionExpired(error) {
   $('delete-dialog').close();
   showLogin('Сессия завершилась. Войдите снова, чтобы продолжить. Черновик блюда сохранён в открытой вкладке.');
   $('password').focus();
+  const generation = auth.generation;
+  void api('session').then((session) => {
+    if (generation !== auth.generation || auth.busy || $('password').value) return;
+    if (typeof session.trustedUsername === 'string' && validUsername(session.trustedUsername)) {
+      showVerification('', session.trustedUsername);
+      $('verification-code').focus();
+    }
+  }).catch(() => { /* Password login remains available if the connection is lost. */ });
   return true;
 }
 
@@ -564,7 +613,7 @@ $('login-form').addEventListener('submit', async (event) => {
 
 $('verify-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (auth.busy || !auth.challengeToken || auth.enrollmentPhase) return;
+  if (auth.busy || (!auth.challengeToken && !auth.trustedUsername) || auth.enrollmentPhase) return;
   const input = $('verification-code');
   const code = input.value.trim();
   if ((!auth.recovery && !/^\d{6}$/.test(code)) || (auth.recovery && (!code || code.length > 100))) {
@@ -576,13 +625,24 @@ $('verify-form').addEventListener('submit', async (event) => {
   setAuthBusy(true);
   input.removeAttribute('aria-invalid');
   message($('verification-error'), '');
+  const generation = auth.generation;
   try {
+    if (auth.trustedUsername && !auth.challengeToken) {
+      const resumed = await api('resume', { method: 'POST', body: {} });
+      if (generation !== auth.generation) return;
+      if (!resumed.mfaRequired || typeof resumed.challengeToken !== 'string') throw new ApiError('Не удалось подтвердить устройство. Войдите с паролем.');
+      auth.challengeToken = resumed.challengeToken;
+    }
     const data = await api('verify', { method: 'POST', body: { challengeToken: auth.challengeToken, code } });
+    if (generation !== auth.generation) return;
     if (data.authenticated !== true || typeof data.csrfToken !== 'string' || !data.csrfToken) throw new ApiError('Сервер не подтвердил вход. Попробуйте ещё раз.');
     state.csrfToken = data.csrfToken;
     await enterDashboard();
   } catch (error) {
-    if (error.status === 410 || error.code === 'challenge_expired') {
+    if ((error.status === 410 || error.code === 'challenge_expired') && auth.trustedUsername) {
+      showVerification('', auth.trustedUsername);
+      message($('verification-error'), 'Введите свежий код из приложения.');
+    } else if (error.status === 410 || error.code === 'challenge_expired' || error.code === 'device_expired') {
       showLogin(error.message);
     } else {
       // A rejected code is retryable while the server keeps the challenge valid.
@@ -598,13 +658,19 @@ $('verify-form').addEventListener('submit', async (event) => {
 });
 
 $('code-mode').addEventListener('click', () => {
-  if (auth.busy || !auth.challengeToken) return;
+  if (auth.busy || !auth.challengeToken || auth.trustedUsername) return;
   setCodeMode(!auth.recovery);
   $('verification-code').focus();
 });
 
-$('auth-back').addEventListener('click', () => {
+$('auth-back').addEventListener('click', async () => {
   if (auth.busy) return;
+  if (auth.trustedUsername) {
+    setAuthBusy(true);
+    try { await api('forget-device', { method: 'POST', body: {} }); }
+    catch (error) { message($('verification-error'), error.message); return; }
+    finally { setAuthBusy(false); }
+  }
   showLogin();
   $('password').focus();
 });

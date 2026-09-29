@@ -10,3 +10,14 @@ dialog{color:var(--ink);background:var(--paper);border:1px solid var(--line);pad
 .admin-filter{min-width:0}.admin-filter select,.admin-field select{appearance:none;-webkit-appearance:none;padding-right:48px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 10' fill='none'%3E%3Cpath d='m2 3 5 5 5-5' stroke='%2368635B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-size:14px 10px;background-position:right 18px center}@media(forced-colors:active){.admin-filter select,.admin-field select{appearance:auto;-webkit-appearance:auto;background-image:none;padding-right:14px}}
 
 .item-availability{width:fit-content;border:1px solid #C7D3B8;border-radius:100px;background:#EDF1E5;color:#465238;font-size:11px;line-height:1.5;padding:5px 10px;margin-top:10px}.item-availability.is-unavailable{border-color:#D3C8B7;background:#F0EBDE;color:#6C604E}
+#device-login-help{margin-top:14px;max-width:48ch}
+.password-field{position:relative}
+.password-field input{padding-right:58px}
+.password-field input::-ms-reveal{display:none}
+.password-toggle{position:absolute;right:5px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;touch-action:manipulation}
+.password-toggle:hover{background:rgba(0,0,0,.045)}
+.password-toggle:focus-visible{outline:2px solid currentColor;outline-offset:1px}
+.password-toggle:disabled{opacity:.45;cursor:default}
+.password-toggle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.password-eye-slash{display:none}
+.password-toggle[aria-pressed="true"] .password-eye-slash{display:block}

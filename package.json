@@ -13,6 +13,7 @@
     "test": "node tests/reveals.test.cjs && node tests/intro-parallax.test.cjs && node tests/fonts.test.cjs && node tests/photos.test.cjs && node --test tests/*.test.mjs",
     "start": "node --env-file-if-exists=.env server/index.mjs",
     "admin:password": "node --env-file-if-exists=.env server/set-password.mjs",
+    "admin:add": "node --env-file-if-exists=.env server/add-admin.mjs",
     "admin:setup": "node --env-file-if-exists=.env server/setup-admin.mjs"
   },
   "repository": {

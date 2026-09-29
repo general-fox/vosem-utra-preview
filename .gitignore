@@ -13,6 +13,7 @@ dist-reg.zip
 # Private PHP configuration and runtime data, including copies outside build directories.
 admin-config.php
 admin-access.txt
+admin-access-*.txt
 admin-data/
 vosem-utra-private/
 orders-config.php

@@ -9,6 +9,7 @@ export { makePasswordRecord } from './auth.mjs';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const COOKIE = 'vosem_admin';
+const DEVICE_COOKIE = 'vosem_admin_device';
 const CATEGORIES = new Set(['signature', 'eggs', 'porridge', 'sweet']);
 const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
@@ -131,6 +132,7 @@ export function createMenuMiddleware(options = {}) {
   }
 
   const sessionToken = (req) => req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
+  const deviceToken = (req) => req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${DEVICE_COOKIE}=`))?.slice(DEVICE_COOKIE.length + 1);
   const peer = (req) => req.socket.remoteAddress ?? 'unknown';
 
   async function requireSession(req, csrf = false) {
@@ -148,9 +150,9 @@ export function createMenuMiddleware(options = {}) {
     if (req.headers.origin !== expected || req.headers['sec-fetch-site'] === 'cross-site') fail(403, 'Запрос должен быть отправлен с этого сайта.', 'origin');
   }
 
-  function cookie(req, token, maxAge) {
+  function cookie(req, token, maxAge, name = COOKIE) {
     const secure = req.socket.encrypted || publicOrigin?.startsWith('https://');
-    return `${COOKIE}=${token}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
+    return `${name}=${token}; Path=/api/admin; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
   }
 
   async function serveUpload(req, res, pathname) {
@@ -186,7 +188,13 @@ export function createMenuMiddleware(options = {}) {
         return sendJson(res, 200, { items: menu.items.filter((item) => item.published).sort((a, b) => a.order - b.order), revision: menu.revision });
       }
       if (pathname === '/api/admin/session' && req.method === 'GET') {
-        return sendJson(res, 200, await auth.status(sessionToken(req)));
+        return sendJson(res, 200, await auth.status(sessionToken(req), deviceToken(req)));
+      }
+      if (pathname === '/api/admin/resume' && req.method === 'POST') return sendJson(res, 202, await auth.resume(deviceToken(req), peer(req)));
+      if (pathname === '/api/admin/forget-device' && req.method === 'POST') {
+        await auth.forgetDevice(deviceToken(req));
+        res.setHeader('Set-Cookie', cookie(req, '', 0, DEVICE_COOKIE));
+        return sendJson(res, 200, { forgotten: true });
       }
       if (pathname === '/api/admin/enroll/start' && req.method === 'POST') {
         const result = await auth.enrollmentStart(await readJson(req), peer(req));
@@ -196,15 +204,19 @@ export function createMenuMiddleware(options = {}) {
       if (pathname === '/api/admin/enroll/cancel' && req.method === 'POST') return sendJson(res, 200, await auth.enrollmentCancel(await readJson(req), peer(req)));
       if (['/api/admin/login', '/api/admin/verify', '/api/admin/enroll/confirm'].includes(pathname) && req.method === 'POST') {
         const body = await readJson(req);
-        const result = pathname.endsWith('/confirm') ? await auth.enrollmentConfirm(body, peer(req)) : pathname.endsWith('/verify') ? await auth.verify(body, peer(req)) : await auth.login(body, peer(req), sessionToken(req));
+        const result = pathname.endsWith('/confirm') ? await auth.enrollmentConfirm(body, peer(req)) : pathname.endsWith('/verify') ? await auth.verify(body, peer(req), deviceToken(req)) : await auth.login(body, peer(req), sessionToken(req));
         if (result.mfaRequired || result.enrollmentRequired) return sendJson(res, 202, result);
-        res.setHeader('Set-Cookie', cookie(req, result.token, Math.floor(auth.sessionMs / 1000)));
+        await auth.forgetDevice(deviceToken(req));
+        res.setHeader('Set-Cookie', [cookie(req, result.token, Math.floor(auth.sessionMs / 1000)), cookie(req, result.deviceToken ?? '', result.deviceMaxAge ?? 0, DEVICE_COOKIE)]);
         return sendJson(res, 200, { authenticated: true, csrfToken: result.csrfToken, ...(result.recoveryCodes ? { recoveryCodes: result.recoveryCodes } : {}) });
       }
       if (pathname === '/api/admin/logout' && req.method === 'POST') {
-        const session = await requireSession(req, true);
-        await auth.logout(session.token, peer(req));
-        res.setHeader('Set-Cookie', cookie(req, '', 0));
+        // An already idle session must still be able to forget this browser.
+        const active = await auth.session(sessionToken(req));
+        if (active) await requireSession(req, true);
+        await auth.logout(sessionToken(req), peer(req));
+        await auth.forgetDevice(deviceToken(req));
+        res.setHeader('Set-Cookie', [cookie(req, '', 0), cookie(req, '', 0, DEVICE_COOKIE)]);
         return sendJson(res, 200, { authenticated: false });
       }
       if (pathname === '/api/admin/menu' && req.method === 'GET') { await requireSession(req); return sendJson(res, 200, await readSavedMenu()); }

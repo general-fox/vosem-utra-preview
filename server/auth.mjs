@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual, createHash, createCipheriv, createDecipheriv } from 'node:crypto';
 import { promisify } from 'node:util';
-import { mkdir, readFile, writeFile, rename, appendFile, stat, unlink, rmdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile, rename, appendFile, stat, unlink, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { encodeBase32, verifyTotp } from './totp.mjs';
 
@@ -11,7 +11,9 @@ const ABSOLUTE_MS = 8 * 60 * 60 * 1000;
 const IDLE_MS = 30 * 60 * 1000;
 const CHALLENGE_MS = 5 * 60 * 1000;
 const WINDOW_MS = 15 * 60 * 1000;
+export const DEVICE_MS = 30 * 24 * 60 * 60 * 1000;
 const hash = (value) => createHash('sha256').update(value).digest('hex');
+export const additionalAccountFile = (dataDir, username) => path.join(dataDir, 'admin-users', `${hash(normalizeUsername(username))}.json`);
 let activeHashes = 0;
 const hashWaiters = [];
 
@@ -163,6 +165,7 @@ export function createAuthService(options) {
   const accountFile = path.join(dataDir, 'admin-auth.json');
   const legacyFile = path.join(dataDir, 'admin-password.json');
   const throttleFile = path.join(dataDir, 'auth-throttle.json');
+  const devicesFile = path.join(dataDir, 'auth-devices.json');
   const sessions = new Map(); const challenges = new Map(); const enrollments = new Map();
   let queue = Promise.resolve(); let auditQueue = Promise.resolve(); let environmentAccount;
   const serial = (operation) => { const result = queue.then(operation); queue = result.catch(() => {}); return result; };
@@ -187,9 +190,21 @@ export function createAuthService(options) {
     return result;
   }
 
-  async function account() {
-    const saved = await optionalJson(accountFile);
+  async function account(username) {
+    const extra = username ? await optionalJson(additionalAccountFile(dataDir, username)) : null;
+    let saved = extra ?? await optionalJson(accountFile);
+    // A Git checkout intentionally contains no owner secrets. An operator-provisioned
+    // employee can still enroll locally without creating/replacing an owner account.
+    if (!saved && !environmentPassword && !await optionalJson(legacyFile)) {
+      const names = await readdir(path.join(dataDir, 'admin-users')).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
+      const name = names.filter((entry) => /^[a-f0-9]{64}\.json$/.test(entry)).sort()[0];
+      if (name) {
+        saved = await optionalJson(path.join(dataDir, 'admin-users', name));
+        if (!saved || saved.secondary !== true || path.basename(additionalAccountFile(dataDir, saved.username)) !== name) throw new Error('Invalid additional account');
+      }
+    }
     if (saved) {
+      if (extra && (extra.username !== username || extra.secondary !== true)) throw new Error('Invalid additional account');
       if (saved.version !== 2 || normalizeUsername(saved.username) !== saved.username || typeof saved.credentialVersion !== 'string') throw new Error('Invalid account');
       validatePasswordRecord(saved.password);
       if (saved.totp && (!Number.isSafeInteger(saved.totp.lastCounter) || !Array.isArray(saved.recovery) || saved.recovery.some((code) => !/^[a-f0-9]{64}$/.test(code)))) throw new Error('Invalid MFA account');
@@ -219,11 +234,51 @@ export function createAuthService(options) {
     }
     return true;
   }
-  async function state() {
+  async function state(username) {
     try {
-      const current = await account(); const configured = await configurationReady(current);
+      const current = await account(username); const configured = await configurationReady(current);
       return { current, ready: configured && Boolean(current.totp), enrollmentAvailable: configured && !current.totp };
     } catch { return { current: null, ready: false, enrollmentAvailable: false }; }
+  }
+
+  const saveAccount = (current) => atomicAuthWrite(current.secondary === true ? additionalAccountFile(dataDir, current.username) : accountFile, current);
+  async function deviceStore() {
+    const saved = await optionalJson(devicesFile) ?? { version: 1, devices: {} };
+    if (saved.version !== 1 || !saved.devices || typeof saved.devices !== 'object' || Array.isArray(saved.devices)) throw new Error('Invalid trusted device storage');
+    for (const [key, device] of Object.entries(saved.devices)) if (device.expiresAt <= now()) delete saved.devices[key];
+    return saved;
+  }
+  async function trustedDevice(token, saved) {
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
+    const device = (saved ?? await deviceStore()).devices[hash(token)];
+    if (!device || device.expiresAt <= now()) return null;
+    const fresh = await state(device.username);
+    return fresh.ready && fresh.current.username === device.username && fresh.current.credentialVersion === device.credentialVersion ? device : null;
+  }
+  // Caller holds the account lock. Rotation never extends the original 30-day deadline.
+  async function rememberDevice(current, oldToken, expiresAt = now() + DEVICE_MS) {
+    const saved = await deviceStore();
+    if (oldToken) delete saved.devices[hash(oldToken)];
+    const token = randomBytes(32).toString('hex');
+    if (Object.keys(saved.devices).length >= 100) delete saved.devices[Object.keys(saved.devices)[0]];
+    saved.devices[hash(token)] = { username: current.username, credentialVersion: current.credentialVersion, expiresAt };
+    await atomicAuthWrite(devicesFile, saved);
+    return { deviceToken: token, deviceMaxAge: Math.max(0, Math.floor((expiresAt - now()) / 1000)) };
+  }
+  async function forgetDevice(token) {
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return;
+    await serial(() => withAccountLock(dataDir, async () => {
+      const saved = await deviceStore(); delete saved.devices[hash(token)]; await atomicAuthWrite(devicesFile, saved);
+    }));
+  }
+  async function resume(deviceToken, ip) {
+    const device = await trustedDevice(deviceToken);
+    if (!device) throw new AuthError(401, 'Срок запоминания истёк. Войдите с паролем.', 'device_expired');
+    const challengeToken = randomBytes(32).toString('hex');
+    if (challenges.size >= 100) challenges.delete(challenges.keys().next().value);
+    remember(challenges, challengeToken, { type: 'mfa', username: device.username, credentialVersion: device.credentialVersion,
+      deviceHash: hash(deviceToken), ip, expiresAt: now() + CHALLENGE_MS, attempts: 0 });
+    return { mfaRequired: true, challengeToken, trusted: true, username: device.username };
   }
 
   async function throttleRead() {
@@ -266,13 +321,13 @@ export function createAuthService(options) {
   async function session(token, { touch = true } = {}) {
     const value = sessions.get(token);
     if (!value) return null;
-    const fresh = await state();
+    const fresh = await state(value.username);
     if (!fresh.ready || fresh.current.credentialVersion !== value.credentialVersion || value.expiresAt <= now() || value.lastSeen + idleMs <= now()) { sessions.delete(token); return null; }
     if (touch) value.lastSeen = now();
     return { ...value, token };
   }
   async function issue(current, ip, oldToken) {
-    const fresh = await state();
+    const fresh = await state(current.username);
     if (!fresh.ready || fresh.current.credentialVersion !== current.credentialVersion) throw invalid();
     for (const [key, value] of sessions) if (value.expiresAt <= now() || value.lastSeen + idleMs <= now()) sessions.delete(key);
     if (sessions.size >= 100) sessions.delete(sessions.keys().next().value);
@@ -284,33 +339,33 @@ export function createAuthService(options) {
   }
 
   async function login({ username, password }, ip, oldToken) {
-    const fresh = await state();
+    let normalizedUsername;
+    try { normalizedUsername = normalizeUsername(username); } catch { normalizedUsername = null; }
+    const fresh = await state(normalizedUsername);
     if (!fresh.ready && !fresh.enrollmentAvailable) throw fresh.current ? unavailable() : new AuthError(503, 'Вход администратора не настроен.', 'not_configured');
     const reservation = await reserve(ip, 'password');
     const current = fresh.current;
     // Always evaluate the password for syntactically valid input, even for an unknown username.
-    let normalizedUsername;
-    try { normalizedUsername = normalizeUsername(username); } catch { normalizedUsername = null; }
     const validInput = typeof password === 'string' && password.length > 0 && password.length <= 1024 && normalizedUsername !== null;
     const validPassword = validInput && await verifyPassword(password, current.password);
-    if (!validPassword || !equalSecret(normalizedUsername, current.username)) { await audit('login.failed', ip); throw invalid(); }
+    if (!validPassword || !equalSecret(normalizedUsername, current.username) || (current.initialExpiresAt && current.initialExpiresAt <= now())) { await audit('login.failed', ip); throw invalid(); }
     await refund(reservation);
     for (const [token, value] of challenges) if (value.expiresAt <= now()) challenges.delete(token);
     if (challenges.size >= 100) challenges.delete(challenges.keys().next().value);
     const challengeToken = randomBytes(32).toString('hex');
     if (!current.totp) {
-      const requiresNewPassword = password.length < 15;
+      const requiresNewPassword = current.temporaryPassword === true || password.length < 15;
       const passwordRecord = requiresNewPassword ? null : current.password.version === 2 ? current.password : await makePasswordRecord(password);
-      remember(challenges, challengeToken, { type: 'enrollment', credentialVersion: current.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, requiresNewPassword, passwordRecord, username: current.username });
+      remember(challenges, challengeToken, { type: 'enrollment', credentialVersion: current.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, requiresNewPassword, passwordRecord, username: current.username, secondary: current.secondary === true });
       await audit('enrollment.authorized', ip);
       return { enrollmentRequired: true, challengeToken, username: current.username, requiresNewPassword };
     }
-    remember(challenges, challengeToken, { type: 'mfa', credentialVersion: current.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, oldToken });
+    remember(challenges, challengeToken, { type: 'mfa', username: current.username, credentialVersion: current.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, oldToken });
     await audit('login.mfa_requested', ip);
     return { mfaRequired: true, challengeToken };
   }
 
-  async function verify({ challengeToken, code }, ip) {
+  async function verify({ challengeToken, code }, ip, deviceToken) {
     const initial = typeof challengeToken === 'string' ? challenges.get(challengeToken) : null;
     // Unknown tokens cannot consume the budget reserved for someone who knows the password.
     if (!initial || initial.type !== 'mfa' || initial.ip !== ip || initial.expiresAt <= now() || initial.attempts >= 5) {
@@ -320,12 +375,16 @@ export function createAuthService(options) {
     const reservation = await reserve(ip, 'otp');
     const result = await serial(() => withAccountLock(dataDir, async () => {
       const challenge = typeof challengeToken === 'string' ? challenges.get(challengeToken) : null;
-      const fresh = await state();
+      const fresh = await state(challenge?.username);
       if (!challenge || challenge.type !== 'mfa' || challenge.ip !== ip || challenge.expiresAt <= now() || challenge.attempts >= 5 || !fresh.ready || challenge.credentialVersion !== fresh.current?.credentialVersion || !fresh.current.totp) {
         if (challengeToken) challenges.delete(challengeToken);
         await audit('mfa.failed', ip); throw new AuthError(410, 'Время подтверждения истекло. Начните вход заново.', 'challenge_expired');
       }
       challenge.attempts += 1;
+      const device = challenge.deviceHash ? await trustedDevice(deviceToken) : null;
+      if (challenge.deviceHash && (!device || !equalSecret(challenge.deviceHash, typeof deviceToken === 'string' ? hash(deviceToken) : '') || device.username !== fresh.current.username)) {
+        challenges.delete(challengeToken); throw new AuthError(401, 'Войдите с паролем.', 'device_expired');
+      }
       const current = fresh.current;
       let method = 'totp';
       const normalized = typeof code === 'string' && code.length <= 100 ? code.trim() : '';
@@ -333,7 +392,7 @@ export function createAuthService(options) {
       const counter = verifyTotp(secret, normalized, { time: now(), lastCounter: current.totp.lastCounter });
       if (counter !== null) current.totp.lastCounter = counter;
       else {
-        const index = /^[a-fA-F0-9 -]{32,47}$/.test(normalized) ? current.recovery.findIndex((value) => equalSecret(value, recoveryHash(normalized))) : -1;
+        const index = !challenge.deviceHash && /^[a-fA-F0-9 -]{32,47}$/.test(normalized) ? current.recovery.findIndex((value) => equalSecret(value, recoveryHash(normalized))) : -1;
         if (index < 0) {
           if (challenge.attempts >= 5) {
             challenges.delete(challengeToken);
@@ -343,13 +402,15 @@ export function createAuthService(options) {
         }
         current.recovery.splice(index, 1); method = 'recovery';
       }
-      await atomicAuthWrite(accountFile, current);
+      await saveAccount(current);
       challenges.delete(challengeToken);
       await audit('mfa.succeeded', ip, { method });
-      return { current, oldToken: challenge.oldToken };
+      const deviceResult = method === 'totp'
+        ? await rememberDevice(current, deviceToken, device?.expiresAt) : {};
+      return { current, oldToken: challenge.oldToken, deviceResult };
     }));
     await refund(reservation);
-    return issue(result.current, ip, result.oldToken);
+    return { ...await issue(result.current, ip, result.oldToken), ...result.deviceResult };
   }
 
   const expired = () => new AuthError(410, 'Время настройки истекло. Начните вход заново.', 'challenge_expired');
@@ -368,8 +429,11 @@ export function createAuthService(options) {
     let normalizedUsername;
     try { normalizedUsername = normalizeUsername(username); } catch { throw new AuthError(400, 'Укажите корректную почту или логин.', 'invalid_username'); }
     if ((challenge.requiresNewPassword || password !== undefined) && (typeof password !== 'string' || password.length < 15 || password.length > 1024)) throw new AuthError(400, 'Новый пароль должен содержать от 15 до 1024 символов.', 'invalid_password');
-    const fresh = await state();
+    const fresh = await state(challenge.username);
     if (!fresh.enrollmentAvailable || fresh.current.credentialVersion !== challenge.credentialVersion) throw expired();
+    if (fresh.current.temporaryPassword && await verifyPassword(password, fresh.current.password)) throw new AuthError(400, 'Задайте свой пароль, отличный от временного.', 'invalid_password');
+    if (challenge.secondary && normalizedUsername !== challenge.username) throw new AuthError(400, 'Для этой учётной записи нельзя изменить почту.', 'invalid_username');
+    if (!challenge.secondary && await optionalJson(additionalAccountFile(dataDir, normalizedUsername))) throw new AuthError(400, 'Эта почта уже используется.', 'invalid_username');
     const reservation = await reserve(ip, 'enrollment');
     const passwordRecord = password === undefined ? challenge.passwordRecord : await makePasswordRecord(password);
     // Re-check after hashing: cancellation or another start must win over this pending work.
@@ -378,7 +442,7 @@ export function createAuthService(options) {
     const enrollmentToken = randomBytes(32).toString('hex');
     for (const [token, value] of enrollments) if (value.expiresAt <= now()) enrollments.delete(token);
     if (enrollments.size >= 100) enrollments.delete(enrollments.keys().next().value);
-    remember(enrollments, enrollmentToken, { credentialVersion: challenge.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, username: normalizedUsername, passwordRecord, secret });
+    remember(enrollments, enrollmentToken, { credentialVersion: challenge.credentialVersion, ip, expiresAt: now() + CHALLENGE_MS, attempts: 0, username: normalizedUsername, accountUsername: challenge.username, secondary: challenge.secondary, passwordRecord, secret });
     challenges.delete(challengeToken);
     await refund(reservation);
     await audit('enrollment.started', ip);
@@ -391,7 +455,7 @@ export function createAuthService(options) {
     const reservation = await reserve(ip, 'otp');
     const result = await serial(() => withAccountLock(dataDir, async () => {
       const enrollment = pendingEntry(enrollments, enrollmentToken, ip);
-      const fresh = await state();
+      const fresh = await state(enrollment.accountUsername);
       if (!fresh.enrollmentAvailable || fresh.current.credentialVersion !== enrollment.credentialVersion) { enrollments.delete(enrollmentToken); throw expired(); }
       enrollment.attempts += 1;
       const counter = verifyTotp(enrollment.secret, typeof code === 'string' ? code.trim() : '', { time: now() });
@@ -403,14 +467,17 @@ export function createAuthService(options) {
       const key = await getEncryptionKey({ dataDir, production, encryptionKey, create: !production });
       const recoveryCodes = createRecoveryCodes();
       const current = { version: 2, username: enrollment.username, credentialVersion: randomUUID(), password: enrollment.passwordRecord, totp: { encrypted: encryptTotp(enrollment.secret, key), lastCounter: counter }, recovery: recoveryCodes.map(recoveryHash) };
-      await atomicAuthWrite(accountFile, current);
-      await unlink(legacyFile).catch((error) => { if (error.code !== 'ENOENT') throw error; });
-      sessions.clear(); challenges.clear(); enrollments.clear();
+      if (enrollment.secondary) current.secondary = true;
+      else if (await optionalJson(additionalAccountFile(dataDir, current.username))) throw new AuthError(400, 'Эта почта уже используется.', 'invalid_username');
+      await saveAccount(current);
+      if (!enrollment.secondary) await unlink(legacyFile).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+      for (const map of [sessions, challenges, enrollments]) for (const [token, pending] of map) if (pending.credentialVersion === enrollment.credentialVersion) map.delete(token);
       await audit('credentials.mfa_enrolled', ip, { username: current.username });
-      return { current, recoveryCodes };
+      const deviceResult = await rememberDevice(current);
+      return { current, recoveryCodes, deviceResult };
     }));
     await refund(reservation);
-    return { ...await issue(result.current, ip), recoveryCodes: result.recoveryCodes };
+    return { ...await issue(result.current, ip), ...result.deviceResult, recoveryCodes: result.recoveryCodes };
   }
 
   function enrollmentCancel({ challengeToken, enrollmentToken }, ip) {
@@ -424,12 +491,13 @@ export function createAuthService(options) {
   }
 
   return {
-    production, sessionMs, audit, session, login, verify, enrollmentStart, enrollmentConfirm, enrollmentCancel,
-    async status(token) {
+    production, sessionMs, audit, session, login, verify, enrollmentStart, enrollmentConfirm, enrollmentCancel, resume, forgetDevice,
+    async status(token, deviceToken) {
       const currentSession = await session(token);
       if (currentSession) return { authenticated: true, csrfToken: currentSession.csrfToken };
       const fresh = await state();
-      return { authenticated: false, configured: Boolean(fresh.current), mfaRequired: production || Boolean(fresh.current), production, ready: fresh.ready, enrollmentAvailable: fresh.enrollmentAvailable };
+      const device = await trustedDevice(deviceToken);
+      return { authenticated: false, configured: Boolean(fresh.current), mfaRequired: production || Boolean(fresh.current), production, ready: fresh.ready, enrollmentAvailable: fresh.enrollmentAvailable, ...(device ? { trustedUsername: device.username } : {}) };
     },
     async logout(token, ip) { sessions.delete(token); await audit('logout', ip); },
   };

@@ -93,6 +93,40 @@ async function fixture(t, options = {}) {
   return { request, login, overlappingLogins, stop, start, dataDir, seedPath };
 }
 
+test('HTTP remembered-device cookie is secure and private, cannot read menu alone, rotates, and expires on logout', async (t) => {
+  let now = 1800000000000;
+  const origin = 'https://cafe.example';
+  const app = await fixture(t, { production: true, publicOrigin: origin, encryptionKey: '22'.repeat(32), now: () => now });
+  const send = (route, body = {}, cookie = '') => app.request(route, { method: 'POST', origin, authenticated: false, body, headers: { Cookie: cookie } });
+  const login = await send('/api/admin/login', { username: 'admin', password: PASSWORD });
+  assert.equal(login.status, 202);
+  const setup = await send('/api/admin/enroll/start', { challengeToken: login.value.challengeToken, username: 'owner@example.test' });
+  const done = await send('/api/admin/enroll/confirm', { enrollmentToken: setup.value.enrollmentToken, code: totp(setup.value.secret, { time: now }) });
+  assert.equal(done.status, 200);
+  const header = done.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device='));
+  assert.match(header, /Path=\/api\/admin; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure/);
+  const device = header.split(';')[0];
+  assert.equal(done.value.deviceToken, undefined); assert.equal(done.value.token, undefined);
+  assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: device } })).status, 401);
+  const known = await app.request('/api/admin/session', { headers: { Cookie: device } });
+  assert.equal(known.value.trustedUsername, 'owner@example.test'); assert.equal(known.value.authenticated, false);
+  assert.equal((await app.request('/api/admin/resume', { method: 'POST', body: {}, headers: { Cookie: device }, origin: 'https://evil.example' })).status, 403);
+  now += 31 * 60000;
+  const pending = await send('/api/admin/resume', {}, device);
+  assert.equal(pending.status, 202);
+  const unlocked = await send('/api/admin/verify', { challengeToken: pending.value.challengeToken, code: totp(setup.value.secret, { time: now }) }, device);
+  assert.equal(unlocked.status, 200);
+  const rotated = unlocked.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')).split(';')[0];
+  assert.notEqual(rotated, device);
+  assert.equal((await send('/api/admin/resume', {}, device)).status, 401);
+  const sessionCookie = unlocked.headers.getSetCookie().find((value) => value.startsWith('vosem_admin=')).split(';')[0];
+  assert.equal((await app.request('/api/admin/menu', { headers: { Cookie: sessionCookie } })).status, 200);
+  const out = await send('/api/admin/logout', {}, rotated);
+  assert.equal(out.status, 200);
+  assert.match(out.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')), /Max-Age=0/);
+  assert.equal((await send('/api/admin/resume', {}, rotated)).status, 401);
+});
+
 test('public menu omits drafts; admin API requires login and secure cookie settings', async (t) => {
   const app = await fixture(t);
   const publicMenu = await app.request('/api/menu');
