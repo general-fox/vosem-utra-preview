@@ -2,6 +2,8 @@ node_modules/
 dist/
 dist-hosting/
 dist-reg/
+dist-reg-test/
+dist-hosting-test/
 dist-reg.zip
 # Local cleanup archives and old release packages never belong in this repository.
 /_archive/
@@ -18,13 +20,25 @@ dist-reg.zip
 .data/
 # Private PHP configuration and runtime data, including copies outside build directories.
 admin-config.php
+password-reset-mail.php
+!hosting/php/password-reset-mail.php
+password-reset-mail.json
+ucaller-config.json
+phone-data/
+**/password-reset-mail.local.php
 admin-access.txt
 admin-access-*.txt
+admin-invitations-*.json
+admin-password-reset-*.json
 admin-data/
 vosem-utra-private/
 orders-config.php
 telegram-config.php
 telegram-access.txt
+kds-config.json
+kds-config.php
+kds-access*.txt
+kds-data/
 order-data/
 orders-data/
 *.sqlite

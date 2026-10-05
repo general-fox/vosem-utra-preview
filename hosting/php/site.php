@@ -2,12 +2,15 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/menu.php';
-require_once __DIR__.'/orders.php';
+// Delivery is optional and is not shipped in the catalog release.
+$compiledFeatures = is_file(__DIR__.'/features.php') ? require __DIR__.'/features.php' : [];
+if (($compiledFeatures['delivery_enabled'] ?? true) === true) {
+    foreach (['orders.php', 'kds-delivery.php'] as $module) if (is_file(__DIR__.'/'.$module)) require_once __DIR__.'/'.$module;
+}
 
 const CAFE_SITE_URL = 'https://vosem-utra.ru/';
 const CAFE_SEO_TITLE = 'Восемь утра — кофе и завтраки весь день на Шелепихинской набережной';
 const CAFE_SEO_DESCRIPTION = 'Кофейня «Восемь утра» в ЖК «Сердце Столицы», Москва, Шелепихинская набережная, 34, корп. 6. Завтраки весь день, кофе и десерты. Ежедневно с 8:00 до 20:00.';
-const CAFE_CATEGORIES = ['signature'=>'Фирменные завтраки', 'eggs'=>'Яйца и тосты', 'porridge'=>'Каши и гранола', 'sweet'=>'Сладкое утро'];
 
 function cafe_html(mixed $value): string { return htmlspecialchars((string)($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8'); }
 function cafe_money(int|float $price): string {
@@ -17,36 +20,60 @@ function cafe_money(int|float $price): string {
     return $value."\u{00a0}₽";
 }
 function cafe_published(array $items): array {
-    $published = array_values(array_filter($items, static fn(array $item): bool => $item['published'] === true));
+    $published = array_values(array_filter($items, static fn(array $item): bool => $item['published'] === true && ($item['hiddenOnSite'] ?? false) !== true && $item['category'] !== null));
     usort($published, static fn(array $a, array $b): int => $a['order'] <=> $b['order']);
     return $published;
 }
-function cafe_dish_html(array $item): string {
+function cafe_dish_html(array $item, ?array $categories = null, bool $delivery = true): string {
+    $categories ??= cafe_default_categories();
+    $categoryNames = array_column($categories, 'name', 'id');
+    $categoryId = !isset($categoryNames[$item['category']]) && in_array($item['category'], ['signature','eggs','porridge','sweet'], true) ? 'breakfast' : $item['category'];
     $name = cafe_html($item['name']);
-    $visual = $item['image'] !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($item['image']).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async">'.($item['category'] === 'signature' ? '<span class="dish-badge">Фирменный завтрак</span>' : '').'</div>' : '';
+    $visual = $item['image'] !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($item['image']).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async"></div>' : '';
     $available = ($item['availableForOrder'] ?? true) !== false;
+    $testOnly = ($item['source']['testOnly'] ?? false) === true;
+    if ($testOnly || $item['category'] === null) $available = false;
+    $priceUnset = $testOnly && (float)$item['price'] === 0.0;
+    $priceLabel = $priceUnset ? 'Цена уточняется' : cafe_money($item['price']);
+    $categoryLabel = ($testOnly ? 'Тестовое блюдо · ' : '').($categoryNames[$categoryId] ?? 'Меню');
     $label = $available ? 'В корзину' : 'Временно недоступно';
     $action = '<button class="dish-order-button'.($available ? '' : ' is-unavailable').'" type="button" data-cart-add="'.cafe_html($item['id']).'" aria-label="'.$label.': '.$name.'"'.($available ? '' : ' disabled').'>'.$label.'</button>';
-    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html(CAFE_CATEGORIES[$item['category']]).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price">'.cafe_money($item['price']).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p><div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div></div></article>';
+    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'" data-menu-category="'.cafe_html($categoryId).'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html($categoryLabel).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price'.($priceUnset ? ' is-unset' : '').'">'.cafe_html($priceLabel).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p>'.($delivery ? '<div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div>' : '').'</div></article>';
 }
-function cafe_schema(array $items): array {
-    $published = cafe_published($items); $sections = [];
-    foreach (CAFE_CATEGORIES as $category => $name) {
+function cafe_schema(array $items, ?array $categories = null): array {
+    $categories ??= cafe_default_categories();
+    $published = array_values(array_filter(cafe_published($items), static fn(array $item): bool => ($item['source']['testOnly'] ?? false) !== true));
+    $categoryIds = array_column($categories, 'id');
+    foreach ($published as &$item) if (!in_array($item['category'], $categoryIds, true) && in_array($item['category'], ['signature','eggs','porridge','sweet'], true)) $item['category'] = 'breakfast';
+    unset($item);
+    $sectionTree = function (?string $parentId) use (&$sectionTree, $categories, $published): array {
+        $sections = [];
+        $children = array_values(array_filter($categories, static fn(array $category): bool => $category['parentId'] === $parentId));
+        usort($children, static fn(array $a, array $b): int => $a['order'] <=> $b['order']);
+        foreach ($children as $category) {
         $dishes = [];
         foreach ($published as $item) {
-            if ($item['category'] !== $category) continue;
+            if ($item['category'] !== $category['id']) continue;
             $dish = ['@type'=>'MenuItem', 'name'=>$item['name'], 'description'=>$item['description'], 'offers'=>['@type'=>'Offer', 'price'=>$item['price'], 'priceCurrency'=>'RUB']];
             if ($item['image'] !== '') $dish['image'] = CAFE_SITE_URL.ltrim($item['image'], '/');
             $dishes[] = $dish;
         }
-        if ($dishes) $sections[] = ['@type'=>'MenuSection', 'name'=>$name, 'hasMenuItem'=>$dishes];
-    }
+        $nested = $sectionTree($category['id']);
+        if ($dishes || $nested) {
+            $section = ['@type'=>'MenuSection', 'name'=>$category['name'], 'hasMenuItem'=>$dishes];
+            if ($nested) $section['hasMenuSection'] = $nested;
+            $sections[] = $section;
+        }
+        }
+        return $sections;
+    };
+    $sections = $sectionTree(null);
     return [
         '@context'=>'https://schema.org', '@type'=>'CafeOrCoffeeShop', '@id'=>CAFE_SITE_URL.'#cafe', 'name'=>'Восемь утра', 'url'=>CAFE_SITE_URL,
         'description'=>CAFE_SEO_DESCRIPTION, 'image'=>CAFE_SITE_URL.'social-cover.webp', 'telephone'=>'+79851308106',
         'address'=>['@type'=>'PostalAddress', 'streetAddress'=>'Шелепихинская набережная, 34, корпус 6', 'addressLocality'=>'Москва', 'addressCountry'=>'RU'],
         'openingHoursSpecification'=>[['@type'=>'OpeningHoursSpecification', 'dayOfWeek'=>['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'], 'opens'=>'08:00', 'closes'=>'20:00']],
-        'menu'=>CAFE_SITE_URL.'#menu', 'hasMenu'=>['@type'=>'Menu', '@id'=>CAFE_SITE_URL.'#breakfast-menu', 'name'=>'Завтраки', 'url'=>CAFE_SITE_URL.'#menu', 'hasMenuSection'=>$sections],
+        'menu'=>CAFE_SITE_URL.'#menu', 'hasMenu'=>['@type'=>'Menu', '@id'=>CAFE_SITE_URL.'#cafe-menu', 'name'=>'Меню', 'url'=>CAFE_SITE_URL.'#menu', 'hasMenuSection'=>$sections],
         'sameAs'=>['https://yandex.ru/maps/org/vosem_utra/133294557510/', 'https://t.me/vosemutracafe'],
     ];
 }
@@ -65,7 +92,8 @@ function cafe_toggle_hidden(string $html, string $attribute, bool $hidden): stri
         return $hidden ? substr($tag, 0, -1).' hidden>' : $tag;
     }, $html, 1);
 }
-function cafe_transform_page(string $html, string $page, bool $production, array $items = [], array $config = []): string {
+function cafe_transform_page(string $html, string $page, bool $production, array $items = [], array $config = [], ?array $categories = null): string {
+    $categories ??= cafe_default_categories();
     $home = $page === 'index';
     $directive = $home && $production ? 'index, follow, max-image-preview:large' : ($production && in_array($page, ['privacy','consent'], true) ? 'noindex, follow' : 'noindex, nofollow');
     preg_match('~<title\b[^>]*>(.*?)</title>~is', $html, $oldTitle);
@@ -80,7 +108,7 @@ function cafe_transform_page(string $html, string $page, bool $production, array
         foreach (['google_verification'=>'google-site-verification','yandex_verification'=>'yandex-verification'] as $key => $name) {
             if (is_string($config[$key] ?? null) && trim($config[$key]) !== '') $tags[] = '<meta name="'.$name.'" content="'.cafe_html(trim($config[$key])).'">';
         }
-        $json = json_encode(cafe_schema($items), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR);
+        $json = json_encode(cafe_schema($items, $categories), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_THROW_ON_ERROR);
         $tags[] = '<script type="application/ld+json" id="cafe-structured-data">'.$json.'</script>';
     }
     $html = preg_replace('~\s*<!-- SEO:HEAD:START -->.*?<!-- SEO:HEAD:END -->\s*~s', "\n", $html);
@@ -94,9 +122,13 @@ function cafe_transform_page(string $html, string $page, bool $production, array
     $html = preg_replace_callback('~</head>~i', static fn(): string => "<!-- SEO:HEAD:START -->\n".implode("\n", $tags)."\n<!-- SEO:HEAD:END -->\n</head>", $html, 1);
     if ($home) {
         $published = cafe_published($items); $grid = []; $extras = [];
-        foreach ($published as $item) { if ($item['image'] !== '') $grid[] = cafe_dish_html($item); else $extras[] = cafe_dish_html($item); }
+        foreach ($published as $item) {
+            $dish = cafe_dish_html($item, $categories, ($config['delivery_enabled'] ?? true) === true);
+            if ($item['image'] !== '') $grid[] = $dish;
+            else $extras[] = $dish;
+        }
         $html = cafe_menu_slot($html, 'dish-grid', implode("\n", $grid));
-        $html = cafe_menu_slot($html, 'dish-extras', implode("\n", $extras));
+        if (str_contains($html, 'data-dish-extras')) $html = cafe_menu_slot($html, 'dish-extras', implode("\n", $extras));
         $html = cafe_toggle_hidden($html, 'data-extra-section', !$extras);
         $html = cafe_toggle_hidden($html, 'data-menu-empty', (bool)$published);
         $count = count($published);
@@ -130,6 +162,17 @@ function cafe_site_config(string $privateDir): array {
     $path = $privateDir.'/admin-config.php';
     $config = is_file($path) ? require $path : [];
     if (!is_array($config)) throw new RuntimeException('Invalid site configuration');
+    // Optional immutable deployment profile; contains no credentials.
+    // A staging package keeps its own origin and isolation even after an account import.
+    if (is_file(__DIR__.'/deployment.php')) {
+        $deployment = require __DIR__.'/deployment.php';
+        if (!is_array($deployment)) throw new RuntimeException('Invalid deployment profile');
+        $config = array_replace($config, $deployment);
+    }
+    // Build-owned feature boundaries override even previously enabled private settings.
+    if (is_file(__DIR__.'/features.php')) $config = array_replace($config, require __DIR__.'/features.php');
+    // Site policy is shipped with the application, not with user password files.
+    $config['auth_mode'] = 'password';
     foreach (['publicOrigin'=>'public_origin','username'=>'bootstrap_username','passwordHash'=>'bootstrap_password_hash','encryptionKey'=>'encryption_key','googleVerification'=>'google_verification','yandexVerification'=>'yandex_verification'] as $source => $target) {
         if (array_key_exists($source, $config) && !array_key_exists($target, $config)) $config[$target] = $config[$source];
     }
@@ -161,12 +204,26 @@ function cafe_run_site(string $privateDir): void {
         $rawPath = explode('?', $_SERVER['REQUEST_URI'] ?? '/')[0];
         if (preg_match('/%(?![a-fA-F0-9]{2})/', $rawPath)) throw new CafeMenuException(400, 'Некорректный адрес.', 'invalid_url');
         $path = rawurldecode($rawPath); $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        if (($config['delivery_enabled'] ?? true) !== true &&
+            (preg_match('~^/api/(?:ordering|orders|staff|telegram)(?:/|$)~', $path) || in_array($path, ['/checkout.html','/order-terms.html','/staff.html','/staff-demo.html'], true))) {
+            throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
+        }
+        $telegramEnabled = ($config['telegram_enabled'] ?? true) === true && is_file(__DIR__.'/staff-api.php');
+        if (!$telegramEnabled && (preg_match('~^/api/(?:staff(?:/|$)|telegram(?:/|$))~', $path) || in_array($path, ['/staff.html','/staff-demo.html'], true))) throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
         $forbidden = preg_match('~(?:^|/)(?:\.|vosem-utra-private(?:/|$)|admin-data(?:/|$)|orders?-data(?:/|$)|server(?:/|$)|node_modules(?:/|$)|hosting-tools(?:/|$)|site-build\.json(?:/|$))~i', $path);
         if ($forbidden || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path)) throw new CafeMenuException(404, 'Страница не найдена.', 'not_found');
         if (!$indexing) header('X-Robots-Tag: noindex, nofollow');
-        $menu = new CafeMenu($privateDir, $config);
+        if (preg_match('~(?:^|/)(?:kds-config\.(?:json|php)|kds-data)(?:/|$)~i',$path)) { cafe_respond(404,'text/plain; charset=utf-8','Not found'); return; }
+        $kdsConfig = ($config['delivery_enabled'] ?? true) === true && class_exists('CafeKdsDelivery') ? CafeKdsDelivery::loadConfig($privateDir, $config) : null;
+        $menuConfig = $config;
+        if ($kdsConfig !== null) {
+            $menuConfig['orderable_ids'] = array_keys($kdsConfig['menuMap']);
+            $menuConfig['kds_test_items'] = $kdsConfig['testItems'] ?? [];
+        }
+        $menu = new CafeMenu($privateDir, $menuConfig);
         if (preg_match('~^/api/(?:ordering|orders(?:/.*)?|staff(?:/.*)?|telegram/webhook)$~D', $path)) {
             $orders = new CafeOrders($privateDir, $config, static fn(): array => $menu->catalog(), null, static fn(callable $operation): mixed => $menu->withLockedSnapshot($operation));
+            if ($kdsConfig !== null) $orders->attachKds(new CafeKdsDelivery($privateDir,$orders,$kdsConfig));
             if (str_starts_with($path, '/api/staff/') || $path === '/api/telegram/webhook') {
                 require_once __DIR__.'/staff-api.php';
                 if (cafe_staff_dispatch($path, $method, $privateDir, $config, $orders)) return;
@@ -190,7 +247,13 @@ function cafe_run_site(string $privateDir): void {
         $page = $pages[$path];
         $html = @file_get_contents($privateDir.'/app/templates/'.$page.'.html');
         if ($html === false) throw new RuntimeException('Page template unavailable');
-        $html = cafe_transform_page($html, $page, $indexing, $page === 'index' ? $menu->read()['items'] : [], $config);
+        $catalog = $page === 'index' ? $menu->catalog() : ['items'=>[], 'categories'=>cafe_default_categories()];
+        $html = cafe_transform_page($html, $page, $indexing, $catalog['items'], $config, $catalog['categories']);
+        if (($config['staging'] ?? false) === true) {
+            $html = str_replace('</head>', '<link rel="stylesheet" href="/staging.css"></head>', $html);
+            $banner = ($config['delivery_enabled'] ?? true) === true ? 'Тестовая версия · Заказы не исполняются. Используйте вымышленные данные.' : 'Тестовая версия сайта';
+            $html = preg_replace('~(<body\b[^>]*>)~i', '$1<aside class="cafe-test-banner" role="note">'.$banner.'</aside>', $html, 1);
+        }
         if (!$indexing || $page !== 'index') header('X-Robots-Tag: '.($indexing && in_array($page, ['privacy','consent'], true) ? 'noindex, follow' : 'noindex, nofollow'));
         cafe_respond(200, 'text/html; charset=utf-8', cafe_secure_html($html, $page));
     } catch (CafeMenuException $error) {

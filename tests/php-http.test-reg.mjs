@@ -9,7 +9,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { phpBinary } from '../scripts/php-runtime.mjs';
-import { totp } from '../server/totp.mjs';
 import { encryptTotp } from '../server/auth.mjs';
 import { createHash } from 'node:crypto';
 import { phpEnvironment } from '../scripts/php-runtime.mjs';
@@ -135,24 +134,18 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       const menu = await request('/api/menu'); assert.equal(menu.status, 200); assert.equal(menu.json.items.length, 19);
       for (const item of menu.json.items.filter((item) => item.image)) assert.equal((await request(item.image)).status, 200);
     });
-    let enrollment; let recovery;
-    await t.test('password alone cannot edit; real TOTP completes protected enrollment', async () => {
+    await t.test('password login creates a protected session and retired MFA routes cannot authenticate', async () => {
       assert.equal((await request('/api/admin/menu')).status, 401);
-      assert.equal((await request('/api/admin/enroll/start', { method: 'POST', body: { username: 'v.utra@yandex.ru', challengeToken: 'fake' } })).status, 410);
+      assert.equal((await request('/api/admin/sync-availability', { method: 'POST', body: {} })).status, 401);
+      assert.equal((await request('/api/admin/enroll/start', { method: 'POST', body: { username: 'v.utra@yandex.ru', challengeToken: 'fake' } })).status, 404);
       assert.equal((await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password }, headers: { Origin: 'https://attacker.example' } })).status, 403);
       const login = await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password } });
-      assert.equal(login.status, 202, login.text); assert.equal(login.json.enrollmentRequired, true); assert.equal(login.response.headers.get('Set-Cookie'), null);
-      const begin = await request('/api/admin/enroll/start', { method: 'POST', body: { username: 'v.utra@yandex.ru', challengeToken: login.json.challengeToken } });
-      assert.equal(begin.status, 200, begin.text); enrollment = begin.json;
-      assert.match(enrollment.otpauthUri, /^otpauth:\/\/totp\//); assert.equal(begin.response.headers.get('Cache-Control'), 'no-store');
-      assert.equal((await request('/api/admin/menu')).status, 401);
-      const complete = await request('/api/admin/enroll/confirm', { method: 'POST', body: { enrollmentToken: enrollment.enrollmentToken, code: totp(enrollment.secret) } });
-      assert.equal(complete.status, 200, complete.text); csrf = complete.json.csrfToken; recovery = complete.json.recoveryCodes;
-      cookie = complete.response.headers.get('Set-Cookie').split(';')[0];
-      assert.match(complete.response.headers.get('Set-Cookie'), /HttpOnly/i); assert.match(complete.response.headers.get('Set-Cookie'), /SameSite=Strict/i);
-      assert.equal(recovery.length, 10);
+      assert.equal(login.status, 200, login.text); assert.equal(login.json.authMode, 'password'); assert.equal(login.json.authenticated,true);
+      csrf=login.json.csrfToken;cookie=login.response.headers.get('Set-Cookie').split(';')[0];
+      assert.match(login.response.headers.get('Set-Cookie'), /HttpOnly/i); assert.match(login.response.headers.get('Set-Cookie'), /SameSite=Strict/i);
+      for(const endpoint of ['verify','resume','enroll/confirm']) assert.equal((await request('/api/admin/'+endpoint,{method:'POST',body:{}})).status,404);
       const state = await readFile(path.join(privateDir, 'admin-data/auth-state.json'), 'utf8');
-      assert.ok(!state.includes(enrollment.secret)); assert.ok(!state.includes(cookie.split('=')[1])); assert.ok(!state.includes(recovery[0]));
+      assert.ok(!state.includes(password)); assert.ok(!state.includes(cookie.split('=')[1]));
     });
     let menu; let uploaded;
     await t.test('CSRF, revision conflicts, upload validation and escaped live menu', async () => {
@@ -180,10 +173,93 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       const saved = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: menu }); assert.equal(saved.status, 200, saved.text);
       assert.equal((await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: menu })).status, 409);
       const home = await request('/'); assert.match(home.text, /Тест &lt;script&gt;/); assert.doesNotMatch(home.text, /<script>alert\(1\)<\/script>/); assert.match(home.text, /777/);
-      assert.ok(!home.text.includes(menu.items[1].name));
-      assert.equal((await request('/data/menu.json')).json.items.length, 18);
+      assert.ok(home.text.includes(menu.items[1].name), 'Group assignment controls visibility; obsolete manual flags are ignored');
+      assert.equal((await request('/data/menu.json')).json.items.length, 19);
     });
-    await t.test('PHP restart preserves menu, sessions, MFA and one-use recovery codes', async () => {
+    await t.test('cash availability refresh requires session, CSRF and same origin and fails safely without KDS config', async () => {
+      assert.equal((await request('/api/admin/sync-availability', { method: 'POST', auth: true, body: {} })).status, 403);
+      assert.equal((await request('/api/admin/sync-availability', { method: 'POST', auth: true, token: true, body: {}, headers: { Origin: 'https://attacker.example' } })).status, 403);
+      const before = (await request('/api/admin/menu', { auth: true })).json;
+      assert.equal(before.keeperSync.configured, false);
+      const result = await request('/api/admin/sync-availability', { method: 'POST', auth: true, token: true, body: {} });
+      assert.equal(result.status, 503, result.text); assert.equal(result.json.code, 'keeper_not_configured');
+      assert.deepEqual(Object.keys(result.json).sort(), ['code', 'error']);
+      assert.doesNotMatch(result.text, /servicePassword|serviceName|kds-config|vosem-php-http|192\.168|89\.108/);
+      const after = (await request('/api/admin/menu', { auth: true })).json;
+      assert.equal(after.revision, before.revision); assert.deepEqual(after.items, before.items);
+    });
+    await t.test('POS hierarchy stays private until an editor assigns an individual website category', async () => {
+      const initial = (await request('/api/admin/menu', { auth: true })).json;
+      const manualCreation = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
+        body: { ...initial, items: [...initial.items, { ...initial.items[0], id: 'new-manual-dish' }] } });
+      assert.equal(manualCreation.status, 400, manualCreation.text);
+      assert.equal(manualCreation.json.code, 'import_only');
+      assert.equal((await request('/api/admin/menu', { auth: true })).json.revision, initial.revision);
+      const importPath = path.join(privateDir, 'fixture-pos-menu.json');
+      await writeFile(importPath, JSON.stringify({ groups: [{ externalId: 'bar', name: 'Бар', parentExternalId: '0', items: [],
+        childGroups: [{ externalId: 'coffee', name: 'Кофе', parentExternalId: 'bar', childGroups: [],
+          items: [{ externalId: 'latte', name: 'Латте из источника', price: 250, description: 'Тест иерархии' }] }] }] }));
+      const imported = spawnSync(phpBinary, [path.join(privateDir, 'app/import-menu.php'), privateDir, importPath, 'fixture-org', 'bar', '--test'], { encoding: 'utf8' });
+      assert.equal(imported.status, 0, imported.stderr);
+      assert.equal(JSON.parse(imported.stdout).imported, true);
+      const snapshot = (await request('/api/admin/menu', { auth: true })).json;
+      assert.deepEqual(snapshot.categories.map(({ id }) => id), ['breakfast', 'dinner']);
+      const sourceDish = snapshot.items.find(item => item.source?.externalId === 'latte');
+      assert.ok(sourceDish, 'Only trusted import adds a new dish');
+      const sourceDishId = sourceDish.id;
+      const forged = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
+        body: { ...snapshot, items: [...snapshot.items, { ...sourceDish, id: 'forged-import', source: { ...sourceDish.source, externalId: 'forged-import' } }] } });
+      assert.equal(forged.status, 400, forged.text); assert.equal(forged.json.code, 'import_only');
+      const sourceChanged = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
+        body: { ...snapshot, items: snapshot.items.map(item => item.id === sourceDishId ? { ...item, source: { ...item.source, testOnly: false } } : item) } });
+      assert.equal(sourceChanged.status, 400, sourceChanged.text); assert.equal(sourceChanged.json.code, 'immutable_source');
+      const groupChanged = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
+        body: { ...snapshot, sourceCategories: snapshot.sourceCategories.map(group => ({ ...group, name: 'Подмена группы' })) } });
+      assert.equal(groupChanged.status, 400, groupChanged.text); assert.equal(groupChanged.json.code, 'immutable_source');
+      const changes = { ...snapshot,
+        categories: [...snapshot.categories, { id: 'drinks', name: 'Напитки', parentId: null, order: 2 }],
+        categoryMappings: [],
+      };
+      const nested = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
+        body: { ...changes, categories: changes.categories.map(group => group.id === 'drinks' ? { ...group, parentId: 'breakfast' } : group) } });
+      assert.equal(nested.status, 400, nested.text); assert.equal(nested.json.code, 'flat_site_groups');
+      const rejected = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
+        body: { ...changes, categoryMappings: [{ provider: 'kds', organizationId: 'fixture-org', externalId: 'coffee', categoryId: 'drinks' }] } });
+      assert.equal(rejected.status, 400, rejected.text);
+      assert.equal((await request('/api/admin/menu', { auth: true })).json.revision, snapshot.revision);
+      const saved = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: changes });
+      assert.equal(saved.status, 200, saved.text);
+      assert.deepEqual(saved.json.sourceCategories, changes.sourceCategories);
+      assert.deepEqual(saved.json.categoryMappings, changes.categoryMappings);
+      assert.equal(saved.json.items.find(({ id }) => id === sourceDishId).published, false);
+      assert.ok(!(await request('/api/menu')).json.items.some(({ id }) => id === sourceDishId));
+      assert.doesNotMatch((await request('/')).text, /Латте из источника/);
+      const placed = { ...saved.json, items: saved.json.items.map(item => item.id === sourceDishId ? { ...item, category: 'drinks', published: false, availableForOrder: true } : item) };
+      const assigned = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: placed });
+      assert.equal(assigned.status, 200, assigned.text);
+      const publicMenu = (await request('/api/menu')).json;
+      const latte = publicMenu.items.find(({ id }) => id === sourceDishId);
+      assert.equal(latte.category, 'drinks'); assert.equal(latte.published, true); assert.equal(latte.availableForOrder, false);
+      assert.ok(publicMenu.categories.some(({ name }) => name === 'Напитки'));
+      assert.equal(publicMenu.sourceCategories, undefined, 'Import configuration is only in the authenticated editor');
+      const home = await request('/');
+      assert.match(home.text, /data-menu-category="drinks"/); assert.match(home.text, /Латте из источника/);
+      const changed = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: { ...assigned.json,
+        items: assigned.json.items.map(item => item.id === sourceDishId ? { ...item, category: 'dinner' } : item) } });
+      assert.equal(changed.status, 200, changed.text);
+      assert.equal((await request('/api/menu')).json.items.find(({ id }) => id === sourceDishId).category, 'dinner', 'No group rule overrides individual edits');
+      const removed = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: { ...changed.json,
+        categories: changed.json.categories.filter(group => group.id !== 'dinner'),
+        items: changed.json.items.map(item => item.id === sourceDishId ? { ...item, category: null, published: true } : item) } });
+      assert.equal(removed.status, 200, removed.text);
+      assert.ok(!(await request('/api/menu')).json.items.some(({ id }) => id === sourceDishId));
+      assert.ok(!removed.json.categories.some(group => group.id === 'dinner'), 'Group removal saves atomically with cash-only dish');
+      assert.equal(removed.json.items.find(item => item.id === sourceDishId).source.externalId, 'latte');
+      const invalidTree = removed.json.categories.map(category => category.id === 'drinks' ? { ...category, parentId: 'drinks' } : category);
+      assert.equal((await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: { ...removed.json, categories: invalidTree } })).status, 400);
+      assert.equal((await request('/api/admin/menu', { auth: true })).json.revision, removed.json.revision);
+    });
+    await t.test('PHP restart preserves menu and sessions; logout requires password again', async () => {
       await stop(); await start();
       assert.equal((await request('/api/admin/session', { auth: true })).json.authenticated, true);
       assert.equal((await request('/api/admin/menu', { auth: true })).json.items[0].price, 777);
@@ -191,12 +267,10 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.equal((await request('/api/admin/logout', { method: 'POST', auth: true, body: {} })).status, 403);
       assert.equal((await request('/api/admin/logout', { method: 'POST', auth: true, token: true, body: {} })).status, 200);
       assert.equal((await request('/api/admin/menu', { auth: true })).status, 401);
-      const login = await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password } }); assert.equal(login.status, 202); assert.equal(login.json.mfaRequired, true);
-      const verify = await request('/api/admin/verify', { method: 'POST', body: { challengeToken: login.json.challengeToken, code: recovery[0] } }); assert.equal(verify.status, 200);
-      const again = await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password } });
-      assert.equal((await request('/api/admin/verify', { method: 'POST', body: { challengeToken: again.json.challengeToken, code: recovery[0] } })).status, 401);
+      const login = await request('/api/admin/login', { method: 'POST', body: { username: 'v.utra@yandex.ru', password } }); assert.equal(login.status, 200); assert.equal(login.json.authMode,'password');
+      assert.equal((await request('/api/admin/verify', { method: 'POST', body: { code: 'retired-recovery-code' } })).status, 404);
     });
-    await t.test('offline employee add preserves owner; normal logout retains private device cookie and explicit forget revokes it', async () => {
+    await t.test('offline employee add preserves owner; temporary password is replaced without an authenticator', async () => {
       const before = JSON.parse(await readFile(path.join(privateDir, 'admin-data/auth-state.json'), 'utf8')).account;
       const command = [path.join(privateDir, 'app/add-admin.php'), privateDir, 'ira@example.test'];
       const created = spawnSync(phpBinary, command, { encoding: 'utf8' });
@@ -207,40 +281,31 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.ok(!created.stdout.includes(firstPassword));
       assert.notEqual(spawnSync(phpBinary, command, { encoding: 'utf8' }).status, 0);
       const login = await request('/api/admin/login', { method: 'POST', body: { username: 'ira@example.test', password: firstPassword } });
-      assert.equal(login.status, 202); assert.equal(login.json.requiresNewPassword, true);
+      assert.equal(login.status, 202); assert.equal(login.json.passwordChangeRequired, true);
       assert.equal(login.response.headers.get('Set-Cookie'), null);
-      const begin = await request('/api/admin/enroll/start', { method: 'POST', body: { challengeToken: login.json.challengeToken, username: 'ira@example.test', password: 'different-new-fixture-password' } });
-      assert.equal(begin.status, 200, begin.text);
-      const done = await request('/api/admin/enroll/confirm', { method: 'POST', body: { enrollmentToken: begin.json.enrollmentToken, code: totp(begin.json.secret) } });
+      const change=await request('/api/admin/password-reset/complete',{method:'POST',body:{passwordToken:login.json.passwordToken,password:'different-new-fixture-password'}});
+      assert.equal(change.status,200,change.text);assert.equal(change.response.headers.get('Set-Cookie'),null);
+      const done = await request('/api/admin/login', { method: 'POST', body: { username:'ira@example.test',password:'different-new-fixture-password' } });
       assert.equal(done.status, 200, done.text);
       assert.equal(done.json.deviceToken, undefined); assert.equal(done.json.token, undefined);
       const deviceHeader = done.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device='));
-      assert.match(deviceHeader, /HttpOnly/i); assert.match(deviceHeader, /SameSite=Strict/i); assert.match(deviceHeader, /path=\/api\/admin/i); assert.match(deviceHeader, /Max-Age=34560000/i);
+      assert.match(deviceHeader, /HttpOnly/i); assert.match(deviceHeader, /SameSite=Strict/i); assert.match(deviceHeader, /path=\/api\/admin/i); assert.match(deviceHeader, /deleted/i);
       const deviceCookie = deviceHeader.split(';')[0];
       const known = await request('/api/admin/session', { headers: { Cookie: deviceCookie } });
-      assert.equal(known.json.authenticated, false); assert.equal(known.json.trustedUsername, 'ira@example.test');
+      assert.equal(known.json.authenticated, false); assert.equal(known.json.trustedUsername, undefined);
       assert.equal((await request('/api/admin/menu', { headers: { Cookie: deviceCookie } })).status, 401);
       assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie, Origin: 'https://attacker.example' } })).status, 403);
-      const challenge = await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie }, body: {} });
-      assert.equal(challenge.status, 202);
-      const unlocked = await request('/api/admin/verify', { method: 'POST', headers: { Cookie: deviceCookie }, body: { challengeToken: challenge.json.challengeToken, code: totp(begin.json.secret, { time: Date.now() + 30000 }) } });
-      assert.equal(unlocked.status, 200, unlocked.text);
-      const rotated = unlocked.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin_device=')).split(';')[0];
-      assert.notEqual(rotated, deviceCookie);
-      assert.equal(unlocked.json.deviceToken, undefined);
-      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie } })).status, 401);
-      const unlockedSession = unlocked.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin=')).split(';')[0];
-      const unlockedCookies = `${unlockedSession}; ${rotated}`;
-      const out = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: unlockedCookies, 'X-CSRF-Token': unlocked.json.csrfToken }, body: {} });
-      assert.equal(out.status, 200); assert.equal(out.json.trustedUsername, 'ira@example.test');
+      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie }, body: {} })).status,404);
+      const unlockedCookies = done.response.headers.getSetCookie().find((value) => value.startsWith('vosem_admin=')).split(';')[0];
+      const out = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: unlockedCookies, 'X-CSRF-Token': done.json.csrfToken }, body: {} });
+      assert.equal(out.status, 200); assert.equal(out.json.trustedUsername, undefined);
       assert.doesNotMatch(out.response.headers.get('Set-Cookie'), /vosem_admin_device=/);
       assert.equal((await request('/api/admin/menu', { headers: { Cookie: unlockedCookies } })).status, 401);
-      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: rotated } })).status, 202);
       // Locked clients can explicitly forget the browser even without a live session.
-      const forgotten = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: rotated }, body: { forgetDevice: true } });
+      const forgotten = await request('/api/admin/logout', { method: 'POST', headers: { Cookie: deviceCookie }, body: { forgetDevice: true } });
       assert.equal(forgotten.status, 200); assert.equal(forgotten.json.trustedUsername, undefined);
       assert.match(forgotten.response.headers.get('Set-Cookie'), /vosem_admin_device=deleted/);
-      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: rotated } })).status, 401);
+      assert.equal((await request('/api/admin/resume', { method: 'POST', headers: { Cookie: deviceCookie } })).status, 404);
     });
   } finally {
     await stop();

@@ -11,11 +11,11 @@ export function apiUrl(path) { return new URL(path.replace(/^\//, ''), apiBase()
 export class OrderError extends Error {
   constructor(message, { status = 0, code = 'network', fields = {}, data = null, uncertain = false } = {}) { super(message); Object.assign(this, { status, code, fields, data, uncertain }); }
 }
-export async function requestJson(path, { method = 'GET', body, key, csrf, fetcher = fetch } = {}) {
+export async function requestJson(path, { method = 'GET', body, key, csrf, fetcher = fetch, timeoutMs = 15000 } = {}) {
   let response;
   try {
     response = await fetcher(apiUrl(path), { method, headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(key ? { 'Idempotency-Key': key } : {}), ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
-      ...(body ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}), credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      ...(body ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}), credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
   } catch { throw new OrderError('Не удалось получить ответ сервера. Проверьте подключение.', { uncertain: method === 'POST' }); }
   let data;
   try { if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(); data = await response.json(); }

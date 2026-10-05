@@ -1,11 +1,13 @@
 import { cartStore, cartSummary, CART_KEY } from './cart-store.js';
 import { money, requestJson, fetchCatalog, formatPhone, createSubmission, OrderError } from './order-client.js';
 import { localSlot, validateDraft, validateQuote, validateReceipt } from './checkout-model.js';
+import { kdsStatusView, trackingIdFromHash } from './kds-status.js';
 
 const $ = id => document.getElementById(id);
 const el = (tag, className, text) => { const item = document.createElement(tag); item.className = className; if (text !== undefined) item.textContent = text; return item; };
 let config = null; let catalog = []; let baseline = []; let catalogLive = false; let quote = null; let quotedDraft = null;
 let busy = false; let completed = false; let clockOffset = 0; let expiryTimer;
+let trackedId = null; let trackingTimer; let trackingBusy = false; let trackingActive = false;
 const submitter = createSubmission(async (body, key) => validateReceipt(await requestJson('api/orders', { method: 'POST', body, key, csrf: config?.csrfToken })));
 const radio = name => document.querySelector(`input[name="${name}"]:checked`)?.value || '';
 const now = () => Date.now() + clockOffset;
@@ -99,7 +101,7 @@ function syncFulfilment() {
   if (delivery && config?.settings?.delivery) {
     const tariff = config.settings.delivery;
     if (tariff.zoneNotice) terms.push(tariff.zoneNotice);
-    if (tariff.mode === 'confirm_by_phone') terms.push('Стоимость доставки и окончательную сумму сотрудник подтвердит по телефону.');
+    if (tariff.mode === 'confirm_by_phone') terms.push(config.mode === 'production' ? 'Стоимость доставки и окончательную сумму сотрудник подтвердит по телефону.' : 'Тестовый тариф доставки не задан. Стоимость доставки и окончательная сумма пока неизвестны.');
     else if (Number.isInteger(tariff.feeMinor)) terms.push(`Доставка: ${money(tariff.feeMinor)}.${Number.isInteger(tariff.freeFromMinor) ? ` Бесплатно при сумме блюд от ${money(tariff.freeFromMinor)}.` : ''}`);
   }
   const minimum = config?.settings?.minimumSubtotalMinor?.[type];
@@ -127,6 +129,10 @@ async function loadSettings() {
       const serverTime = Date.parse(config.serverNow); if (Number.isFinite(serverTime)) clockOffset = serverTime - Date.now();
     } else config = null;
     const test = !config || config.mode !== 'production';
+    document.querySelector('.checkout-intro > p:last-child').textContent = test ? 'Проверьте оформление самовывоза или доставки с вымышленными данными. Заказ не исполняется.' : 'Выберите, как получить заказ. Состав, сумму и время сотрудник подтвердит по телефону.';
+    $('phone-help').textContent = test ? 'Для проверки используйте +7 (000) 000-00-00. Звонка не будет.' : 'Сотрудник позвонит по этому номеру для подтверждения.';
+    $('time-confirmation').textContent = test ? 'Время демонстрационное; приготовление не запускается.' : 'Точное время подтвердит сотрудник по телефону.';
+    document.querySelector('.summary-note').textContent = test ? (config?.kds?.enabled ? 'Тестовая заявка поступит в КДС. Используйте вымышленные данные. Банковской оплаты нет.' : 'Заявка сохранится только на тестовом стенде. Звонка и исполнения заказа не будет.') : 'После отправки дождитесь звонка сотрудника. Заказ ещё нужно подтвердить.';
     $('ordering-status').classList.toggle('is-test', test);
     $('ordering-status').textContent = test ? `Тестовая версия. Используйте только вымышленные контакты и адрес. ${ready() ? 'Заявка сохранится в тестовом окружении.' : 'Отправка заказов недоступна; оформление можно посмотреть без отправки.'}` : ready() ? (config.notice || 'После отправки заявки дождитесь звонка сотрудника.') : (config.notice || 'Онлайн-заказы пока недоступны. Свяжитесь с кофейней, чтобы уточнить возможность заказа.');
     $('retry-settings').hidden = ready();
@@ -140,6 +146,21 @@ async function loadSettings() {
       }
     }
     syncFulfilment();
+    const savedId = trackingIdFromHash(location.hash);
+    if (savedId && config?.csrfToken && !completed) {
+      try {
+        const data = await requestJson(`api/orders/${savedId}/status`);
+        showResult(validateReceipt(data), { consume: false });
+        renderTracking(data.delivery);
+      } catch {
+        // Preserve the reference and stop new submissions until the old result is known.
+        completed = true; $('checkout-layout').hidden = true; $('order-result').hidden = false;
+        $('result-title').textContent = 'Не удалось открыть сохранённый заказ';
+        document.querySelector('.result-status').textContent = 'Статус не подтверждён';
+        document.querySelector('.result-status').nextElementSibling.textContent = 'Обновите страницу в том же браузере. Если доступ не восстановится, уточните результат у сотрудника КДС перед новым заказом.';
+        $('cafe-phone').hidden = true;
+      }
+    }
     if (!catalogLive) $('quote-status').textContent = 'Цены не подтверждены сервером. Отправка недоступна.';
   } catch { $('ordering-status').textContent = 'Не удалось загрузить условия оформления. Корзина сохранена.'; $('retry-settings').hidden = false; }
   finally { busy = false; renderSummary(); syncControls(); }
@@ -186,12 +207,16 @@ $('checkout-form').addEventListener('submit', async event => {
   } catch (error) { await handleApiError(error); }
   finally { busy = false; syncControls(); }
 });
-function showResult(order) {
+function showResult(order, { consume = true } = {}) {
   completed = true; clearTimeout(expiryTimer); quote = null; quotedDraft = null;
-  cartStore.reload(); cartStore.consume(order.items);
+  if (consume) { cartStore.reload(); cartStore.consume(order.items); }
   $('checkout-layout').hidden = true; $('checkout-empty').hidden = true; $('retry-settings').hidden = true; $('order-result').hidden = false;
-  $('result-title').textContent = `Заказ №${order.number} получен`;
-  $('result-environment').textContent = config?.mode === 'development' ? 'ТЕСТОВЫЙ ЗАКАЗ' : 'ВОСЕМЬ УТРА';
+  const test = config?.mode !== 'production';
+  $('result-title').textContent = test ? `Тестовая заявка №${order.number} сохранена` : `Заказ №${order.number} получен`;
+  $('result-environment').textContent = test ? 'ТЕСТОВЫЙ ЗАКАЗ' : 'ВОСЕМЬ УТРА';
+  const status = document.querySelector('.result-status');
+  status.textContent = test ? 'Сохранено на тестовом стенде' : 'Ожидает подтверждения';
+  status.nextElementSibling.textContent = test ? 'Это проверка оформления. Заказ не передан на кухню и не будет исполнен. КДС и касса пока не подключены.' : 'Сотрудник позвонит, чтобы подтвердить состав, сумму и время.';
   const summary = $('result-summary'); summary.replaceChildren();
   for (const item of order.items) summary.append(el('p', '', `${item.name} · ${item.quantity} × ${money(item.unitPriceMinor)}`));
   summary.append(el('p', '', order.totalMinor === null ? `Блюда: ${money(order.subtotalMinor)}. Доставка и окончательная сумма — после подтверждения.` : `Итого: ${money(order.totalMinor)}`));
@@ -200,9 +225,37 @@ function showResult(order) {
   if (order.fulfilment.timing === 'scheduled' && Number.isFinite(Date.parse(order.fulfilment.requestedAt))) when = new Intl.DateTimeFormat('ru-RU', { timeZone: config.settings.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(order.fulfilment.requestedAt));
   summary.append(el('p', '', `${type} · ${when}. Время требует подтверждения.`));
   const phone = config?.settings?.cafePhone;
-  if (typeof phone === 'string' && /^[+\d\s()-]+$/.test(phone)) { $('cafe-phone').href = `tel:${phone.replace(/[^+\d]/g, '')}`; $('cafe-phone').textContent = phone; }
+  if (!test && typeof phone === 'string' && /^[+\d\s()-]+$/.test(phone)) { $('cafe-phone').href = `tel:${phone.replace(/[^+\d]/g, '')}`; $('cafe-phone').textContent = phone; }
   else $('cafe-phone').hidden = true;
   $('checkout-form').reset(); $('result-title').focus();
+  if (order.trackingId) {
+    trackedId = order.trackingId;
+    history.replaceState(null, '', `#order=${trackedId}`);
+    renderTracking({ state: 'queued' });
+  }
+}
+function renderTracking(delivery) {
+  const view = kdsStatusView(delivery); const status = document.querySelector('.result-status');
+  status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+  status.textContent = view.title;
+  status.nextElementSibling.textContent = view.description + ' Это тест: банковской оплаты нет, готовить и доставлять заказ не нужно.';
+  if (delivery?.pendingNumber) status.textContent += ` · №${delivery.pendingNumber}`;
+  trackingActive = view.poll; clearTimeout(trackingTimer);
+  if (trackingActive && trackedId) trackingTimer = setTimeout(syncTracking, 5000);
+}
+async function syncTracking() {
+  if (!trackedId || trackingBusy || !trackingActive) return;
+  trackingBusy = true;
+  try {
+    const data = await requestJson(`api/orders/${trackedId}/sync`, { method: 'POST', body: {}, csrf: config.csrfToken, timeoutMs: 45000 });
+    renderTracking(data.delivery);
+  } catch (error) {
+    document.querySelector('.result-status').nextElementSibling.textContent = [403, 404].includes(error.status)
+      ? 'Не удалось получить доступ к заказу. Обновите страницу в том же браузере; перед новым заказом уточните результат у сотрудника КДС.'
+      : 'Связь с сервером прервалась. Проверяем состояние сохранённой заявки; повторный заказ не создаётся.';
+    trackingActive = ![403, 404].includes(error.status);
+    if (trackingActive) trackingTimer = setTimeout(syncTracking, 15000);
+  } finally { trackingBusy = false; }
 }
 $('send-order').addEventListener('click', async () => {
   if (busy || completed) return;
@@ -230,4 +283,6 @@ cartStore.subscribe(() => { if (!completed && !submitter.pending) invalidateQuot
 window.addEventListener('storage', event => { if (event.key === CART_KEY && !submitter.pending && !busy) cartStore.reload(); });
 window.addEventListener('beforeunload', event => { if (submitter.pending || busy) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('pageshow', event => { if (event.persisted && !submitter.pending && !completed) { invalidateQuote('Проверьте актуальную сумму перед отправкой.'); loadSettings(); } });
+window.addEventListener('pagehide', () => clearTimeout(trackingTimer));
+window.addEventListener('pageshow', event => { if (event.persisted && trackedId && trackingActive) trackingTimer = setTimeout(syncTracking, 1000); });
 loadSettings();

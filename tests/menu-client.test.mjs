@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as menuCategories from '../menu-categories.js';
 
-const script = readFileSync(new URL('../menu.js', import.meta.url), 'utf8');
+const script = readFileSync(new URL('../menu.js', import.meta.url), 'utf8').replace(/^import .*?;\r?\n/, '');
 
 // Execute the complete browser entry point. This small DOM implements only native
 // element/event operations; menu filtering, URLs and rendering remain real code.
@@ -62,15 +63,12 @@ const dish = (patch = {}) => ({
 async function browser(replies, href = 'https://cafe.example/index.html') {
   const root = new Element('section');
   const parts = Object.fromEntries([
-    'dish-grid', 'dish-extras', 'extra-section', 'menu-empty', 'menu-count',
+    'dish-grid', 'dish-extras', 'extra-section', 'menu-empty', 'menu-count', 'menu-roots', 'menu-subcategories',
+    'menu-breadcrumbs', 'menu-category-title', 'menu-test-notice',
     'menu-status', 'menu-retry', 'menu-filters',
   ].map((name) => [name, new Element()]));
-  for (const name of ['extra-section', 'menu-empty', 'menu-retry', 'menu-filters']) parts[name].hidden = true;
-  const filters = ['all', 'signature', 'eggs', 'porridge', 'sweet'].map((name) => {
-    const button = new Element('button');
-    button.dataset.menuFilter = name;
-    return button;
-  });
+  for (const name of ['menu-empty', 'menu-retry', 'menu-filters', 'menu-breadcrumbs', 'menu-subcategories', 'menu-test-notice']) parts[name].hidden = true;
+  const filters = () => [...parts['menu-roots'].children, ...parts['menu-subcategories'].children];
   root.querySelector = (selector) => {
     const name = selector.match(/^\[data-(.+)\]$/)?.[1];
     assert.ok(parts[name], `Unexpected DOM query: ${selector}`);
@@ -78,7 +76,7 @@ async function browser(replies, href = 'https://cafe.example/index.html') {
   };
   root.querySelectorAll = (selector) => {
     assert.equal(selector, '[data-menu-filter]');
-    return filters;
+    return filters();
   };
   const window = new Element();
   const requests = [];
@@ -87,7 +85,7 @@ async function browser(replies, href = 'https://cafe.example/index.html') {
     createElement: (tag) => new Element(tag),
   };
   const context = vm.createContext({
-    document, window, location: new URL(href), URL, Intl, AbortSignal,
+    document, window, location: new URL(href), URL, Intl, AbortSignal, ...menuCategories,
     fetch: async (url, options) => {
       requests.push({ url: String(url), options });
       const reply = replies.shift();
@@ -103,10 +101,10 @@ async function browser(replies, href = 'https://cafe.example/index.html') {
   assert.equal(root.getAttribute('aria-busy'), 'false', 'Initial menu request settles');
   const cards = () => [...parts['dish-grid'].children, ...parts['dish-extras'].children];
   return {
-    root, parts, filters, requests, window, cards,
+    root, parts, get filters() { return filters(); }, requests, window, cards,
     names: () => cards().flatMap((card) => byTag(card, 'h3').map((heading) => heading.textContent)),
     filter: async (name) => {
-      const button = filters.find((entry) => entry.dataset.menuFilter === name);
+      const button = filters().find((entry) => entry.dataset.menuFilter === name);
       assert.ok(button);
       await button.dispatch('click');
     },
@@ -176,7 +174,7 @@ test('actual cards preserve fractional prices and treat menu text as plain conte
   assert.equal(byTag(first, 'img').length, 1, 'A name containing markup does not create another image');
 });
 
-test('category controls filter both card types, announce empty results, and restore all dishes', async () => {
+test('groups show photo cards followed by a compact list and announce an empty dinner', async () => {
   const app = await browser([response(200, { items: [
     dish(),
     dish({ id: 'syrniki', name: 'Сырники', category: 'sweet', order: 3 }),
@@ -184,25 +182,63 @@ test('category controls filter both card types, announce empty results, and rest
     dish({ id: 'draft', name: 'Черновик', category: 'signature', published: false }),
   ] })]);
   assert.equal(app.cards().length, 3);
-  await app.filter('sweet');
-  assert.deepEqual(app.names(), ['Сырники']);
-  assert.equal(app.parts['extra-section'].hidden, true);
-  assert.equal(app.parts['menu-count'].textContent, '1 блюдо');
-  assert.deepEqual(app.filters.filter((button) => button.getAttribute('aria-pressed') === 'true')
-    .map((button) => button.dataset.menuFilter), ['sweet']);
-  await app.filter('signature');
-  assert.equal(app.cards().length, 0);
-  assert.equal(app.parts['menu-empty'].hidden, false);
-  assert.equal(app.parts['menu-count'].textContent, '0 блюд');
-  await app.filter('porridge');
-  assert.deepEqual(app.names(), ['Каша']);
-  assert.equal(app.parts['extra-section'].hidden, false);
-  assert.equal(app.parts['menu-empty'].hidden, true);
-  await app.filter('all');
+  assert.deepEqual(app.names(), ['Тост с яйцом', 'Сырники', 'Каша']);
   assert.equal(app.parts['dish-grid'].children.length, 2);
   assert.equal(app.parts['dish-extras'].children.length, 1);
+  assert.equal(app.parts['extra-section'].hidden, false);
+  assert.deepEqual(app.filters.map(button => button.dataset.menuFilter), ['breakfast', 'dinner']);
+  assert.equal(app.parts['menu-subcategories'].hidden, true);
+  assert.equal(app.parts['menu-breadcrumbs'].hidden, true);
+  assert.equal(app.parts['menu-category-title'].textContent, 'Завтраки');
+  assert.equal(app.parts['menu-count'].textContent, '3 блюда');
+  assert.deepEqual(app.filters.filter((button) => button.getAttribute('aria-pressed') === 'true')
+    .map((button) => button.dataset.menuFilter), ['breakfast']);
+  await app.filter('dinner');
+  assert.equal(app.cards().length, 0);
+  assert.equal(app.parts['extra-section'].hidden, true);
+  assert.equal(app.parts['menu-empty'].hidden, false);
+  assert.match(app.parts['menu-empty'].textContent, /Ужины скоро появятся/);
+  assert.equal(app.parts['menu-category-title'].textContent, 'Ужины');
+  assert.equal(app.parts['menu-count'].textContent, '0 блюд');
+  await app.filter('breakfast');
+  assert.equal(app.parts['menu-empty'].hidden, true);
+  assert.equal(app.parts['dish-grid'].children.length, 2);
+  assert.equal(app.parts['dish-extras'].children.length, 1);
+  assert.equal(app.parts['extra-section'].hidden, false);
   assert.equal(app.parts['menu-count'].textContent, '3 блюда');
   assert.equal(app.requests.length, 1, 'Filtering the loaded menu requires no extra request');
+});
+
+test('photo edits move dishes between the cards and list without duplicates or empty gaps', async () => {
+  const text = dish({ image: '' });
+  const app = await browser([
+    response(200, { items: [text] }),
+    response(200, { items: [text] }),
+    response(200, { items: [dish()] }),
+    response(200, { items: [text] }),
+    response(200, { items: [] }),
+  ]);
+  const row = app.parts['dish-extras'].children[0];
+  assert.equal(app.parts['dish-grid'].children.length, 0);
+  assert.equal(app.parts['extra-section'].hidden, false);
+  assert.equal(app.parts['menu-empty'].hidden, true);
+  assert.equal(app.parts['menu-count'].textContent, '1 блюдо');
+  await app.window.dispatch('focus');
+  assert.equal(app.parts['dish-extras'].children[0], row, 'Unchanged rows keep their live nodes');
+  await app.window.dispatch('focus');
+  assert.equal(app.parts['dish-grid'].children.length, 1);
+  assert.equal(app.parts['dish-extras'].children.length, 0);
+  assert.equal(app.parts['extra-section'].hidden, true);
+  assert.deepEqual(app.names(), ['Тост с яйцом']);
+  await app.window.dispatch('focus');
+  assert.equal(app.parts['dish-grid'].children.length, 0);
+  assert.equal(app.parts['dish-extras'].children.length, 1);
+  assert.equal(app.parts['extra-section'].hidden, false);
+  assert.deepEqual(app.names(), ['Тост с яйцом']);
+  await app.window.dispatch('focus');
+  assert.equal(app.cards().length, 0);
+  assert.equal(app.parts['extra-section'].hidden, true);
+  assert.equal(app.parts['menu-empty'].hidden, false);
 });
 
 test('returning to the page refreshes current items and keeps a deleted dish removed', async () => {
@@ -230,9 +266,11 @@ test('unchanged refresh and category round trip reuse cards without restarting r
   assert.equal(card.dataset.revealKey, 'dish:eggs');
   assert.equal(byClass(card, 'dish-cart-actions')[0].dataset.cartItem, 'eggs');
   card.dataset.revealState = 'shown';
+  const breakfastButton = app.filters[0];
   await app.window.dispatch('focus');
   assert.equal(app.cards()[0], card);
-  await app.filter('sweet'); await app.filter('eggs');
+  assert.equal(app.filters[0], breakfastButton, 'An unchanged refresh keeps the focused category button');
+  await app.filter('dinner'); await app.filter('breakfast');
   assert.equal(app.cards()[0], card);
   assert.equal(card.dataset.revealState, 'shown');
 });
@@ -244,17 +282,18 @@ test('live menu availability disables cart controls independently of publication
     dish({ id: 'available-text', image: '', availableForOrder: true }),
     dish({ id: 'unavailable-photo', name: 'Тост & сыр', availableForOrder: false }),
     dish({ id: 'unavailable-text', image: '', availableForOrder: false }),
+    dish({ id: 'test-only', availableForOrder: true, source: { provider: 'kds', organizationId: 'baa06e7a-b091-4296-97bc-275bc22d9af9', externalId: '100', testOnly: true } }),
     dish({ id: 'hidden-dish', published: false, availableForOrder: true }),
   ] })]);
   const buttons = app.cards().flatMap(card => byTag(card, 'button'));
-  assert.equal(buttons.length, 4);
+  assert.equal(buttons.length, 5);
   for (const id of ['legacy-photo', 'available-text']) {
     const button = buttons.find(button => button.dataset.cartAdd === id);
     assert.equal(button.disabled, false);
     assert.equal(button.textContent, 'В корзину');
     assert.match(button.getAttribute('aria-label'), /^В корзину: /);
   }
-  for (const id of ['unavailable-photo', 'unavailable-text']) {
+  for (const id of ['unavailable-photo', 'unavailable-text', 'test-only']) {
     const button = buttons.find(button => button.dataset.cartAdd === id);
     assert.equal(button.disabled, true);
     assert.equal(button.textContent, 'Временно недоступно');
@@ -264,4 +303,125 @@ test('live menu availability disables cart controls independently of publication
   assert.equal(app.window.cafeMenuSnapshot.revision, 23);
   assert.equal(app.window.cafeMenuSnapshot.live, true);
   assert.equal(app.window.cafeMenuSnapshot.items.find(item => item.id === 'unavailable-photo').availableForOrder, false);
+});
+
+test('switching from the sticky navigation returns directly to the newly selected dishes', async () => {
+  const app = await browser([response(200, { items: [dish()] })]);
+  const heading = app.parts['menu-category-title'];
+  const scrolled = [];
+  heading.getBoundingClientRect = () => ({ top: -1600 });
+  app.parts['menu-filters'].getBoundingClientRect = () => ({ bottom: 167 });
+  heading.scrollIntoView = options => scrolled.push(JSON.parse(JSON.stringify(options)));
+  await app.filter('dinner');
+  assert.equal(heading.textContent, 'Ужины');
+  assert.deepEqual(scrolled, [{ block: 'start', behavior: 'instant' }]);
+});
+
+test('manually created nested website groups expose descendants, siblings and breadcrumb navigation', async () => {
+  const source = externalId => ({ provider: 'kds', organizationId: 'baa06e7a-b091-4296-97bc-275bc22d9af9', externalId, testOnly: true });
+  const categories = [
+    ...menuCategories.DEFAULT_MENU_CATEGORIES,
+    { id: 'redbox', name: 'Меню REDBOX', parentId: null, order: 2 },
+    { id: 'sushi', name: 'Суши', parentId: 'redbox', order: 0 },
+    { id: 'seared', name: 'Суши Опаленнные', parentId: 'sushi', order: 0 },
+    { id: 'rolls', name: 'Роллы', parentId: 'redbox', order: 1 },
+  ];
+  const app = await browser([response(200, { categories, items: [
+    dish(),
+    dish({ id: 'salmon', name: 'Суши лосось', category: 'sushi', order: 2, source:source('200') }),
+    dish({ id: 'seared-salmon', name: 'Опалённый лосось', category: 'seared', image: '', order: 1, source:source('201') }),
+    dish({ id: 'roll', name: 'Ролл', category: 'rolls', order: 3, source:source('202') }),
+  ] })]);
+  assert.equal(app.parts['menu-test-notice'].hidden, true);
+  await app.filter('redbox');
+  assert.deepEqual(app.names(), ['Суши лосось', 'Ролл', 'Опалённый лосось']);
+  assert.equal(app.parts['menu-category-title'].textContent, 'Меню REDBOX');
+  assert.equal(app.parts['menu-test-notice'].hidden, false);
+  assert.deepEqual(app.parts['menu-subcategories'].children.map(button => button.dataset.menuFilter), ['redbox', 'sushi', 'rolls']);
+  await app.filter('sushi');
+  assert.deepEqual(app.names(), ['Суши лосось', 'Опалённый лосось']);
+  assert.deepEqual(app.parts['menu-breadcrumbs'].children.map(crumb => crumb.textContent), ['Меню REDBOX', 'Суши']);
+  assert.equal(app.parts['menu-breadcrumbs'].hidden, false);
+  await app.filter('seared');
+  assert.deepEqual(app.names(), ['Опалённый лосось']);
+  assert.equal(app.parts['menu-category-title'].textContent, 'Суши Опаленнные');
+  assert.equal(byTag(app.cards()[0], 'button')[0].disabled, true, 'A manually placed test dish remains unavailable for ordering');
+  assert.deepEqual(app.parts['menu-subcategories'].children.map(button => button.dataset.menuFilter), ['sushi', 'seared']);
+  assert.equal(app.parts['menu-subcategories'].children[1].getAttribute('aria-pressed'), 'true');
+  await app.parts['menu-breadcrumbs'].children[0].dispatch('click');
+  assert.equal(app.cards().length, 3);
+  assert.equal(app.parts['menu-breadcrumbs'].hidden, true);
+  assert.equal(app.requests.length, 1, 'Hierarchy navigation operates on the loaded snapshot');
+});
+
+test('cash-only dishes and old automatic source categories never appear in the guest menu', async () => {
+  const source = externalId => ({ provider:'kds', organizationId:'test-organization', externalId });
+  const imported = {id:'cash-coffee',name:'Кофе из кассы',parentId:null,order:2,source:source('10')};
+  const app=await browser([response(200, { categories:[...menuCategories.DEFAULT_MENU_CATEGORIES,imported], sourceCategories:[imported], items:[
+    dish(),
+    dish({id:'old-import',name:'Старый импорт',category:'cash-coffee',source:{...source('100'),groupExternalId:'10'}}),
+    dish({id:'new-import',name:'Новая позиция из кассы',category:null,source:{...source('101'),groupExternalId:'10'},published:false,availableForOrder:false}),
+  ] })]);
+  assert.deepEqual(app.filters.map(button=>button.dataset.menuFilter),['breakfast','dinner']);
+  assert.deepEqual(app.names(),['Тост с яйцом']);
+  assert.equal(app.parts['menu-retry'].hidden,true);
+  assert.equal(app.window.cafeMenuSnapshot.items.length,1);
+});
+
+test('mapped dishes appear in their website category and empty source roots stay out of guest navigation', async () => {
+  const source = { provider: 'kds', organizationId: 'baa06e7a-b091-4296-97bc-275bc22d9af9', externalId: '200' };
+  const categories = [
+    ...menuCategories.DEFAULT_MENU_CATEGORIES,
+    { id: 'bar', name: 'Бар', parentId: null, order: 2, source },
+    { id: 'coffee', name: 'Кофе', parentId: 'bar', order: 0, source: { ...source, externalId: '201' } },
+    { id: 'drinks', name: 'Напитки', parentId: null, order: 3 },
+  ];
+  const app = await browser([response(200, { categories, items: [dish(), dish({ id: 'latte', name: 'Латте', category: 'drinks', source: { ...source, testOnly: true }, price: 0, availableForOrder: false, order: 2 })] })]);
+  assert.deepEqual(app.parts['menu-roots'].children.map(button => button.dataset.menuFilter), ['breakfast', 'dinner', 'drinks']);
+  await app.filter('drinks');
+  assert.deepEqual(app.names(), ['Латте']);
+  assert.equal(app.parts['menu-subcategories'].hidden, true);
+  assert.equal(app.parts['menu-category-title'].textContent, 'Напитки');
+  assert.equal(app.parts['menu-test-notice'].hidden, false, 'Mapped test items remain clearly marked in a local category');
+  assert.match(byClass(app.cards()[0], 'dish-category')[0].textContent, /Тестовое блюдо/);
+  assert.equal(byClass(app.cards()[0], 'dish-price')[0].textContent, 'Цена уточняется');
+});
+
+test('published imported dishes load without the private cash tree and retain runtime restrictions', async () => {
+  const source = { provider:'kds', organizationId:'00000000-0000-4000-8000-000000000001', externalId:'101', groupExternalId:'10' };
+  const payload = { categories:menuCategories.DEFAULT_MENU_CATEGORIES, items:[dish({category:'breakfast',source,availableForOrder:false})] };
+  const app = await browser([response(200,payload)]);
+  assert.deepEqual(app.names(),['Тост с яйцом']);
+  assert.equal(app.parts['menu-retry'].hidden,true);
+  assert.equal(byTag(app.cards()[0],'button')[0].disabled,true);
+  assert.throws(()=>menuCategories.normalizeMenuData(payload),'Private catalog validation still requires its source tree');
+  assert.throws(()=>menuCategories.normalizeMenuData({...payload,sourceCategories:[]},{allowOmittedSourceTree:true}),'Explicitly provided broken source trees remain invalid');
+});
+
+test('the saved group order chooses the first group on arrival and preserves a guest choice on refresh', async () => {
+  const categories = [
+    { id: 'dinner', name: 'Ужины', parentId: null, order: 0 },
+    { id: 'breakfast', name: 'Завтраки', parentId: null, order: 1 },
+  ];
+  const payload = { categories, items: [dish(), dish({ id: 'dinner-dish', name: 'Ужин', category: 'dinner' })] };
+  const app = await browser([response(200, payload), response(200, payload)]);
+  assert.deepEqual(app.filters.map(button => button.dataset.menuFilter), ['dinner', 'breakfast']);
+  assert.equal(app.parts['menu-category-title'].textContent, 'Ужины');
+  assert.deepEqual(app.names(), ['Ужин']);
+  await app.filter('breakfast');
+  await app.window.dispatch('focus');
+  assert.equal(app.parts['menu-category-title'].textContent, 'Завтраки');
+});
+
+test('a removed selected category falls back safely while surviving cards retain their state', async () => {
+  const categories = [...menuCategories.DEFAULT_MENU_CATEGORIES, { id: 'drinks', name: 'Напитки', parentId: null, order: 2 }];
+  const app = await browser([
+    response(200, { categories, items: [dish(), dish({ id: 'latte', category: 'drinks' })] }),
+    response(200, { categories: menuCategories.DEFAULT_MENU_CATEGORIES, items: [dish()] }),
+  ]);
+  await app.filter('drinks');
+  await app.window.dispatch('focus');
+  assert.equal(app.parts['menu-category-title'].textContent, 'Завтраки');
+  assert.equal(app.cards().length, 1);
+  assert.equal(app.parts['menu-retry'].hidden, true);
 });

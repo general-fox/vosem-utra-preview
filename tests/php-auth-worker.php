@@ -7,7 +7,7 @@ $config['clock'] = static fn(): int => $job['now'];
 $auth = new CafeAuth($job['directory'], $config);
 try {
     $method = $job['method'];
-    if (!in_array($method, ['login', 'verify', 'enrollConfirm'], true)) throw new RuntimeException('Invalid test operation.');
+    if (!in_array($method, ['login', 'verify', 'enrollConfirm', 'verifyPasswordReset', 'completePasswordReset'], true)) throw new RuntimeException('Invalid test operation.');
     $value = $auth->$method($job['body'], $job['peer']);
     echo json_encode(['status' => isset($value['authenticated']) ? 200 : 202, 'authenticated' => $value['authenticated'] ?? false], JSON_THROW_ON_ERROR);
 } catch (CafeAuthException $error) {

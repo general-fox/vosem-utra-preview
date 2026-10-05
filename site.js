@@ -283,6 +283,7 @@ function initReveals() {
   const preparing = new Set();
   const timers = new Map();
   let observer;
+  let menuObserver;
   let stopped = false;
 
   const finish = (element) => {
@@ -296,6 +297,7 @@ function initReveals() {
   const disable = () => {
     stopped = true;
     observer?.disconnect();
+    menuObserver?.disconnect();
     targets.forEach(finish);
     root.removeAttribute('data-motion');
   };
@@ -373,7 +375,7 @@ function initReveals() {
 
     // The menu loads and filters after boot. Use this same observer, timing and
     // image decoding for its cards, without restarting already seen dishes.
-    window.addEventListener('cafe:menu-rendered', () => {
+    const registerMenuCards = () => {
       try {
         targets = targets.filter(element => {
           if (element.isConnected !== false) return true;
@@ -385,10 +387,24 @@ function initReveals() {
           if (targets.includes(element)) continue;
           targets.push(element);
           if (stopped || element.dataset.revealState || shownKeys.has(element.dataset.revealKey)) finish(element);
-          else if (root.dataset.motion === 'ready') observer.observe(element);
+          else if (root.dataset.motion === 'ready') {
+            observer.observe(element);
+            // Newly mounted cards can already occupy the viewport after a
+            // category switch. Do not wait for another scroll intersection.
+            if (onScreen(element)) void reveal(element, 0);
+          }
         }
       } catch { disable(); }
-    });
+    };
+    window.addEventListener('cafe:menu-rendered', registerMenuCards);
+    // Register actual grid replacements too: hydration or a preview refresh
+    // can replace SSR cards without delivering the application event here.
+    if ('MutationObserver' in window) {
+      menuObserver = new MutationObserver(registerMenuCards);
+      for (const grid of document.querySelectorAll('[data-dish-grid], [data-dish-extras]')) {
+        menuObserver.observe(grid, { childList: true });
+      }
+    }
 
     // Two frames preserve the hidden first paint even with a warm browser cache.
     requestAnimationFrame(() => requestAnimationFrame(() => {

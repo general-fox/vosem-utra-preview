@@ -9,7 +9,8 @@ import { SITE_URL, transformPage } from '../server/seo.mjs';
 
 const seedItems = [
   { id: 'toast', name: 'Тост из актуального меню', description: 'Яйцо, хлеб и зелень', price: 450, category: 'eggs', image: '/menu-images/toast.webp', order: 0, published: true },
-  { id: 'draft', name: 'Скрытый черновик', description: '', price: 300, category: 'porridge', image: '', order: 1, published: false },
+  { id: 'draft', name: 'Только на кассе', description: '', price: 300, category: null, image: '', order: 1, published: false,
+    source: {provider:'kds',organizationId:'test-org',externalId:'draft'} },
 ];
 const template = `<!doctype html><html lang="ru"><head>
   <meta charset="utf-8"><title>Исходный заголовок</title><meta name="robots" content="noindex, nofollow">
@@ -85,7 +86,7 @@ test('production serves indexable live HTML while unconfigured MFA keeps admin a
   assert.match(page.body, /content="index, follow, max-image-preview:large"/);
   assert.match(page.body, /rel="canonical" href="https:\/\/vosem-utra\.ru\/"/);
   assert.match(page.body, /Тост из актуального меню/);
-  assert.doesNotMatch(page.body, /Устаревший снимок сборки|Скрытый черновик/);
+  assert.doesNotMatch(page.body, /Устаревший снимок сборки|Только на кассе/);
   assert.equal(schema(page.body).hasMenu.hasMenuSection[0].hasMenuItem[0].offers.price, 450);
   const api = await app.request('/api/menu');
   assert.equal(api.status, 200);
@@ -132,7 +133,7 @@ test('production and preview serve matching robots, sitemap and utility-page ind
   }
 });
 
-test('persisted edits and hiding update the first HTML and JSON-LD without rebuilding', async (t) => {
+test('persisted edits and removal from the website update the first HTML and JSON-LD without rebuilding', async (t) => {
   const app = await fixture(t);
   const buildBefore = await readFile(path.join(app.distRoot, 'index.html'), 'utf8');
   const updated = { ...seedItems[0], name: 'Новый тост', description: 'Новый состав', price: 650.5 };
@@ -141,15 +142,44 @@ test('persisted edits and hiding update the first HTML and JSON-LD without rebui
   assert.equal(page.status, 200);
   assert.match(page.body, /Новый тост/);
   assert.match(page.body, /650,5(?:\u00a0| )₽/);
-  assert.doesNotMatch(page.body, /Тост из актуального меню|Устаревший снимок сборки|Скрытый черновик/);
+  assert.doesNotMatch(page.body, /Тост из актуального меню|Устаревший снимок сборки|Только на кассе/);
   assert.equal(schema(page.body).hasMenu.hasMenuSection[0].hasMenuItem[0].offers.price, 650.5);
-  await writeFile(path.join(app.dataDir, 'menu.json'), JSON.stringify({ revision: 3, items: [{ ...updated, published: false }] }));
+  await writeFile(path.join(app.dataDir, 'menu.json'), JSON.stringify({ revision: 3, items: [{ ...updated, category:null, source:{provider:'kds',organizationId:'test-org',externalId:'toast'} }] }));
   const hidden = await app.request();
   assert.equal(hidden.status, 200);
   assert.doesNotMatch(hidden.body, /Новый тост|Тост из актуального меню|Устаревший снимок сборки/);
   assert.deepEqual(schema(hidden.body).hasMenu.hasMenuSection, []);
   assert.equal((hidden.body.match(/class="dish-card/g) || []).length, 0);
   assert.equal(await readFile(path.join(app.distRoot, 'index.html'), 'utf8'), buildBefore, 'Request rendering never rewrites the built file');
+});
+
+test('the first HTML flattens old website groups and derives placement flags before any API migration', async t => {
+  const app=await fixture(t);
+  const source=externalId=>({provider:'kds',organizationId:'test-org',externalId});
+  const old={revision:5,categories:[
+    {id:'breakfast',name:'Завтраки',parentId:null,order:0},
+    {id:'brunch',name:'Поздние завтраки',parentId:'breakfast',order:1},
+  ],sourceCategories:[
+    {id:'cash-bar',name:'Бар кассы',parentId:null,order:0,source:source('bar')},
+    {id:'cash-coffee',name:'Кофе кассы',parentId:'cash-bar',order:0,source:source('coffee')},
+  ],items:[{...seedItems[0],category:'brunch',published:false,availableForOrder:false},
+    {...seedItems[1],source:{...source('draft'),groupExternalId:'coffee'}}]};
+  const raw=JSON.stringify(old);await writeFile(path.join(app.dataDir,'menu.json'),raw);
+  const first=await app.request();assert.equal(first.status,200);
+  assert.match(first.body,/Тост из актуального меню/);
+  assert.doesNotMatch(first.body,/Только на кассе|Бар кассы|Кофе кассы/);
+  const sections=schema(first.body).hasMenu.hasMenuSection;
+  assert.equal(sections.length,1);assert.equal(sections[0].name,'Поздние завтраки');
+  assert.equal(sections[0].hasMenuSection,undefined,'Website sections must not retain old parents');
+  assert.equal(sections[0].hasMenuItem[0].name,seedItems[0].name);
+  assert.equal(await readFile(path.join(app.dataDir,'menu.json'),'utf8'),raw,'SSR normalization does not perform an unlocked disk rewrite');
+  const api=JSON.parse((await app.request('/api/menu')).body);
+  assert.deepEqual(api.items.map(item=>item.id),['toast']);
+  assert.ok(api.categories.every(group=>group.parentId===null));
+  assert.equal(api.items[0].published,true);assert.equal(api.items[0].availableForOrder,true);
+  const stored=JSON.parse(await readFile(path.join(app.dataDir,'menu.json'),'utf8'));
+  assert.equal(stored.revision,6);assert.deepEqual(stored.sourceCategories,old.sourceCategories);
+  assert.deepEqual(schema((await app.request()).body),schema(first.body),'Migration cannot change SSR output already visible to guests');
 });
 
 test('every response gets security headers and each HTML response gets a fresh script nonce', async (t) => {

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="admin.css">
   <script type="module" src="admin.js"></script>
-</head>
+<meta id="site-profile" name="cafe-profile" content="delivery"></head>
 <body class="admin-page">
   <a class="skip-link" href="#main">К управлению меню</a>
   <header class="admin-header">
@@ -27,14 +27,41 @@
         <p class="login-brand-note">Забота о деталях — наша хорошая привычка.</p>
       </div>
       <div class="login-form-wrap">
-        <p class="eyebrow">УПРАВЛЕНИЕ МЕНЮ</p><h2 id="auth-heading" tabindex="-1">Рады видеть вас</h2><p class="muted" id="auth-description">Войдите, чтобы добавлять блюда, обновлять фотографии и цены.</p><p class="session-lock-note field-help" id="session-lock-note" role="status" hidden></p>
+        <p class="eyebrow">УПРАВЛЕНИЕ МЕНЮ</p><h2 id="auth-heading" tabindex="-1">Рады видеть вас</h2><p class="muted" id="auth-description">Войдите, чтобы размещать блюда из кассы, обновлять фотографии и цены.</p><p class="session-lock-note field-help" id="session-lock-note" role="status" hidden></p>
         <div class="auth-setup" id="auth-setup" role="status" hidden><p>Вход пока недоступен. Обратитесь к администратору сервера, чтобы подготовить защищённое подключение.</p><button type="button" class="text-link" id="check-setup">Проверить готовность ↻</button></div>
         <form id="login-form" aria-labelledby="auth-heading">
           <div class="admin-field"><label for="username">Почта или логин</label><input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="name@example.ru или логин" required minlength="3" maxlength="254" title="Введите почту администратора или ранее настроенный логин."></div>
           <div class="admin-field"><label for="password">Пароль</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024"><button id="password-toggle" class="password-toggle" type="button" aria-controls="password" aria-label="Показать пароль" aria-pressed="false" title="Показать пароль"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="password-eye-slash" d="m3 3 18 18"/></svg></button></div></div>
-          <p class="field-help" id="device-login-help">Запомним этот браузер: в следующий раз понадобится только код из приложения. На чужом устройстве выберите «Выйти и забыть устройство».</p>
+          <p class="field-help" id="device-login-help">Введите почту и пароль администратора.</p>
           <p class="admin-message error" id="login-error" role="alert" hidden></p>
-          <button type="submit" class="button button-dark" id="login-submit">Продолжить <span aria-hidden="true">↗</span></button>
+          <button type="submit" class="button button-dark" id="login-submit">Войти <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="forgot-password">Забыли пароль?</button></div>
+        </form>
+        <form id="reset-request-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step">1 из 3 · Почта администратора</p>
+          <div class="admin-field"><label for="reset-email">Почта</label><input id="reset-email" name="email" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" placeholder="name@example.ru" required></div>
+          <p class="admin-message error" id="reset-request-error" role="alert" hidden></p>
+          <p class="field-help" id="reset-request-wait" hidden></p>
+          <button type="submit" class="button button-dark" id="reset-request-submit">Получить код <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="reset-have-code">Уже есть код</button><button type="button" class="text-link" id="reset-request-back">← Вернуться ко входу</button></div>
+        </form>
+        <form id="reset-code-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step">2 из 3 · Код из письма</p>
+          <p class="reset-delivery-note" id="reset-delivery-note" role="status"></p>
+          <div class="admin-field"><label for="reset-code">Код из письма</label><input id="reset-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{8}" minlength="8" maxlength="8" required aria-describedby="reset-code-help"><p class="field-help" id="reset-code-help">8 цифр, действует 10 минут с момента запроса. Письмо обычно приходит в течение минуты; проверьте папку «Спам».</p></div>
+          <p class="field-help" id="reset-code-wait" hidden></p>
+          <p class="admin-message error" id="reset-code-error" role="alert" hidden></p>
+          <button type="submit" class="button button-dark" id="reset-code-submit">Подтвердить код <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="reset-resend">Отправить код повторно</button><button type="button" class="text-link" id="reset-change-email">Изменить почту</button><button type="button" class="text-link" id="reset-code-back">← Вернуться ко входу</button></div>
+        </form>
+        <form id="reset-password-form" aria-labelledby="auth-heading" hidden>
+          <p class="auth-step" id="reset-password-step">3 из 3 · Новый пароль</p>
+          <div class="admin-field"><label for="reset-password">Новый пароль</label><div class="password-field"><input id="reset-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required><button id="reset-password-toggle" class="password-toggle" type="button" aria-controls="reset-password" aria-label="Показать новый пароль" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="password-eye-slash" d="m3 3 18 18"/></svg></button></div><p class="field-help">Не менее 8 символов. Выберите отдельный пароль для админки.</p></div>
+          <div class="admin-field"><label for="reset-password-confirm">Повторите пароль</label><div class="password-field"><input id="reset-password-confirm" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required><button id="reset-password-confirm-toggle" class="password-toggle" type="button" aria-controls="reset-password-confirm" aria-label="Показать повтор пароля" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="password-eye-slash" d="m3 3 18 18"/></svg></button></div></div>
+          <p class="admin-message error" id="reset-password-error" role="alert" hidden></p>
+          <p class="field-help" id="reset-password-wait" hidden></p>
+          <button type="submit" class="button button-dark" id="reset-password-submit">Сохранить пароль <span aria-hidden="true">↗</span></button>
+          <div class="auth-secondary-actions"><button type="button" class="text-link" id="reset-password-back">← Вернуться ко входу</button></div>
         </form>
         <form id="verify-form" aria-labelledby="auth-heading" hidden>
           <p class="auth-step">Подтверждение входа</p>
@@ -76,31 +103,62 @@
       </div>
     </section>
     <section id="dashboard" aria-labelledby="dashboard-title" hidden>
-      <div class="dashboard-intro"><div><p class="eyebrow">ВОСЕМЬ УТРА · УПРАВЛЕНИЕ МЕНЮ</p><h1 id="dashboard-title">Наши завтраки</h1><p class="muted">Меняйте меню здесь — гости увидят обновления на сайте.</p></div><button type="button" class="button button-dark" id="add-item">Добавить блюдо <span aria-hidden="true">+</span></button></div>
-      <div class="menu-summary" aria-label="Состояние меню"><div><strong id="total-count">—</strong><span>всего в меню</span></div><div><strong id="published-count">—</strong><span>видно на сайте</span></div><div><strong id="hidden-count">—</strong><span>скрыто от гостей</span></div><p><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span> Маленькие изменения<br>для большого аппетита.</p></div>
+      <div class="dashboard-intro"><div><p class="eyebrow">ВОСЕМЬ УТРА · УПРАВЛЕНИЕ МЕНЮ</p><h1 id="dashboard-title">Наше меню</h1><p class="muted">Меняйте меню здесь — гости увидят обновления на сайте.</p></div></div>
+      <div class="dashboard-controls" data-keeper><div class="menu-mode-switch" role="group" aria-label="Где находятся блюда"><button type="button" id="mode-site" aria-pressed="true" aria-controls="menu-content"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>На сайте</button><button type="button" id="mode-cash" aria-pressed="false" aria-controls="menu-content"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h14l2 10H3l2-10Z"/><rect x="6" y="3" width="12" height="7" rx="1.5"/><path d="M7 16h10m-9-3h1m3 0h1m3 0h1"/></svg>На кассе</button></div><div class="keeper-sync"><button type="button" class="button button-outline button-small" id="sync-availability"><span aria-hidden="true">↻</span><span id="sync-availability-label">Синхронизировать стоп-лист и остатки</span></button><p class="field-help" id="keeper-sync-status" role="status"></p></div></div>
       <div class="admin-notice" id="dashboard-notice" hidden><p id="dashboard-message" role="status"></p><button type="button" class="text-link" id="retry-load" hidden>Обновить меню ↻</button></div>
-      <div class="menu-toolbar"><div class="admin-search"><label class="visually-hidden" for="search">Найти блюдо по названию или описанию</label><span aria-hidden="true">⌕</span><input type="search" id="search" placeholder="Найти блюдо" autocomplete="off"></div><div class="admin-filter"><label class="visually-hidden" for="category-filter">Раздел меню</label><select id="category-filter"><option value="all">Все разделы</option><option value="signature">Фирменные завтраки</option><option value="eggs">Яйца и тосты</option><option value="porridge">Каши и гранола</option><option value="sweet">Сладкое утро</option></select></div><button type="button" class="refresh-button" id="refresh" aria-label="Обновить меню с сервера" title="Обновить меню с сервера">↻</button></div>
-      <p id="results-count" class="results-count" role="status"></p>
-      <div class="admin-items" id="items"></div>
-      <div class="empty-state" id="empty-state" hidden><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><h2 id="empty-title">Начнём с первого блюда</h2><p id="empty-description">Добавьте название, описание, цену и фотографию.</p></div>
+      <nav class="admin-category-tabs" id="category-tabs" aria-label="Основные группы меню"></nav>
+      <div class="menu-toolbar" id="menu-toolbar"><div class="admin-search"><label class="visually-hidden" for="search">Найти блюдо по названию или описанию</label><svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m15.3 15.3 5.2 5.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="search" placeholder="Найти блюдо" autocomplete="off"></div><button type="button" class="button button-dark button-small" id="add-dish" hidden>Добавить блюдо <span aria-hidden="true">+</span></button><button type="button" class="button button-outline button-small" id="manage-categories">Редактировать группы <span aria-hidden="true">↗</span></button><button type="button" class="refresh-button" id="refresh" aria-label="Обновить меню с сервера" title="Обновить меню с сервера">↻</button></div>
+      <div id="menu-content"><div class="cash-navigation" id="cash-navigation" hidden><button type="button" class="text-link cash-back" id="cash-back">← Назад</button><nav class="cash-breadcrumbs" id="cash-breadcrumbs" aria-label="Путь в меню кассы"></nav></div>
+      <div class="admin-category-heading"><h2 id="category-heading">Завтраки</h2><p id="category-context">Размещайте блюда из кассы и редактируйте их для сайта.</p></div>
+      <p id="results-count" class="results-count" role="status"></p><div class="menu-dish-grid" id="menu-dish-grid"><div class="cash-groups" id="cash-groups" hidden></div>
+      <div class="admin-items" id="items"></div></div></div>
+      <div class="empty-state" id="empty-state" hidden><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><h2 id="empty-title">В этой группе пока нет блюд</h2><p id="empty-description">Выберите блюдо во вкладке «На кассе» и укажите группу сайта.</p><button type="button" class="button button-outline button-small" id="empty-browse-cash">Открыть меню кассы <span aria-hidden="true">↗</span></button></div>
     </section>
     <noscript><p class="admin-message error">Для управления меню включите JavaScript в браузере.</p></noscript>
   </main>
   <footer class="admin-footer"><span>Восемь утра</span><span>Меню с заботой о гостях</span></footer>
   <dialog class="editor-dialog" id="editor-dialog" aria-labelledby="editor-title">
     <form id="item-form">
-      <div class="editor-heading"><div><p class="eyebrow" id="editor-eyebrow">НОВОЕ В МЕНЮ</p><h2 id="editor-title">Добавить блюдо</h2></div><button type="button" class="close-button" id="close-editor" aria-label="Закрыть редактор"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+      <div class="editor-heading"><div><p class="eyebrow" id="editor-eyebrow">ЗАБОТА О ДЕТАЛЯХ</p><h2 id="editor-title">Редактировать блюдо</h2></div><button type="button" class="close-button" id="close-editor" aria-label="Закрыть редактор"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+      <p class="editor-source-note" id="editor-source-note" hidden>Блюдо из кассы. Выберите группу сайта, чтобы разместить его для гостей. Изменения названия, описания, цены и фото сохраняются только на сайте.</p>
+      <p class="editor-keeper-status" id="editor-keeper-status" hidden></p>
       <fieldset id="editor-fields">
         <div class="editor-layout">
           <div class="photo-column"><div class="photo-preview" id="photo-preview"><div class="photo-placeholder" id="photo-placeholder"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><p>Здесь будет<br>фотография блюда</p></div><img id="preview-image" alt="Предпросмотр фотографии блюда" hidden></div><div class="admin-field photo-field"><label for="photo">Фотография <small>необязательно</small></label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help"><p class="field-help" id="photo-help">JPG, PNG или WebP, до 5 МБ. Лучше всего подойдёт квадратное фото.</p></div><button type="button" class="text-link remove-photo" id="remove-photo" hidden>Убрать фотографию</button></div>
-          <div class="editor-inputs"><div class="admin-field"><label for="item-name">Название <span aria-hidden="true">*</span></label><input id="item-name" name="name" maxlength="160" placeholder="Как называется ваше блюдо" required></div><div class="admin-field"><label for="description">Описание</label><textarea id="description" name="description" rows="4" maxlength="2000" placeholder="Ингредиенты и всё, что делает блюдо особенным"></textarea></div><div class="field-pair"><div class="admin-field"><label for="price">Цена, ₽ <span aria-hidden="true">*</span></label><input id="price" name="price" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" placeholder="650" required></div><div class="admin-field"><label for="order">Порядок в меню</label><input id="order" name="order" type="number" min="0" max="100000" step="1" inputmode="numeric" value="0" required></div></div><div class="admin-field"><label for="category">Раздел <span aria-hidden="true">*</span></label><select id="category" name="category" required><option value="signature">Фирменные завтраки</option><option value="eggs">Яйца и тосты</option><option value="porridge">Каши и гранола</option><option value="sweet">Сладкое утро</option></select></div><p class="field-help order-help">Блюда с меньшим номером показываются первыми.</p><label class="publish-control" for="published"><input type="checkbox" id="published" name="published" checked><span><strong>Показывать на сайте</strong><small>Выключите, чтобы сохранить блюдо скрытым</small></span></label><label class="publish-control" for="available-for-order"><input type="checkbox" id="available-for-order" name="availableForOrder" checked><span><strong>Можно заказать</strong><small>Выключите, чтобы оставить блюдо в меню с пометкой «Временно недоступно». Скрытое блюдо заказать нельзя.</small></span></label></div>
+          <div class="editor-inputs"><div class="admin-field"><label for="item-name">Название <span aria-hidden="true">*</span></label><input id="item-name" name="name" maxlength="160" placeholder="Как называется ваше блюдо" required></div><div class="admin-field"><label for="description">Описание</label><textarea id="description" name="description" rows="4" maxlength="2000" placeholder="Ингредиенты и всё, что делает блюдо особенным"></textarea></div><div class="field-pair"><div class="admin-field"><label for="price">Цена, ₽ <span aria-hidden="true">*</span></label><input id="price" name="price" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" placeholder="650" required></div></div><div class="admin-field"><label for="category">Группа на сайте <span aria-hidden="true">*</span></label><select id="category" name="category" aria-describedby="category-help"><option value="">Не размещать на сайте</option></select><p class="field-help" id="category-help">Выберите группу, в которой гости будут видеть блюдо.</p></div><label class="dish-visibility" for="show-on-site"><input id="show-on-site" type="checkbox" role="switch" aria-describedby="visibility-help" checked><span class="visibility-switch" aria-hidden="true"></span><span><strong>Показывать на сайте</strong><small id="visibility-help">Если выключить, блюдо останется в этой группе в админке.</small></span></label></div>
         </div>
       </fieldset>
       <p class="admin-message error" id="editor-error" role="alert" hidden></p>
       <div class="editor-conflict" id="editor-conflict" hidden><p>Меню на сервере изменилось. Обновите список и проверьте черновик перед сохранением.</p><button type="button" class="text-link" id="refresh-draft">Обновить список, сохранив черновик ↻</button></div>
-      <div class="editor-footer"><p id="editor-hint">Изменения появятся на сайте после сохранения.</p><div><button type="button" class="button button-outline button-small" id="cancel-editor">Отмена</button><button type="submit" class="button button-dark button-small" id="save-item">Сохранить блюдо</button></div></div>
+      <div class="editor-footer"><p id="editor-hint">Изменения появятся на сайте после сохранения. Скрытые блюда видны только в админке.</p><div><button type="button" class="button button-outline button-small" id="cancel-editor">Отмена</button><button type="submit" class="button button-dark button-small" id="save-item">Сохранить блюдо</button></div></div>
     </form>
   </dialog>
   <dialog class="delete-dialog" id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description"><h2 id="delete-title">Удалить блюдо?</h2><p id="delete-description"></p><p class="admin-message error" id="delete-error" role="alert" hidden></p><div class="delete-actions"><button type="button" class="button button-outline button-small" id="cancel-delete" autofocus>Оставить</button><button type="button" class="button button-dark button-small" id="confirm-delete">Удалить</button></div></dialog>
+  <dialog class="categories-dialog" id="categories-dialog" aria-labelledby="categories-title">
+    <form id="categories-form">
+      <div class="editor-heading"><div><p class="eyebrow">ПОРЯДОК В МЕНЮ</p><h2 id="categories-title" tabindex="-1">Группы сайта</h2></div><button type="button" class="close-button" id="close-categories" aria-label="Закрыть группы"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+      <fieldset id="categories-fields">
+        <p class="category-manager-intro">Настройте группы, в которых гости будут видеть блюда. Меню кассы при этом не меняется.</p>
+        <section class="selected-category" aria-labelledby="site-categories-title">
+          <h3 id="site-categories-title">Порядок на сайте</h3><p class="field-help group-sort-help" id="group-sort-help">Перетащите группу за точки или используйте стрелки. Сверху — первая группа на сайте.</p>
+          <ol id="category-sort-list" class="category-sort-list" aria-label="Группы в порядке показа на сайте" aria-describedby="group-sort-help"></ol>
+          <p class="visually-hidden" id="group-sort-announcement" role="status" aria-live="polite"></p>
+          <p class="field-help" id="selected-category-count"></p>
+          <button type="button" class="category-delete-link" id="delete-category"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg><span>Удалить выбранную группу</span></button>
+          <div class="category-delete-panel" id="category-delete-panel" hidden>
+            <h3 id="delete-category-title">Удалить группу?</h3><p id="delete-category-description"></p>
+            <div class="admin-field" id="delete-category-destination-field"><label for="delete-category-destination">Что сделать с блюдами этой группы</label><select id="delete-category-destination"></select></div>
+            <p class="field-help" id="delete-category-help"></p>
+            <div class="category-delete-actions"><button type="button" class="button button-outline button-small" id="cancel-delete-category">Оставить группу</button><button type="button" class="button button-dark button-small" id="confirm-delete-category">Удалить из списка</button></div>
+          </div>
+        </section>
+        <details class="new-category-section" id="new-category-section"><summary>Добавить <span aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" focusable="false"><path d="M6 12h12M12 6v12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></summary>
+          <div class="new-category"><div class="admin-field"><label for="new-category-name">Название новой группы</label><input id="new-category-name" type="text" maxlength="160" placeholder="Например, Напитки" autocomplete="off"></div><button type="button" class="button button-outline button-small" id="add-category">Добавить</button></div>
+        </details>
+      </fieldset>
+      <p class="admin-message error" id="categories-error" role="alert" hidden></p>
+      <div class="editor-footer"><p>Группы сайта не меняют структуру меню кассы.</p><div><button type="button" class="button button-outline button-small" id="cancel-categories">Отмена</button><button type="submit" class="button button-dark button-small" id="save-categories">Сохранить группы</button></div></div>
+    </form>
+  </dialog>
 </body>
 </html>

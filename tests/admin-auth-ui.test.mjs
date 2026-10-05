@@ -5,13 +5,14 @@ import vm from 'node:vm';
 import QRCode from 'qrcode';
 import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
+import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from '../menu-categories.js';
 
 const source = await readFile(new URL('../admin.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
 
 // Exercise the real event handlers without opening a browser or making network calls.
 async function page(session = { authenticated: false, configured: true, mfaRequired: true, production: true },
-  { qrRenderer = QRCode.toDataURL, storage = new Map(), responsesAfterSession = [] } = {}) {
+  { qrRenderer = QRCode.toDataURL, storage = new Map(), tabStorage = new Map(), responsesAfterSession = [], profile = 'delivery' } = {}) {
   let now = 2_000_000_000_000;
   const nodes = new Map();
   const calls = [];
@@ -32,9 +33,11 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
     },
     querySelectorAll: () => [],
     createElement: () => makeNode(),
+    createElementNS: () => makeNode(),
   };
   function makeNode(attributes = new Map(), hidden = false) {
     const handlers = new Map();
+    const classes = new Set();
     return {
       value: attributes.get('value') || '', type: attributes.get('type') || '', hidden, disabled: false, checked: false,
       textContent: '', open: false, dataset: {}, attributes, handlers, children: [],
@@ -50,17 +53,27 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       reset() {},
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
-      classList: { toggle() {} },
+      querySelector(selector) {
+        const attributes = [...selector.matchAll(/\[data-item-(id|action)="([^"]+)"\]/g)];
+        const walk = node => [node, ...node.children.flatMap(walk)];
+        return walk(this).find(node => attributes.length && attributes.every(([, key, value]) => node.dataset[key === 'id' ? 'itemId' : 'itemAction'] === value)) || null;
+      },
+      style: { removeProperty(name) { delete this[name]; } },
+      scrollTop: 0,
+      classList: { toggle(name, force) { if (force ?? !classes.has(name)) classes.add(name); else classes.delete(name); }, add(...names) { names.forEach(name => classes.add(name)); }, remove(...names) { names.forEach(name => classes.delete(name)); }, contains(name) { return classes.has(name); } },
     };
   }
   for (const match of html.matchAll(/<([a-z][a-z\d-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/gi)) {
     const attributes = new Map([...match[2].matchAll(/([\w-]+)="([^"]*)"/g)].map((entry) => [entry[1], entry[2]]));
     nodes.set(match[3], makeNode(attributes, /\bhidden\b/.test(match[2])));
   }
+  nodes.get('site-profile').setAttribute('content', profile);
   const context = vm.createContext({
-    document, Intl, URL, AbortController, crypto: { randomUUID: () => 'new-dish-test-id' },
+    document, Intl, URL, AbortController, normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories,
+    crypto: { randomUUID: () => 'new-dish-test-id' },
     Date: class extends Date { static now() { return now; } },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) },
+    sessionStorage: { getItem: (key) => tabStorage.get(key) ?? null, setItem: (key, value) => tabStorage.set(key, value), removeItem: (key) => tabStorage.delete(key) },
     BroadcastChannel: class { constructor() { channel = this; } postMessage(data) { broadcasts.push(data); } },
     setTimeout(callback, delay) { const id = Symbol(); timers.set(id, { callback, delay, at: now + delay }); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -78,14 +91,14 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       const body = response.body?.authenticated === true && !Object.hasOwn(response.body, 'session')
         ? { ...response.body, session: { idleTimeoutMs: 900000, idleExpiresAt: now + 900000, expiresAt: now + 28800000, serverNow: now } }
         : response.body;
-      return { ok: status >= 200 && status < 300, status, headers: { get: () => 'application/json' }, json: async () => body };
+      return { ok: status >= 200 && status < 300, status, headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json' : response.headers?.[name.toLowerCase()] ?? null }, json: async () => body };
     },
   });
-  const runtimeSource = source.replace("await import('qrcode')", 'await __loadLocalQr()');
-  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, idle, sessionExpired, validUsername, validateMenu, openEditor, itemCard, loadMenu, lockSession, checkSession };\n})()`, { filename: 'admin.js' }).runInContext(context);
+  const runtimeSource = source.replace(/^import .* from '\.\/menu-categories\.js';\r?\n/, '').replace("await import('qrcode')", 'await __loadLocalQr()');
+  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, categoryDraft, idle, sessionExpired, validUsername, validateMenu, openEditor, openCategoryManager, openCashGroup, setMenuMode, itemCard, render, loadMenu, lockSession, checkSession };\n})()`, { filename: 'admin.js' }).runInContext(context);
   async function settle() { for (let index = 0; index < 20; index += 1) await Promise.resolve(); }
   return {
-    ...runtime, calls, responses, timers, qrCalls, broadcasts, document, storage,
+    ...runtime, calls, responses, timers, qrCalls, broadcasts, document, storage, tabStorage,
     now: () => now,
     settle,
     async activity(type = 'pointerdown', isTrusted = true) { documentHandlers.get(type)?.({ isTrusted }); await settle(); },
@@ -107,10 +120,10 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       await settle();
     },
     node: (id) => document.getElementById(id),
-    async trigger(id, event = 'click') {
+    async trigger(id, event = 'click', eventValues = {}) {
       const handler = document.getElementById(id).handlers.get(event);
       assert.ok(handler, `Missing handler: ${id}/${event}`);
-      await handler({ preventDefault() {} });
+      await handler({ preventDefault() {}, ...eventValues });
     },
     windowEvent(name) { return windowHandlers.get(name)?.({ preventDefault() {} }); },
     expireEnrollment() {
@@ -127,6 +140,244 @@ async function passwordStep(app, username = 'cafe-admin') {
   app.responses.push({ status: 202, body: { mfaRequired: true, challengeToken: 'memory-only-challenge' } });
   await app.trigger('login-form', 'submit');
 }
+
+const passwordSession = { authenticated:false, configured:true, ready:true, production:true, mfaRequired:false, authMode:'password' };
+
+test('password login opens the menu directly and logout returns to the password form', async () => {
+  const app=await page(passwordSession);app.node('username').value='owner@example.test';app.node('password').value='fixture-password';
+  assert.doesNotMatch(app.node('device-login-help').textContent,/приложения|Яндекс/);
+  app.responses.push({body:{authenticated:true,authMode:'password',username:'owner@example.test',csrfToken:'password-csrf'}});
+  app.responses.push({body:{items:[],revision:'r1'}});
+  await app.trigger('login-form','submit');
+  assert.equal(app.node('dashboard').hidden,false);assert.equal(app.node('verify-form').hidden,true);
+  assert.equal(app.node('logout-forget').hidden,true);
+  assert.equal(app.calls.some(call=>/\/verify|\/resume|\/enroll\//.test(call.url)),false);
+  app.responses.push({body:passwordSession});await app.trigger('logout');
+  assert.equal(app.node('login-form').hidden,false);assert.equal(app.node('verify-form').hidden,true);
+  assert.equal(app.node('password').value,'');
+});
+
+test('password mode ignores stale device identity and handles first password replacement without QR', async () => {
+  const app=await page({...passwordSession,trustedUsername:'owner@example.test'});
+  assert.equal(app.node('login-form').hidden,false);
+  app.node('username').value='owner@example.test';app.node('password').value='temporary-fixture-password';
+  app.responses.push({status:202,body:{authMode:'password',passwordChangeRequired:true,passwordToken:'a'.repeat(64)}});
+  await app.trigger('login-form','submit');
+  assert.equal(app.node('reset-password-form').hidden,false);assert.equal(app.node('dashboard').hidden,true);
+  assert.equal(app.node('enrollment-form').hidden,true);assert.equal(app.tabStorage.size,0);
+  app.node('reset-password').value='new-test-password';app.node('reset-password-confirm').value='new-test-password';
+  app.responses.push({body:{passwordChanged:true}});await app.trigger('reset-password-form','submit');
+  assert.equal(app.node('login-form').hidden,false);assert.doesNotMatch(app.node('session-lock-note').textContent,/приложения|Яндекс/);
+});
+
+test('password mode rejects a stale MFA response and never opens a QR or code step', async () => {
+  const app=await page(passwordSession);app.node('username').value='owner@example.test';app.node('password').value='fixture-password';
+  app.responses.push({status:202,body:{mfaRequired:true,challengeToken:'stale-server'}});
+  await app.trigger('login-form','submit');
+  assert.equal(app.node('dashboard').hidden,true);assert.equal(app.node('verify-form').hidden,true);
+  assert.match(app.node('login-error').textContent,/не подтвердил вход/);
+});
+
+test('password recovery checks email code before accepting a new password and still requires normal MFA login', async () => {
+  const app = await page();
+  app.node('username').value = 'owner@example.test';
+  await app.trigger('forgot-password');
+  assert.equal(app.node('login-form').hidden, true);
+  assert.equal(app.node('reset-email').value, 'owner@example.test');
+  app.responses.push({ status: 202, body: { resetToken: 'a'.repeat(64), retryAfter: 60 } });
+  await app.trigger('reset-request-form', 'submit');
+  assert.equal(app.node('reset-code-form').hidden, false);
+  assert.equal(app.node('reset-resend').disabled, true);
+  assert.deepEqual(app.calls.at(-1).body, { email: 'owner@example.test' });
+  app.node('reset-code').value = '01234567';
+  app.responses.push({ body: { passwordToken: 'b'.repeat(64) } });
+  await app.trigger('reset-code-form', 'submit');
+  assert.equal(app.node('reset-password-form').hidden, false);
+  assert.equal(app.node('reset-code').value, '');
+  app.node('reset-password').value = 'a-good-new-password';
+  app.node('reset-password-confirm').value = 'does-not-match';
+  const before = app.calls.length;
+  await app.trigger('reset-password-form', 'submit');
+  assert.equal(app.calls.length, before);
+  assert.match(app.node('reset-password-error').textContent, /не совпадают/);
+  app.node('reset-password-confirm').value = 'a-good-new-password';
+  app.responses.push({ body: { passwordChanged: true } });
+  await app.trigger('reset-password-form', 'submit');
+  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.node('reset-password').value, '');
+  assert.equal(app.node('reset-password-confirm').value, '');
+  assert.equal(app.state.csrfToken, '');
+  assert.match(app.node('session-lock-note').textContent, /Пароль изменён/);
+  assert.equal(app.storage.size, 0);
+  await passwordStep(app, 'owner@example.test');
+  assert.equal(app.node('verify-form').hidden, false);
+  assert.equal(app.node('dashboard').hidden, true);
+});
+
+test('recovery resend waits sixty seconds; invalid code does not advance or expose protected menu', async () => {
+  const app = await page(); await app.trigger('forgot-password');
+  app.node('reset-email').value = 'owner@example.test';
+  app.responses.push({ status: 202, body: { resetToken: 'c'.repeat(64), retryAfter: 60 } });
+  await app.trigger('reset-request-form', 'submit');
+  const count = app.calls.length; await app.trigger('reset-resend'); assert.equal(app.calls.length, count);
+  await app.advance(60000); assert.equal(app.node('reset-resend').disabled, false);
+  app.node('reset-code').value = '12345678';
+  app.responses.push({ status: 400, body: { error: 'Код неверный', code: 'invalid_reset' } });
+  await app.trigger('reset-code-form', 'submit');
+  assert.equal(app.node('reset-password-form').hidden, true);
+  assert.match(app.node('reset-code-error').textContent, /Код неверный/);
+  app.responses.push({ status: 202, body: { resetToken: 'd'.repeat(64), retryAfter: 60 } });
+  await app.trigger('reset-resend');
+  assert.equal(app.node('reset-code').value, '');
+  await app.trigger('reset-code-back');
+  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.node('reset-email').value, '');
+});
+
+test('unconfigured mail has a useful error and pagehide discards recovery secrets and late responses', async () => {
+  const app = await page(); await app.trigger('forgot-password');
+  app.node('reset-email').value = 'owner@example.test';
+  app.responses.push({ status: 503, body: { error: 'Отправка кодов пока не настроена.', code: 'reset_unavailable' } });
+  await app.trigger('reset-request-form', 'submit');
+  assert.match(app.node('reset-request-error').textContent, /не настроена/);
+  assert.equal(app.node('reset-code-form').hidden, true);
+  let release;
+  app.responses.push({ wait: new Promise(resolve => { release = resolve; }), body: { resetToken: 'e'.repeat(64) } });
+  const pending = app.trigger('reset-request-form', 'submit');
+  await app.settle(); app.windowEvent('pagehide'); release(); await pending;
+  assert.equal(app.node('reset-code-form').hidden, true);
+  assert.equal(app.node('login-form').hidden, false);
+  assert.equal(app.node('reset-email').value, '');
+  assert.equal(app.storage.size, 0);
+});
+
+async function requestRecovery(app) {
+  await app.trigger('forgot-password'); app.node('reset-email').value = 'owner@example.test';
+  app.responses.push({ status: 202, body: { resetToken: 'c'.repeat(64), expiresIn: 600, retryAfter: 60 } });
+  await app.trigger('reset-request-form', 'submit');
+}
+
+test('request throttle displays the server wait and becomes available without reloading', async () => {
+  const app = await page(); await app.trigger('forgot-password'); app.node('reset-email').value = 'owner@example.test';
+  app.responses.push({ status: 429, headers: { 'retry-after': '180' }, body: { error: 'Слишком много попыток.', code: 'rate_limit' } });
+  await app.trigger('reset-request-form', 'submit');
+  assert.match(app.node('reset-request-wait').textContent, /3:00/);
+  assert.equal(app.node('reset-request-submit').disabled, true);
+  const calls = app.calls.length; await app.trigger('reset-request-form', 'submit'); assert.equal(app.calls.length, calls);
+  await app.advance(180000);
+  assert.equal(app.node('reset-request-submit').disabled, false);
+  assert.equal(app.node('reset-request-wait').hidden, true);
+});
+
+test('resend throttle preserves the current code and never blocks its verification', async () => {
+  const app = await page(); await requestRecovery(app); await app.advance(60000);
+  app.node('reset-code').value = '01234567';
+  app.responses.push({ status: 429, headers: { 'retry-after': '180' }, body: { error: 'Код уже запрошен.', code: 'rate_limit' } });
+  await app.trigger('reset-resend');
+  assert.match(app.node('reset-resend').textContent, /3:00/);
+  assert.equal(app.node('reset-code').disabled, false);
+  assert.equal(app.node('reset-code').value, '01234567');
+  assert.equal(app.node('reset-code-submit').disabled, false);
+  app.responses.push({ body: { passwordToken: 'd'.repeat(64) } });
+  await app.trigger('reset-code-form', 'submit');
+  assert.equal(app.calls.at(-1).body.resetToken, 'c'.repeat(64));
+  assert.equal(app.node('reset-password-form').hidden, false);
+  assert.equal(app.tabStorage.size, 0);
+});
+
+test('code verification throttle counts down separately from sending email', async () => {
+  const app = await page(); await requestRecovery(app); await app.advance(60000);
+  app.node('reset-code').value = '01234567';
+  const date = new Date(app.now() + 120000).toUTCString();
+  app.responses.push({ status: 429, headers: { 'retry-after': date }, body: { error: 'Слишком много попыток.', code: 'rate_limit' } });
+  await app.trigger('reset-code-form', 'submit');
+  assert.match(app.node('reset-code-wait').textContent, /2:00/);
+  assert.equal(app.node('reset-code-submit').disabled, true);
+  assert.equal(app.node('reset-resend').disabled, false);
+  assert.equal(app.node('reset-code').disabled, false);
+  await app.advance(120000); assert.equal(app.node('reset-code-submit').disabled, false);
+});
+
+test('expired email code has a clear next action while a new email can be requested', async () => {
+  const app = await page(); await requestRecovery(app); await app.advance(600000);
+  assert.match(app.node('reset-code-help').textContent, /Срок действия кода истёк/);
+  assert.equal(app.node('reset-code-submit').disabled, true);
+  assert.equal(app.node('reset-resend').disabled, false);
+  const calls = app.calls.length; app.node('reset-code').value = '01234567';
+  await app.trigger('reset-code-form', 'submit'); assert.equal(app.calls.length, calls);
+  app.responses.push({ body: { resetToken: 'd'.repeat(64), expiresIn: 600, retryAfter: 60 } });
+  await app.trigger('reset-resend'); assert.equal(app.node('reset-code-submit').disabled, false);
+  assert.match(app.node('reset-code-help').textContent, /10:00/);
+});
+
+test('reload and return from email retain only a pending mail handle, never code/password grants', async () => {
+  const app = await page(); await requestRecovery(app); app.node('reset-code').value = '01234567';
+  await app.advance(30000); app.windowEvent('pagehide');
+  assert.equal(app.node('reset-code').value, '');
+  assert.doesNotMatch([...app.tabStorage.values()].join(''), /01234567|passwordToken/);
+  await app.windowEvent('pageshow');
+  assert.equal(app.node('reset-code-form').hidden, false);
+  assert.match(app.node('reset-resend').textContent, /0:30/);
+  const refreshed = await page(undefined, { tabStorage: app.tabStorage });
+  assert.equal(refreshed.node('reset-code-form').hidden, false);
+  assert.equal(refreshed.calls.length, 1); // No additional email request.
+  refreshed.node('reset-code').value = '01234567';
+  refreshed.responses.push({ body: { passwordToken: 'd'.repeat(64) } });
+  await refreshed.trigger('reset-code-form', 'submit');
+  assert.equal(refreshed.calls.at(-1).body.resetToken, 'c'.repeat(64));
+  assert.equal(refreshed.tabStorage.size, 0);
+  refreshed.windowEvent('pagehide'); await refreshed.windowEvent('pageshow');
+  assert.equal(refreshed.node('reset-password-form').hidden, true);
+  assert.equal(refreshed.node('login-form').hidden, false);
+});
+
+test('untrusted or expired stored recovery data cannot create a password step or auth session', async () => {
+  for (const stored of [
+    { token: 'broken', email: 'owner@example.test', retryAt: 0, verifyAt: 0, expiresAt: 2_000_000_100_000 },
+    { token: 'c'.repeat(64), email: 'owner@example.test', retryAt: 0, verifyAt: 0, expiresAt: 1 },
+  ]) {
+    const app = await page(undefined, { tabStorage: new Map([['vosem-utra-password-reset', JSON.stringify({ ...stored, passwordToken: 'd'.repeat(64) })]]) });
+    assert.equal(app.node('login-form').hidden, false); assert.equal(app.node('reset-password-form').hidden, true);
+    assert.equal(app.tabStorage.size, 0); assert.equal(app.state.csrfToken, '');
+  }
+});
+
+test('already-have-code opens verification during a send limit without requesting any email', async () => {
+  const app = await page(); await app.trigger('forgot-password');
+  app.node('reset-email').value = 'owner@example.test';
+  app.responses.push({ status: 429, headers: { 'retry-after': '180' }, body: { error: 'Код уже запрошен.', code: 'rate_limit' } });
+  await app.trigger('reset-request-form', 'submit');
+  assert.equal(app.node('reset-request-submit').disabled, true);
+  assert.equal(app.node('reset-have-code').disabled, false);
+  const before = app.calls.length; await app.trigger('reset-have-code');
+  assert.equal(app.calls.length, before);
+  assert.equal(app.node('reset-code-form').hidden, false);
+  assert.equal(app.node('reset-code-submit').disabled, false);
+  assert.equal(app.node('reset-resend').disabled, true);
+  assert.match(app.node('reset-delivery-note').textContent, /Новое письмо не отправлялось/);
+  app.windowEvent('pagehide'); await app.windowEvent('pageshow');
+  assert.equal(app.node('reset-code-form').hidden, false);
+  const fresh = await page(undefined, { tabStorage: app.tabStorage });
+  assert.equal(fresh.node('reset-code-form').hidden, false);
+  fresh.node('reset-code').value = '01234567';
+  fresh.responses.push({ body: { passwordToken: 'd'.repeat(64) } });
+  await fresh.trigger('reset-code-form', 'submit');
+  assert.deepEqual(fresh.calls.at(-1).body, { email: 'owner@example.test', code: '01234567' });
+  assert.equal(fresh.node('reset-password-form').hidden, false);
+  assert.equal(fresh.tabStorage.size, 0);
+});
+
+test('already-have-code validates the email locally and the previous hourly client timer is shortened', async () => {
+  const app = await page(); await app.trigger('forgot-password');
+  const before = app.calls.length; await app.trigger('reset-have-code');
+  assert.match(app.node('reset-request-error').textContent, /Укажите почту/); assert.equal(app.calls.length, before);
+  const tabStorage = new Map([['vosem-utra-password-reset', JSON.stringify({ token: 'c'.repeat(64), email: 'owner@example.test', retryAt: app.now()+1800000, verifyAt: 0, expiresAt: app.now()+600000 })]]);
+  const fresh = await page(undefined,{ tabStorage });
+  assert.match(fresh.node('reset-resend').textContent, /3:00/);
+  await fresh.advance(60000); fresh.windowEvent('pagehide'); await fresh.windowEvent('pageshow');
+  assert.match(fresh.node('reset-resend').textContent, /2:00/); // Returning does not restart the wait.
+});
 
 function successfulVerify(app) {
   app.responses.push({ body: { authenticated: true, csrfToken: 'csrf-after-mfa' } });
@@ -578,29 +829,24 @@ test('PHP QR fallback rejects non-TOTP URIs and a mismatched secret before rende
 });
 
 
-test('menu editor defaults legacy and new dishes to orderable, preserves explicit unavailability and saves it independently', async () => {
+test('legacy dishes follow group assignment until explicitly hidden and keep their internal order', async () => {
   const app = await page();
-  const legacy = { id: 'legacy-toast', name: 'Тост', description: 'Яйцо и хлеб', price: 450, category: 'eggs', image: '', published: true, order: 1 };
+  const legacy = { id: 'legacy-toast', name: 'Тост', description: 'Яйцо и хлеб', price: 450, category: 'eggs', image: '', published: false, availableForOrder: false, order: 17 };
   app.validateMenu({ items: [legacy], revision: 3 });
-  assert.equal(app.state.items[0].availableForOrder, true);
+  assert.equal(app.state.items[0].published, true); assert.equal(app.state.items[0].availableForOrder, true);
   app.openEditor(app.state.items[0]);
-  assert.equal(app.node('available-for-order').checked, true);
-  assert.equal(app.node('published').checked, true);
-  app.node('available-for-order').checked = false;
-  app.responses.push({ body: { items: [{ ...legacy, availableForOrder: false }], revision: 4 } });
+  assert.equal(app.node('category').required, true);
+  assert.ok(app.node('category').children.every(option => option.value !== ''));
+  app.responses.push({ body: { items: [{ ...legacy, published: true, availableForOrder: true }], revision: 4 } });
   await app.trigger('item-form', 'submit');
   const saved = app.calls.at(-1).body;
-  assert.equal(saved.revision, 3);
-  assert.equal(saved.items[0].availableForOrder, false);
-  assert.equal(saved.items[0].published, true);
-  assert.equal(app.state.items[0].availableForOrder, false);
-  app.openEditor(app.state.items[0]);
-  assert.equal(app.node('available-for-order').checked, false, 'Reopening must not reset explicit false');
-  const text = (node) => node.textContent + node.children.map(text).join(' ');
-  assert.match(text(app.itemCard(app.state.items[0])), /Временно недоступно/);
-  app.openEditor();
-  assert.equal(app.node('available-for-order').checked, true);
-  assert.equal(app.node('published').checked, true);
+  assert.equal(saved.items[0].published, true); assert.equal(saved.items[0].availableForOrder, true); assert.equal(saved.items[0].order, 17);
+  app.openEditor(); assert.equal(app.node('editor-dialog').open, false);
+  app.openEditor({ ...legacy, id: 'new-local-id' }); assert.equal(app.node('editor-dialog').open, false);
+  assert.doesNotMatch(html, /empty-add-item|id="add-item"|id="order"|id="published"|id="available-for-order"/);
+  app.render(); assert.equal(app.node('add-dish').hidden, true);
+  const walk = node => [node, ...node.children.flatMap(walk)];
+  assert.ok(!walk(app.itemCard(app.state.items[0])).some(node => node.dataset.itemAction === 'toggle'));
 });
 
 test('malformed availability from the menu server is rejected rather than silently enabling ordering', async () => {
@@ -610,10 +856,254 @@ test('malformed availability from the menu server is rejected rather than silent
   }
 });
 
+const categoryFixture = () => {
+  const source = (externalId) => ({ provider: 'kds', organizationId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', externalId, testOnly: true });
+  const categories = [
+    { id: 'breakfast', name: 'Завтраки', parentId: null, order: 0 },
+    { id: 'dinner', name: 'Ужины', parentId: null, order: 1 },
+  ];
+  const sourceCategories = [
+    { id: 'bar', name: 'Бар', parentId: null, order: 2, source: source('bar') },
+    { id: 'coffee', name: 'Кофе', parentId: 'bar', order: 0, source: source('coffee') },
+    { id: 'espresso', name: 'Эспрессо', parentId: 'coffee', order: 0, source: source('espresso') },
+  ];
+  const imported = (id, name, groupExternalId) => ({ id, name, description: '', price: 180, category: null, image: '', order: 0, published: false,
+    source: { ...source(id), groupExternalId } });
+  return { revision: 6, categories, sourceCategories, categoryMappings: [], items: [
+    { id: 'porridge', name: 'Каша', description: '', price: 200, category: 'breakfast', image: '', order: 0, published: true },
+    imported('double', 'Двойной эспрессо', 'espresso'), imported('tea', 'Чай', 'bar'), imported('latte', 'Латте', 'coffee'),
+  ] };
+};
+
+const clickItem = (app, id, action) => app.trigger('items', 'click', { target: { closest: () => ({ dataset: { itemId: id, itemAction: action } }) } });
+
+test('website mode starts with breakfast and only manual categories, with no all-menu filter', async () => {
+  const app = await page();
+  app.validateMenu(categoryFixture()); app.render();
+  assert.equal(app.state.mode, 'site');
+  assert.equal(app.state.siteCategory, 'breakfast');
+  assert.deepEqual(Array.from(app.node('category-tabs').children, node => node.dataset.categoryId), ['breakfast', 'dinner']);
+  assert.equal(app.node('items').children.length, 1);
+  assert.doesNotMatch(html, /id="category-filter"|Всё меню|id="total-count"/);
+  app.state.siteCategory = 'dinner'; app.render();
+  assert.equal(app.node('empty-state').hidden, false);
+  await app.trigger('empty-browse-cash');
+  assert.equal(app.state.mode, 'cash');
+});
+
+test('cash mode navigates original groups and shows direct dishes with direct child groups, while search covers descendants', async () => {
+  const app = await page();
+  app.validateMenu(categoryFixture());
+  await app.trigger('mode-cash');
+  assert.equal(app.node('category-tabs').hidden, true);
+  assert.equal(app.node('manage-categories').hidden, true);
+  assert.equal(app.node('cash-groups').children.length, 1);
+  assert.equal(app.node('items').children.length, 0);
+  app.openCashGroup('bar');
+  assert.equal(app.node('cash-groups').children[0].dataset.cashGroupId, 'coffee');
+  assert.equal(app.node('items').children.length, 1, 'The root must not duplicate dishes from nested groups');
+  app.openCashGroup('coffee');
+  assert.equal(app.node('cash-groups').children[0].dataset.cashGroupId, 'espresso');
+  assert.equal(app.node('items').children.length, 1);
+  assert.equal(app.node('cash-breadcrumbs').children.at(-1).textContent, 'Кофе');
+  app.openCashGroup('espresso');
+  assert.equal(app.node('cash-groups').children.length, 0);
+  assert.equal(app.node('items').children.length, 1);
+  await app.trigger('cash-back');
+  assert.equal(app.state.cashGroupId, 'coffee');
+  app.openCashGroup('bar');
+  app.node('search').value = 'Двойной'; await app.trigger('search', 'input');
+  assert.equal(app.node('items').children.length, 1, 'Search includes deeper descendants within the current branch');
+  assert.match(app.node('category-context').textContent, /вложенных/);
+  await app.trigger('mode-site'); await app.trigger('mode-cash');
+  assert.equal(app.state.cashGroupId, 'bar');
+  assert.equal(app.node('search').value, 'Двойной');
+});
+
+test('assigning an individual cash dish publishes it in a manual category and retains its original group and current navigation', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data); app.setMenuMode('cash'); app.openCashGroup('espresso');
+  app.openEditor(app.state.items[1]);
+  assert.equal(app.node('category').disabled, false);
+  assert.equal(app.node('category').required, false);
+  assert.equal(app.node('category').value, '');
+  assert.deepEqual(Array.from(app.node('category').children, option => option.value), ['', 'breakfast', 'dinner']);
+  const before = app.calls.length;
+  assert.equal(app.calls.length, before, 'Opening the editor does not publish a cash dish');
+  app.node('category').value = 'dinner'; app.node('item-name').value = 'Наш двойной эспрессо';
+  const changed = { ...data.items[1], category: 'dinner', published: true, name: 'Наш двойной эспрессо' };
+  app.responses.push({ body: { ...data, revision: 7, items: data.items.map(item => item.id === changed.id ? changed : item) } });
+  await app.trigger('item-form', 'submit');
+  const saved = app.calls.at(-1).body;
+  assert.deepEqual(saved.items[1].source, data.items[1].source);
+  assert.deepEqual(saved.sourceCategories, data.sourceCategories);
+  assert.deepEqual(saved.categories, data.categories);
+  assert.deepEqual(saved.categoryMappings, []);
+  assert.equal(saved.items[1].category, 'dinner'); assert.equal(saved.items[1].published, true);
+  assert.equal(app.state.mode, 'cash'); assert.equal(app.state.cashGroupId, 'espresso');
+  assert.equal(app.node('items').children.length, 1);
+  app.setMenuMode('site'); app.state.siteCategory = 'dinner'; app.render();
+  assert.equal(app.node('items').children.length, 1);
+});
+
+test('removing a sourced dish from the website detaches placement without deleting its cash record', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.items[1] = { ...data.items[1], category: 'dinner', published: true };
+  app.validateMenu(data); app.state.siteCategory = 'dinner'; app.render();
+  await clickItem(app, 'double', 'detach');
+  assert.match(app.node('delete-title').textContent, /с сайта/);
+  const detached = { ...data.items[1], category: null, published: false, availableForOrder: false };
+  app.responses.push({ body: { ...data, revision: 7, items: data.items.map(item => item.id === detached.id ? detached : item) } });
+  await app.trigger('confirm-delete');
+  const saved = app.calls.at(-1).body;
+  assert.equal(saved.items.length, data.items.length);
+  assert.equal(saved.items[1].category, null); assert.equal(saved.items[1].published, false);
+  assert.deepEqual(saved.items[1].source, data.items[1].source);
+  assert.equal(app.node('items').children.length, 0);
+  app.setMenuMode('cash'); app.openCashGroup('espresso');
+  assert.equal(app.node('items').children.length, 1);
+  const card = app.itemCard(app.state.items[1]);
+  const walk = node => [node, ...node.children.flatMap(walk)];
+  assert.ok(!walk(card).some(node => ['delete', 'detach'].includes(node.dataset.itemAction)));
+});
+
+test('cash-only dishes can be edited without placement, and assigning a group is the sole publication switch', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data); app.openEditor(app.state.items[1]);
+  assert.equal(app.node('category').required, false);
+  app.node('description').value = 'Описание для будущей публикации';
+  app.responses.push({ body: { ...data, revision: 7 } });
+  await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.at(-1).body.items[1].category, null);
+  assert.equal(app.calls.at(-1).body.items[1].published, false);
+  data.items[1] = { ...data.items[1], category: 'dinner', published: false };
+  app.validateMenu({ ...data, revision: 8 }); app.state.siteCategory = 'dinner'; app.render();
+  assert.equal(app.node('items').children.length, 1);
+  app.openEditor(app.state.items[1]); assert.equal(app.state.items[1].published, true);
+});
+
+test('test-only imported dishes cannot be enabled for ordering in the editor', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.items[1] = { ...data.items[1], category: 'dinner', availableForOrder: true };
+  app.validateMenu(data); app.openEditor(app.state.items[1]);
+  assert.match(app.node('editor-keeper-status').textContent, /только для просмотра/);
+  app.responses.push({ body: { ...data, revision: 7 } });
+  await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.at(-1).body.items[1].availableForOrder, false);
+  app.openEditor(app.state.items[0]);
+  assert.equal(app.node('editor-keeper-status').hidden, true);
+});
+
+test('category manager only creates manual website categories and leaves cash hierarchy untouched', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data); app.openCategoryManager();
+  app.node('new-category-name').value = 'Напитки'; await app.trigger('add-category');
+  const target = app.categoryDraft.categories.find(entry => entry.name === 'Напитки');
+  assert.ok(target); assert.equal(target.parentId, null); assert.equal(target.source, undefined);
+  app.responses.push({ body: { ...data, revision: 7, categories: app.categoryDraft.categories } });
+  await app.trigger('categories-form', 'submit');
+  const saved = app.calls.at(-1).body;
+  assert.deepEqual(saved.sourceCategories, data.sourceCategories);
+  assert.deepEqual(saved.categoryMappings, []);
+  assert.equal(saved.items[1].category, null);
+  assert.equal(app.node('categories-dialog').open, false);
+  assert.doesNotMatch(html, /source-category-list|Куда помещать блюда из КДС/);
+});
+
+test('opening the group editor automatically fetches the latest saved groups', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data);
+  const current = { ...data, revision: 7, categories: [...data.categories, { id: 'drinks', name: 'Напитки', parentId: null, order: 2 }] };
+  app.responses.push({ body: current });
+  await app.trigger('manage-categories');
+  assert.equal(app.calls.at(-1).method, 'GET');
+  assert.equal(app.calls.at(-1).url, '/api/admin/menu');
+  assert.equal(app.node('categories-dialog').open, true);
+  assert.equal(app.categoryDraft.revision, 7);
+  assert.deepEqual(Array.from(app.categoryDraft.categories, group => group.id), ['breakfast', 'dinner', 'drinks']);
+  assert.equal(app.categoryDraft.dirty, false);
+});
+
+test('a failed opening refresh never opens the group editor with a stale snapshot', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data);
+  app.responses.push({ status: 503, body: { error: 'Сервер временно недоступен.' } });
+  await app.trigger('manage-categories');
+  assert.equal(app.node('categories-dialog').open, false);
+  assert.equal(app.node('manage-categories').disabled, false);
+  assert.match(app.node('dashboard-message').textContent, /Сервер временно недоступен/);
+  app.responses.push({ body: { ...data, revision: 8 } });
+  await app.trigger('manage-categories');
+  assert.equal(app.node('categories-dialog').open, true);
+  assert.equal(app.categoryDraft.revision, 8);
+});
+
+for (const uncertain of [false, true]) test(`group editor recovers on reopening after ${uncertain ? 'a lost save response' : 'another administrator saves'}`, async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data); app.openCategoryManager();
+  app.node('new-category-name').value = 'Напитки';
+  app.responses.push(uncertain ? { error: new Error('Connection lost') } : { status: 409, body: { error: 'Menu revision changed.' } });
+  await app.trigger('categories-form', 'submit');
+  assert.equal(app.state.conflict, true);
+  assert.equal(app.node('save-categories').disabled, true);
+  assert.equal(app.node('manage-categories').disabled, false, 'Reopening must remain available after a conflict');
+  assert.equal(app.node('categories-dialog').open, true);
+  assert.equal(app.categoryDraft.dirty, true);
+  assert.ok(app.categoryDraft.categories.some(group => group.name === 'Напитки'), 'Keep the unsaved draft until the user closes it');
+  assert.match(app.node('categories-error').textContent, /Закройте это окно и снова нажмите «Редактировать группы»/);
+  if (uncertain) assert.match(app.node('categories-error').textContent, /Ответ о сохранении не получен/);
+  await app.trigger('cancel-categories');
+  const current = { ...data, revision: 8, categories: [...data.categories, { id: 'desserts', name: 'Десерты', parentId: null, order: 2 }] };
+  app.responses.push({ body: current });
+  await app.trigger('manage-categories');
+  assert.equal(app.state.conflict, false);
+  assert.equal(app.categoryDraft.revision, 8);
+  assert.equal(app.node('save-categories').disabled, false);
+  assert.deepEqual(Array.from(app.categoryDraft.categories, group => group.id), ['breakfast', 'dinner', 'desserts']);
+  assert.equal(app.calls.filter(call => call.method === 'PUT').length, 1, 'Opening the editor must not repeat an uncertain save');
+});
+
+test('a category draft cannot overwrite a newer menu revision', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data); app.openCategoryManager();
+  app.categoryDraft.categories[0].name = 'Новое название';
+  app.validateMenu({ ...data, revision: 7 });
+  const before = app.calls.length; await app.trigger('categories-form', 'submit');
+  assert.equal(app.calls.length, before); assert.match(app.node('categories-error').textContent, /Меню обновилось/);
+  assert.match(app.node('categories-error').textContent, /Закройте это окно и снова нажмите «Редактировать группы»/);
+});
+
+test('saving a pending category creates it in one request and a retry keeps the same single draft entry', async () => {
+  const app = await page(); const data = categoryFixture();
+  app.validateMenu(data); app.openCategoryManager();
+  app.node('new-category-name').value = 'Напитки';
+  app.responses.push({ status: 422, body: { error: 'Проверьте категорию.' } });
+  await app.trigger('categories-form', 'submit');
+  const first = app.calls.at(-1).body;
+  assert.equal(first.categories.filter(entry => entry.name === 'Напитки').length, 1);
+  assert.equal(app.node('new-category-name').value, '');
+  assert.equal(app.node('categories-dialog').open, true);
+  app.responses.push({ body: { ...data, revision: 7, categories: first.categories } });
+  await app.trigger('categories-form', 'submit');
+  assert.deepEqual(app.calls.at(-1).body.categories, first.categories);
+  assert.equal(app.node('categories-dialog').open, false);
+});
+
+test('empty or duplicate new categories do not send menu updates', async () => {
+  const app = await page(); app.validateMenu(categoryFixture()); app.openCategoryManager();
+  const before = app.calls.length;
+  await app.trigger('categories-form', 'submit');
+  assert.equal(app.calls.length, before);
+  app.openCategoryManager(); app.node('new-category-name').value = 'Завтраки';
+  await app.trigger('categories-form', 'submit');
+  assert.equal(app.calls.length, before);
+  assert.match(app.node('categories-error').textContent, /уже есть/);
+});
+
 test('remembering the browser is automatic with no checkbox or opt-in request flag', async () => {
   const app = await page();
   assert.doesNotMatch(html, /id="remember-device"/);
-  assert.match(html, /Запомним этот браузер/);
+  assert.match(html, /Введите почту и пароль администратора/);
   assert.doesNotMatch(html, /браузер на 30 дней/);
   await passwordStep(app);
   assert.deepEqual(app.calls[1].body, { username: 'cafe-admin', password: 'example-password-only-for-tests' });
@@ -723,9 +1213,25 @@ async function signedIn(options) {
   return app;
 }
 
+test('idle locking closes the category manager while preserving its unsaved draft', async () => {
+  const app = await signedIn();
+  app.validateMenu(categoryFixture());
+  app.openCategoryManager();
+  app.node('new-category-name').value = 'Напитки';
+  await app.trigger('add-category');
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.advance(900000);
+  assert.equal(app.node('categories-dialog').open, false);
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.categoryDraft.resume, true);
+  assert.equal(app.categoryDraft.dirty, true);
+  assert.ok(app.categoryDraft.categories.some((entry) => entry.name === 'Напитки'));
+  assert.match(app.node('session-lock-note').textContent, /Черновик сохранён/);
+});
+
 test('15 minutes without real activity automatically hides dashboard and dialogs, retaining draft and captured logout CSRF', async () => {
   const app = await signedIn();
-  app.openEditor();
+  app.validateMenu(categoryFixture()); app.openEditor(app.state.items[0]);
   app.node('item-name').value = 'Новый тост';
   app.draft.dirty = true;
   app.node('delete-dialog').open = true;
@@ -863,7 +1369,7 @@ test('other tab acknowledged activity synchronizes deadline without a network ke
   await app.remote({ type: 'activity', username: 'ira@example.test', deadline: app.now() + 900000 });
   assert.equal(app.idle.deadline, app.now() + 900000);
   assert.equal(app.calls.length, count);
-  app.openEditor();
+  app.validateMenu(categoryFixture()); app.openEditor(app.state.items[0]);
   app.draft.dirty = true;
   await app.remote({ type: 'lock', forgetDevice: true });
   assert.equal(app.node('dashboard').hidden, true);
@@ -882,7 +1388,7 @@ test('switching to password entry does not silently revoke a trusted browser', a
 
 test('a sleeping tab does not log out a shared session extended by real activity in another tab', async () => {
   const app = await signedIn();
-  app.openEditor();
+  app.validateMenu(categoryFixture()); app.openEditor(app.state.items[0]);
   app.node('item-name').value = 'Черновик до сна';
   app.draft.dirty = true;
   await app.advance(910000, { suspended: true });
@@ -993,4 +1499,299 @@ test('stale-tab CSRF rejection does not revoke or mark a newer shared session as
   assert.equal(app.calls.at(-1).url, '/api/admin/session');
   assert.equal(app.calls.some((call) => call.url.endsWith('/logout')), false);
   assert.equal(app.storage.has('vosem-utra-admin-locked'), false);
+});
+
+
+async function chooseGroup(app, id) {
+  await app.trigger('category-sort-list', 'click', { target: { closest: selector => selector.includes('data-group-select') ? { dataset: { groupSelect: id } } : null } });
+}
+
+test('group deletion moves dishes in a draft and preserves other groups, then saves all changes atomically', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.categories.push({ id: 'child', name: 'Детское', parentId: 'breakfast', order: 2 });
+  data.items.push({ ...data.items[0], id: 'child-porridge', category: 'child' });
+  app.validateMenu(data); app.openCategoryManager();
+  await app.trigger('delete-category');
+  assert.match(app.node('delete-category-description').textContent, /Блюд в группе: 1.*Остальные группы/);
+  assert.equal(app.node('confirm-delete-category').disabled, true);
+  assert.ok(!app.node('delete-category-destination').children.some(option => option.value === 'breakfast' || option.value === '__cash__'));
+  const before = app.calls.length;
+  app.node('delete-category-destination').value = 'dinner'; await app.trigger('delete-category-destination', 'change');
+  assert.equal(app.node('confirm-delete-category').disabled, false);
+  await app.trigger('confirm-delete-category');
+  assert.equal(app.calls.length, before, 'Deletion stays local until Save groups');
+  assert.equal(app.state.items[0].category, 'breakfast');
+  assert.equal(app.categoryDraft.items[0].category, 'dinner');
+  assert.equal(app.categoryDraft.items[0].published, true);
+  assert.equal(app.categoryDraft.categories.find(entry => entry.id === 'child').parentId, null);
+  assert.equal(app.categoryDraft.items.at(-1).category, 'child');
+  app.responses.push({ body: { ...data, categories: app.categoryDraft.categories, items: app.categoryDraft.items, revision: 7 } });
+  await app.trigger('categories-form', 'submit');
+  assert.equal(app.calls.length, before + 1);
+  const saved = app.calls.at(-1).body;
+  assert.equal(saved.revision, 6); assert.equal(saved.items[0].category, 'dinner');
+  assert.ok(!saved.categories.some(entry => entry.id === 'breakfast'));
+  assert.deepEqual(saved.sourceCategories, data.sourceCategories);
+});
+
+test('deleting a sourced-only group detaches dishes without destroying their source records or publication metadata on other dishes', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.items[1] = { ...data.items[1], category: 'dinner', published: true, availableForOrder: false };
+  app.validateMenu(data); app.openCategoryManager(); await chooseGroup(app, 'dinner');
+  await app.trigger('delete-category');
+  assert.ok(app.node('delete-category-destination').children.some(option => option.value === '__cash__'));
+  app.node('delete-category-destination').value = '__cash__'; await app.trigger('delete-category-destination', 'change');
+  await app.trigger('confirm-delete-category');
+  const detached = app.categoryDraft.items[1];
+  assert.equal(detached.category, null); assert.equal(detached.published, false); assert.equal(detached.availableForOrder, false);
+  assert.equal(app.categoryDraft.items.length, data.items.length);
+  assert.deepEqual(JSON.parse(JSON.stringify(detached.source)), data.items[1].source);
+  assert.equal(app.categoryDraft.items[0].category, 'breakfast');
+  assert.equal(app.state.items[1].category, 'dinner');
+  await app.trigger('cancel-categories'); app.openCategoryManager();
+  assert.equal(app.categoryDraft.items[1].category, 'dinner', 'Cancel discards draft deletions');
+});
+
+test('a last occupied legacy group cannot be deleted or detached even with a forged destination', async () => {
+  const app = await page(); const data = categoryFixture(); data.categories = [data.categories[0]];
+  app.validateMenu(data); app.openCategoryManager(); await app.trigger('delete-category');
+  assert.equal(app.node('confirm-delete-category').disabled, true);
+  assert.match(app.node('delete-category-help').textContent, /Сначала добавьте другую группу/);
+  app.node('delete-category-destination').value = '__cash__'; await app.trigger('confirm-delete-category');
+  assert.equal(app.categoryDraft.categories.length, 1); assert.equal(app.categoryDraft.items[0].category, 'breakfast');
+  assert.match(app.node('categories-error').textContent, /Выберите другую группу/);
+});
+
+test('empty groups including the last one are removable without deleting cash data', async () => {
+  const app = await page(); const data = categoryFixture(); data.items = data.items.filter(item => item.source); data.categories = [data.categories[1]];
+  app.validateMenu(data); app.openCategoryManager(); await app.trigger('delete-category');
+  assert.equal(app.node('delete-category-destination-field').hidden, true);
+  assert.equal(app.node('confirm-delete-category').disabled, false);
+  await app.trigger('confirm-delete-category');
+  assert.equal(app.categoryDraft.categories.length, 0);
+  assert.equal(app.node('new-category-section').open, true);
+  app.responses.push({ body: { ...data, categories: [], revision: 7 } });
+  await app.trigger('categories-form', 'submit');
+  assert.deepEqual(app.calls.at(-1).body.categories, []); assert.equal(app.calls.at(-1).body.items.length, 3);
+});
+
+test('previously nested website groups become peers and remain available as move destinations', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.categories.push({ id: 'child', name: 'Детское', parentId: 'breakfast', order: 2 });
+  data.categories.push({ id: 'grandchild', name: 'Малышам', parentId: 'child', order: 3 });
+  app.validateMenu(data); app.openCategoryManager(); await app.trigger('delete-category');
+  app.node('delete-category-destination').value = 'child'; await app.trigger('confirm-delete-category');
+  assert.equal(app.categoryDraft.items[0].category, 'child');
+  assert.equal(app.categoryDraft.categories.find(entry => entry.id === 'child').parentId, null);
+  assert.equal(app.categoryDraft.categories.find(entry => entry.id === 'grandchild').parentId, null);
+});
+
+test('submitting an unknown dish ID never sends a creation request', async () => {
+  const app = await page(); app.validateMenu(categoryFixture());
+  app.openEditor(app.state.items[0]); app.draft.id = 'does-not-exist';
+  const before = app.calls.length; await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.length, before); assert.match(app.node('editor-error').textContent, /больше недоступно/);
+  assert.equal(app.draft.isNew, false);
+  assert.doesNotMatch(source + html, /[Кк]атегори[яиюйях]/);
+});
+
+test('catalog profile creates a manual dish, retains existing dishes and offers ordinary deletion', async () => {
+  const app = await page(undefined, { profile: 'catalog' });
+  app.validateMenu(categoryFixture()); app.render();
+  assert.equal(app.node('add-dish').hidden, false);
+  const original = structuredClone(app.state.items);
+  app.openEditor();
+  assert.equal(app.node('editor-title').textContent, 'Добавить блюдо');
+  assert.equal(app.draft.isNew, true);
+  app.node('item-name').value = 'Новый завтрак'; app.node('description').value = 'Яйцо и авокадо'; app.node('price').value = '550';
+  const category = app.node('category').value;
+  const added = { id: 'new-dish-test-id', name: 'Новый завтрак', description: 'Яйцо и авокадо', price: 550,
+    category, image: '', order: Math.max(0, ...original.map(item => item.order)) + 1, published: true, availableForOrder: true, hiddenOnSite: false };
+  app.responses.push({ body: { categories: app.state.categories, sourceCategories: app.state.sourceCategories,
+    items: [...original, added], revision: app.state.revision + 1 } });
+  await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.at(-1).method, 'PUT');
+  assert.deepEqual(JSON.parse(JSON.stringify(app.calls.at(-1).body.items)), [...original, added]);
+  assert.equal(app.node('editor-dialog').open, false);
+  assert.match(app.node('dashboard-message').textContent, /Видно на сайте/);
+  assert.doesNotMatch(app.node('dashboard-message').textContent, /заказать|касс/);
+  const walk = node => [node, ...node.children.flatMap(walk)];
+  const nodes = walk(app.itemCard(added));
+  assert.ok(nodes.some(node => node.dataset.itemAction === 'delete'));
+  assert.ok(!nodes.some(node => /Можно заказать|Из кассы/.test(node.textContent)));
+});
+
+test('availability sync preserves manual availability and source records, has busy state and sends only a CSRF protected status request', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.keeperSync = { configured: true, updatedAt: null, matched: 0, forbidden: 0, limited: 0 };
+  app.validateMenu(data); app.state.csrfToken = 'sync-csrf';
+  let release;
+  const response = { ...data, keeperSync: { ...data.keeperSync, updatedAt: '2026-09-30T12:10:00Z', matched: 1, limited: 1 },
+    items: data.items.map(item => item.id === 'porridge' ? { ...item, availableForOrder: true, keeperAvailability: { forbidden: true, remaining: 1.5, updatedAt: '2026-09-30T12:10:00Z' } } : item) };
+  app.responses.push({ body: response, wait: new Promise(resolve => { release = resolve; }) });
+  const syncing = app.trigger('sync-availability'); await app.settle();
+  assert.ok([...app.timers.values()].some(timer => timer.delay === 90000), 'The sequential API authentication and stock request has its own longer timeout');
+  assert.equal(app.node('sync-availability').disabled, true); assert.equal(app.node('sync-availability').getAttribute('aria-busy'), 'true');
+  assert.equal(app.calls.at(-1).url, '/api/admin/sync-availability'); assert.equal(app.calls.at(-1).method, 'POST');
+  assert.equal(app.calls.at(-1).headers['X-CSRF-Token'], 'sync-csrf');
+  release(); await syncing;
+  assert.equal(app.state.items[0].availableForOrder, true);
+  const text = node => node.textContent + node.children.map(text).join(' ');
+  assert.match(text(app.itemCard(app.state.items[0])), /В стоп-листе/);
+  assert.match(app.node('keeper-sync-status').textContent, /Проверено:/);
+  assert.equal(app.node('sync-availability').disabled, false);
+  app.openEditor(app.state.items[0]); assert.match(app.node('editor-keeper-status').textContent, /В стоп-листе/);
+  assert.equal(app.state.items[0].availableForOrder, true, 'Stock is read-only and does not change persisted placement');
+  app.responses.push({ body: { ...response, revision: 7 } }); await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.at(-1).body.items[0].keeperAvailability, undefined);
+});
+
+test('sync errors retain the previous successful timestamp and fractional stock is shown without rounding to whole portions', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.keeperSync = { configured: true, updatedAt: '2026-09-30T12:10:00Z', matched: 1, forbidden: 0, limited: 1 };
+  data.items[0].keeperAvailability = { forbidden: false, remaining: 1.5, updatedAt: data.keeperSync.updatedAt };
+  app.validateMenu(data); const previous = app.node('keeper-sync-status').textContent;
+  const text = node => node.textContent + node.children.map(text).join(' ');
+  assert.match(text(app.itemCard(app.state.items[0])), /Осталось: 1,5 порц/);
+  app.responses.push({ status: 502, body: { error: 'Касса временно недоступна' } });
+  await app.trigger('sync-availability');
+  assert.equal(app.node('keeper-sync-status').textContent, previous);
+  assert.equal(app.state.items[0].keeperAvailability.remaining, 1.5);
+  assert.match(app.node('dashboard-message').textContent, /Касса временно недоступна/);
+  app.state.items[0].keeperAvailability.remaining = 0.5;
+  assert.match(text(app.itemCard(app.state.items[0])), /Осталось: 0,5 порц/);
+  assert.doesNotMatch(text(app.itemCard(app.state.items[0])), /Можно заказать/);
+  app.state.items[0].keeperAvailability.remaining = 0;
+  assert.match(text(app.itemCard(app.state.items[0])), /Нет в наличии/);
+});
+
+test('unconfigured availability sync stays disabled in both site and cash modes without issuing a request', async () => {
+  const app = await page(); app.validateMenu(categoryFixture());
+  const before = app.calls.length;
+  for (const mode of ['site', 'cash']) {
+    app.setMenuMode(mode); assert.equal(app.node('sync-availability').disabled, true);
+    await app.trigger('sync-availability');
+  }
+  assert.equal(app.calls.length, before); assert.match(app.node('keeper-sync-status').textContent, /Подключение к кассе не настроено/);
+});
+
+
+const groupRow = (app, id) => app.node('category-sort-list').children.find(row => row.dataset.groupId === id);
+const groupIds = app => Array.from(app.categoryDraft.categories, group => group.id);
+
+async function moveGroupWithButton(app, id, direction) {
+  await app.trigger('category-sort-list', 'click', { target: { closest: selector => selector.includes('data-group-move') ? { dataset: { groupMove: id, direction: String(direction) } } : null } });
+}
+
+test('website groups are flat and reorder buttons persist the same top-to-bottom website order only after saving', async () => {
+  const app = await page(); const data = categoryFixture();
+  data.categories.push({ id: 'drinks', name: 'Напитки', parentId: 'breakfast', order: 2 });
+  app.validateMenu(data); app.openCategoryManager();
+  assert.ok(app.categoryDraft.categories.every(group => group.parentId === null));
+  assert.doesNotMatch(html, /selected-category-parent|new-category-parent|Расположение/);
+  const before = app.calls.length;
+  const firstId = groupIds(app)[0];
+  await moveGroupWithButton(app, firstId, 1);
+  assert.notEqual(groupIds(app)[0], firstId);
+  assert.equal(app.calls.length, before); assert.equal(app.state.categories[0].id, firstId);
+  assert.deepEqual(Array.from(app.categoryDraft.categories, group => group.order), [0, 1, 2]);
+  app.responses.push({ body: { ...data, categories: app.categoryDraft.categories, revision: 7 } });
+  await app.trigger('categories-form', 'submit');
+  const sent = app.calls.at(-1).body;
+  assert.deepEqual(sent.categories.map(group => group.id), groupIds(app));
+  assert.ok(sent.categories.every(group => group.parentId === null));
+  assert.deepEqual(sent.sourceCategories, data.sourceCategories);
+});
+
+test('arrow keys and Home/End on group handles reorder accessibly and cancellation discards the draft order', async () => {
+  const app = await page(); app.validateMenu(categoryFixture()); app.openCategoryManager();
+  const handle = groupRow(app, 'dinner').children[0];
+  await app.trigger('category-sort-list', 'keydown', { key: 'Home', target: { closest: () => handle } });
+  assert.deepEqual(groupIds(app), ['dinner', 'breakfast']);
+  assert.match(app.node('group-sort-announcement').textContent, /место 1 из 2/);
+  assert.equal(app.document.activeElement, groupRow(app, 'dinner').children[0]);
+  await app.trigger('cancel-categories'); app.openCategoryManager();
+  assert.deepEqual(groupIds(app), ['breakfast', 'dinner']);
+  await app.trigger('category-sort-list', 'keydown', { key: 'End', target: { closest: () => groupRow(app, 'breakfast').children[0] } });
+  assert.deepEqual(groupIds(app), ['dinner', 'breakfast']);
+});
+
+for (const pointerType of ['mouse', 'touch']) {
+  test(`${pointerType} dragging uses a visible insertion marker and changes the draft order on release`, async () => {
+    const app = await page(); app.validateMenu(categoryFixture()); app.openCategoryManager();
+    const list = app.node('category-sort-list');
+    list.getBoundingClientRect = () => ({ top: 0, bottom: 160, height: 160 });
+    list.children.forEach((row, index) => { row.getBoundingClientRect = () => ({ top: index * 75, height: 65 }); });
+    const first = groupRow(app, 'breakfast'); const second = groupRow(app, 'dinner');
+    const start = { pointerId: 11, pointerType, clientY: 30, button: 0, target: { closest: () => first.children[0] } };
+    await app.trigger('category-sort-list', 'pointerdown', start);
+    await app.trigger('category-sort-list', 'pointermove', { ...start, clientY: 130 });
+    assert.equal(first.classList.contains('is-dragging'), true);
+    assert.equal(second.classList.contains('drop-after'), true);
+    assert.deepEqual(groupIds(app), ['breakfast', 'dinner']);
+    await app.trigger('category-sort-list', 'pointerup', { ...start, clientY: 130 });
+    assert.deepEqual(groupIds(app), ['dinner', 'breakfast']);
+    assert.equal(first.classList.contains('is-dragging'), false);
+    assert.equal(second.classList.contains('drop-after'), false);
+  });
+}
+
+test('cancelled pointer dragging and session locking clear drag visuals without committing any order', async () => {
+  const app = await signedIn(); app.validateMenu(categoryFixture()); app.openCategoryManager();
+  const list = app.node('category-sort-list'); list.getBoundingClientRect = () => ({ top: 0, bottom: 160, height: 160 });
+  list.children.forEach((row, index) => { row.getBoundingClientRect = () => ({ top: index * 75, height: 65 }); });
+  const first = groupRow(app, 'breakfast');
+  const start = { pointerId: 12, pointerType: 'touch', clientY: 30, target: { closest: () => first.children[0] } };
+  await app.trigger('category-sort-list', 'pointerdown', start);
+  await app.trigger('category-sort-list', 'pointermove', { ...start, clientY: 130 });
+  await app.trigger('category-sort-list', 'pointercancel', start);
+  assert.deepEqual(groupIds(app), ['breakfast', 'dinner']); assert.equal(first.classList.contains('is-dragging'), false);
+  await app.trigger('category-sort-list', 'pointerdown', start);
+  await app.trigger('category-sort-list', 'pointermove', { ...start, clientY: 130 });
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.advance(900000);
+  assert.equal(app.node('categories-dialog').open, false);
+  assert.equal(first.classList.contains('is-dragging'), false);
+  assert.deepEqual(groupIds(app), ['breakfast', 'dinner']);
+});
+
+test('hiding and restoring a dish retains its group and edits; failures never claim success', async () => {
+  const app = await page(passwordSession, { profile: 'catalog' });
+  app.state.csrfToken = 'visibility-csrf';
+  const initial = categoryFixture(); app.validateMenu(initial); app.render();
+  const item = app.state.items[0];
+  const walk = node => [node, ...node.children.flatMap(walk)];
+  const clickVisibility = () => app.trigger('items', 'click', { target: { closest: () => ({ dataset: { itemId: item.id, itemAction: 'visibility' } }) } });
+  const hidden = { ...initial, revision: 7, items: initial.items.map(entry => entry.id === item.id ? { ...entry, hiddenOnSite: true } : entry) };
+  app.responses.push({ body: hidden }); await clickVisibility();
+  assert.equal(app.calls.at(-1).body.items[0].hiddenOnSite, true);
+  assert.equal(app.calls.at(-1).headers['X-CSRF-Token'], 'visibility-csrf');
+  assert.equal(app.state.items[0].published, false); assert.equal(app.state.items[0].availableForOrder, false);
+  assert.equal(app.state.items[0].category, item.category);
+  assert.ok(walk(app.node('items')).some(node => node.textContent === 'Скрыто с сайта'));
+  assert.ok(walk(app.node('items')).some(node => node.textContent === 'Показать на сайте'));
+  app.openEditor(app.state.items[0]); assert.equal(app.node('show-on-site').checked, false);
+  app.node('description').value = 'Новое описание скрытого блюда';
+  app.responses.push({ body: { ...hidden, revision: 8 } }); await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.at(-1).body.items[0].hiddenOnSite, true);
+  assert.equal(app.calls.at(-1).body.items[0].description, 'Новое описание скрытого блюда');
+  assert.match(app.node('dashboard-message').textContent, /Скрыто с сайта/);
+  app.responses.push({ status: 500, body: { error: 'Не удалось сохранить' } }); await clickVisibility();
+  assert.equal(app.state.items[0].hiddenOnSite, true);
+  assert.doesNotMatch(app.node('dashboard-message').textContent, /снова видно/);
+  app.responses.push({ body: { ...initial, revision: 9, items: initial.items.map(entry => ({ ...entry, hiddenOnSite: false })) } });
+  await clickVisibility(); assert.equal(app.state.items[0].published, true);
+  assert.equal(app.calls.at(-1).body.items[0].hiddenOnSite, false);
+  assert.match(app.node('dashboard-message').textContent, /снова видно/);
+});
+
+test('dish editor can hide a new dish before its first publication', async () => {
+  const app = await page(passwordSession, { profile: 'catalog' });
+  app.state.csrfToken = 'visibility-csrf'; app.validateMenu(categoryFixture()); app.openEditor();
+  assert.equal(app.node('show-on-site').checked, true);
+  app.node('item-name').value = 'Будущее блюдо'; app.node('price').value = '350'; app.node('show-on-site').checked = false;
+  app.responses.push({ body: { ...categoryFixture(), revision: 7 } }); await app.trigger('item-form', 'submit');
+  const dish = app.calls.at(-1).body.items.at(-1);
+  assert.equal(dish.hiddenOnSite, true); assert.equal(dish.published, false); assert.equal(dish.availableForOrder, false);
+  assert.equal(dish.category, 'breakfast');
 });

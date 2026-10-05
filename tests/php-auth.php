@@ -356,6 +356,42 @@ try {
         expectError(fn() => $auth->authorizedOperation($done['token'], $done['csrfToken'], $operation), 'unauthorized');
         check(!$committed);
     });
+    runTest('password mode keeps existing accounts, ignores old devices and rejects every MFA entry point', function () {
+        $app=fixture();$setup=enroll($app);$before=state($app)['account'];
+        $auth=new CafeAuth($app['directory'],array_replace($app['config'],['auth_mode'=>'password']));
+        $status=$auth->status(null,$setup['done']['deviceToken']);
+        check($status['authMode']==='password' && $status['mfaRequired']===false && $status['ready'] && !isset($status['trustedUsername']));
+        expectError(fn()=>$auth->login(credentials('wrong-password'),'peer'),'invalid_credentials');
+        $session=$auth->login(credentials(),'peer');check($session['authenticated'] && $session['authMode']==='password' && !isset($session['challengeToken'],$session['deviceToken']));
+        check(state($app)['account']===$before,'Existing credentials changed');
+        expectError(fn()=>$auth->resume($setup['done']['deviceToken'],'peer'),'auth_method_disabled');
+        expectError(fn()=>$auth->verify(['challengeToken'=>$setup['pending']['challengeToken'],'code'=>'123456'],'peer'),'auth_method_disabled');
+        expectError(fn()=>$auth->enrollStart([],'peer'),'auth_method_disabled');
+        expectError(fn()=>$auth->enrollConfirm([],'peer'),'auth_method_disabled');
+        check($auth->requireSession($session['token'],$session['csrfToken'],true)['username']==='v.utra@yandex.ru');
+        expectError(fn()=>$auth->requireSession($session['token'],'bad',true),'csrf');
+        $auth->logout($session['token'],'peer');check(!$auth->status($session['token'],$setup['done']['deviceToken'])['authenticated']);
+    });
+    runTest('password mode persists verified bootstrap and still enforces rate limits and idle expiry', function () {
+        $app=fixture(['auth_mode'=>'password']);$auth=$app['auth'];
+        check($auth->status()['ready'] && !$auth->status()['enrollmentAvailable']);
+        for($i=0;$i<8;$i++)expectError(fn()=>$auth->login(credentials('wrong-password'),'blocked-peer'),'invalid_credentials');
+        expectError(fn()=>$auth->login(credentials(),'blocked-peer'),'rate_limit');
+        $session=$auth->login(credentials(),'other-peer');check(state($app)['account']['username']==='v.utra@yandex.ru');
+        $app['clock']->now+=900000;check($auth->session($session['token'])===null);
+        $next=$auth->login(credentials(),'other-peer');check($next['authenticated'] && $next['token']!==$session['token']);
+    });
+    runTest('temporary password must be replaced without QR before opening any session', function () {
+        global $passwordHash;$app=fixture(['auth_mode'=>'password']);$auth=$app['auth'];
+        $auth->installAccount(['version'=>1,'username'=>'v.utra@yandex.ru','passwordHash'=>$passwordHash,'credentialVersion'=>str_repeat('27',32),'totp'=>null,'recovery'=>[], 'temporaryPassword'=>true,'initialExpiresAt'=>TEST_NOW+600000]);
+        $pending=$auth->login(credentials(),'peer');check($pending['passwordChangeRequired'] && !isset($pending['token']) && state($app)['sessions']===[]);
+        expectError(fn()=>$auth->completePasswordReset(['passwordToken'=>$pending['passwordToken'],'password'=>TEST_PASSWORD],'peer'),'invalid_password');
+        $auth->completePasswordReset(['passwordToken'=>$pending['passwordToken'],'password'=>'new-password-for-fixture'],'peer');
+        expectError(fn()=>$auth->login(credentials(),'peer'),'invalid_credentials');
+        check($auth->login(credentials('new-password-for-fixture'),'peer')['authenticated']);
+        check(!isset(state($app)['account']['temporaryPassword']));
+        expectError(fn()=>$auth->completePasswordReset(['passwordToken'=>$pending['passwordToken'],'password'=>'another-password'],'peer'),'invalid_reset');
+    });
     echo "{$passed} PHP authentication tests passed.\n";
 } finally {
     foreach ($directories as $directory) removeFixture($directory);

@@ -1,17 +1,20 @@
+import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from './menu-categories.js';
+
 const $ = (id) => document.getElementById(id);
-const categories = {
-  signature: 'Фирменные завтраки',
-  eggs: 'Яйца и тосты',
-  porridge: 'Каши и гранола',
-  sweet: 'Сладкое утро',
-};
+const manualMenu = $('site-profile').getAttribute('content') === 'catalog';
 const currency = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 });
-const state = { items: [], revision: null, csrfToken: '', busy: false, loaded: false, conflict: false };
-// Authentication challenges and entered codes live only in this page's memory.
-const auth = { challengeToken: '', recovery: false, busy: false, setupRequired: false, production: false, mfaRequired: false,
+const state = { items: [], categories: [], sourceCategories: [], mode: 'site', siteCategory: null, cashGroupId: null,
+  siteSearch: '', cashSearch: '', keeperSync: { configured: false, updatedAt: null }, syncing: false, revision: null, csrfToken: '', busy: false, loaded: false, conflict: false };
+// Login challenges, password grants and entered codes live only in page memory.
+const auth = { challengeToken: '', recovery: false, busy: false, setupRequired: false, production: false, mfaRequired: false, passwordOnly: false,
   enrollmentAvailable: false, enrollmentToken: '', enrollmentPhase: '', enrollmentTimer: null, generation: 0,
   requiresNewPassword: false, recoveryPending: false, trustedUsername: '', logoutPending: false };
-const draft = { id: null, isNew: true, image: '', file: null, previewUrl: '', dirty: false, resume: false };
+const draft = { id: null, image: '', file: null, previewUrl: '', dirty: false, resume: false };
+const passwordReset = { token: '', passwordToken: '', email: '', retryAt: 0, verifyAt: 0, completeAt: 0, expiresAt: 0, resumeUntil: 0, timer: null, generation: 0 };
+const RESET_STORAGE_KEY = 'vosem-utra-password-reset';
+const categoryDraft = { categories: [], items: [], selectedId: null, revision: null, dirty: false, resume: false };
+const categoryControls = { selects: [], rows: [] };
+let categoryDrag = null;
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 30 * 1000;
 const idle = { active: false, generation: 0, deadline: 0, absoluteDeadline: 0, timeoutMs: IDLE_TIMEOUT_MS,
@@ -65,6 +68,8 @@ const passwordFields = [
   ['password', 'пароль'],
   ['enrollment-password', 'новый пароль'],
   ['enrollment-password-confirm', 'повтор пароля'],
+  ['reset-password', 'новый пароль'],
+  ['reset-password-confirm', 'повтор пароля'],
 ];
 
 function setPasswordVisible(id, label, visible) {
@@ -101,10 +106,11 @@ function validUsername(value) {
 }
 
 class ApiError extends Error {
-  constructor(message, status = 0, code = '') {
+  constructor(message, status = 0, code = '', retryAfter = 0) {
     super(message);
     this.status = status;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -169,6 +175,10 @@ function acceptSessionTiming(data, { initial = false, activity = false } = {}) {
 }
 
 function showLockedIdentity(username, note = '') {
+  if (auth.passwordOnly) {
+    if (validUsername(username)) $('username').value = username;
+    $('password').focus(); message($('session-lock-note'), note); return;
+  }
   if (typeof username === 'string' && validUsername(username)) {
     auth.setupRequired = false;
     showVerification('', username);
@@ -185,6 +195,9 @@ async function lockSession({ reason = 'idle', forgetDevice = false, remote = fal
   draft.resume = draft.resume || $('editor-dialog').open;
   $('editor-dialog').close();
   $('delete-dialog').close();
+  clearCategoryDrag();
+  categoryDraft.resume = categoryDraft.resume || $('categories-dialog').open;
+  $('categories-dialog').close();
   deleteId = null;
   showLogin();
   if (persist) rememberLocked(forgetDevice, !remote);
@@ -195,10 +208,10 @@ async function lockSession({ reason = 'idle', forgetDevice = false, remote = fal
   }
   setBusy(false);
   setAuthBusy(false);
+  const draftNote = draft.resume || categoryDraft.resume ? ' Черновик сохранён в этой вкладке.' : '';
   const note = reason === 'idle'
-    ? `Панель закрыта после 15 минут без действий.${draft.resume ? ' Черновик сохранён в этой вкладке.' : ''}`
-    : reason === 'expired' ? `Сессия завершилась.${draft.resume ? ' Черновик сохранён в этой вкладке.' : ''}`
-      : `Вы вышли из панели.${draft.resume ? ' Черновик сохранён в этой вкладке.' : ''}`;
+    ? `Панель закрыта после 15 минут без действий.${draftNote}`
+    : reason === 'expired' ? `Сессия завершилась.${draftNote}` : `Вы вышли из панели.${draftNote}`;
   if (forgetDevice) { idle.username = ''; $('username').value = ''; }
   showLockedIdentity(forgetDevice ? '' : username, note);
   if (!remote) broadcastAuth({ type: 'lock', forgetDevice, pending: true });
@@ -275,7 +288,7 @@ async function api(path, { method = 'GET', body, raw = false, csrfToken = state.
   const generation = idle.generation;
   const protectedRequest = Boolean(csrfToken) && !allowAfterLock;
   if (protectedRequest) idle.requests.add(controller);
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), path === 'sync-availability' ? 90000 : 20000);
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = raw ? body.type : 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
@@ -291,7 +304,10 @@ async function api(path, { method = 'GET', body, raw = false, csrfToken = state.
     if (protectedRequest && generation !== idle.generation) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
     if (!response.ok) {
       const detail = typeof data.error === 'string' ? data.error : data.error?.message || data.message;
-      throw new ApiError(detail || `Не удалось выполнить запрос (${response.status}). Попробуйте ещё раз.`, response.status, data.code || data.error?.code || '');
+      const retryHeader = response.headers.get('retry-after');
+      const retrySeconds = /^\d+$/.test(retryHeader || '') ? Number(retryHeader) : (Date.parse(retryHeader) - Date.now()) / 1000;
+      const retryAfter = Number.isFinite(retrySeconds) ? Math.min(86400, Math.max(0, Math.ceil(retrySeconds))) : 0;
+      throw new ApiError(detail || `Не удалось выполнить запрос (${response.status}). Попробуйте ещё раз.`, response.status, data.code || data.error?.code || '', retryAfter);
     }
     return data;
   } catch (error) {
@@ -323,9 +339,15 @@ function setBusy(busy) {
   $('dashboard').setAttribute('aria-busy', String(busy));
   $('item-form').setAttribute('aria-busy', String(busy));
   $('editor-fields').disabled = busy;
-  for (const id of ['logout', 'logout-forget', 'add-item', 'refresh', 'retry-load', 'close-editor', 'cancel-editor', 'refresh-draft', 'cancel-delete', 'confirm-delete']) $(id).disabled = busy;
+  $('categories-fields').disabled = busy;
+  for (const id of ['logout', 'logout-forget', 'add-dish', 'empty-browse-cash', 'manage-categories', 'close-categories', 'cancel-categories', 'refresh', 'retry-load', 'close-editor', 'cancel-editor', 'refresh-draft', 'cancel-delete', 'confirm-delete']) $(id).disabled = busy;
+  $('save-categories').disabled = busy || state.conflict || !state.loaded;
+  $('save-categories').textContent = busy ? 'Сохраняем…' : 'Сохранить группы';
   $('save-item').disabled = busy || state.conflict || !state.loaded;
+  $('empty-browse-cash').disabled = busy || state.conflict || !state.loaded;
+  $('manage-categories').disabled = busy || !state.loaded;
   $('save-item').textContent = busy ? 'Сохраняем…' : 'Сохранить блюдо';
+  renderKeeperSync();
   document.querySelectorAll('[data-item-action]').forEach((button) => { button.disabled = busy || state.conflict || !state.loaded; });
 }
 
@@ -335,11 +357,17 @@ function setAuthBusy(busy) {
   if (busy) hidePasswords();
   for (const id of ['username', 'password', 'password-toggle', 'enrollment-password-toggle', 'enrollment-password-confirm-toggle', 'login-submit', 'verification-code', 'verify-submit', 'code-mode', 'auth-back', 'check-setup',
     'enrollment-username', 'enrollment-password', 'enrollment-password-confirm', 'enrollment-start', 'enrollment-back',
-    'enrollment-code', 'enrollment-confirm', 'enrollment-cancel', 'saved-recovery-codes', 'recovery-logout', 'auth-forget-device']) {
+    'enrollment-code', 'enrollment-confirm', 'enrollment-cancel', 'saved-recovery-codes', 'recovery-logout', 'auth-forget-device',
+    'forgot-password', 'reset-email', 'reset-code', 'reset-password', 'reset-password-confirm', 'reset-password-toggle', 'reset-password-confirm-toggle',
+    'reset-request-submit', 'reset-code-submit', 'reset-password-submit', 'reset-request-back', 'reset-code-back', 'reset-password-back', 'reset-change-email', 'reset-resend', 'reset-have-code']) {
     $(id).disabled = busy || (auth.setupRequired && id !== 'check-setup');
   }
-  for (const id of ['login-form', 'verify-form', 'enrollment-form', 'enrollment-verify-form', 'enrollment-recovery-form']) $(id).setAttribute('aria-busy', String(busy));
-  $('login-submit').textContent = busy ? 'Проверяем…' : 'Продолжить ↗';
+  for (const id of ['login-form', 'verify-form', 'enrollment-form', 'enrollment-verify-form', 'enrollment-recovery-form', 'reset-request-form', 'reset-code-form', 'reset-password-form']) $(id).setAttribute('aria-busy', String(busy));
+  $('reset-request-submit').textContent = busy ? 'Отправляем…' : 'Получить код ↗';
+  $('reset-code-submit').textContent = busy ? 'Проверяем…' : 'Подтвердить код ↗';
+  $('reset-password-submit').textContent = busy ? 'Сохраняем…' : 'Сохранить пароль ↗';
+  updateResetResend();
+  $('login-submit').textContent = busy ? 'Проверяем…' : auth.passwordOnly ? 'Войти ↗' : 'Продолжить ↗';
   $('verify-submit').textContent = busy ? 'Проверяем…' : 'Подтвердить вход ↗';
   $('enrollment-start').textContent = busy ? 'Готовим…' : 'Показать QR-код ↗';
   $('enrollment-confirm').textContent = busy ? 'Проверяем…' : 'Подтвердить подключение ↗';
@@ -387,7 +415,215 @@ function clearEnrollment() {
   for (const id of ['enrollment-error', 'enrollment-verify-error', 'recovery-error']) message($(id), '');
 }
 
+function updateResetResend() {
+  clearTimeout(passwordReset.timer);
+  passwordReset.timer = null;
+  const remaining = Math.max(0, Math.ceil((passwordReset.retryAt - sessionNow()) / 1000));
+  const verifyWait = Math.max(0, Math.ceil((passwordReset.verifyAt - sessionNow()) / 1000));
+  const completeWait = Math.max(0, Math.ceil((passwordReset.completeAt - sessionNow()) / 1000));
+  const codeLeft = Math.max(0, Math.ceil((passwordReset.expiresAt - sessionNow()) / 1000));
+  const blocked = auth.busy || auth.setupRequired;
+  $('reset-resend').disabled = auth.busy || auth.setupRequired || remaining > 0;
+  $('reset-resend').textContent = remaining ? `Новое письмо через ${resetDuration(remaining)}` : 'Отправить код повторно';
+  $('reset-request-submit').disabled = blocked || remaining > 0;
+  $('reset-code-submit').disabled = blocked || verifyWait > 0 || (passwordReset.expiresAt > 0 && !codeLeft);
+  $('reset-password-submit').disabled = blocked || completeWait > 0;
+  message($('reset-request-wait'), remaining ? `Повторная отправка станет доступна через ${resetDuration(remaining)}.` : '');
+  message($('reset-code-wait'), verifyWait ? `Проверить код снова можно через ${resetDuration(verifyWait)}.` : '');
+  message($('reset-password-wait'), completeWait ? `Сохранить пароль снова можно через ${resetDuration(completeWait)}.` : '');
+  if (passwordReset.expiresAt) $('reset-code-help').textContent = codeLeft
+    ? `Код действует ещё ${resetDuration(codeLeft)}. Ожидание нового письма не мешает ввести этот код.`
+    : remaining ? 'Срок действия кода истёк. Запросите новое письмо, когда закончится ожидание на кнопке ниже.'
+      : 'Срок действия кода истёк. Запросите новое письмо кнопкой ниже.';
+  else $('reset-code-help').textContent = 'Введите 8 цифр из письма. Код действует 10 минут с момента запроса. Новое письмо для проверки не требуется.';
+  if ((remaining || verifyWait || completeWait || codeLeft) &&
+      ['reset-request-form', 'reset-code-form', 'reset-password-form'].some(id => !$(id).hidden)) passwordReset.timer = setTimeout(updateResetResend, 1000);
+}
+
+function resetDuration(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function resetRetrySeconds(seconds) { return Math.min(180, Math.max(1, Number(seconds) || 60)); }
+
+// Only the mail-request handle is retained in this tab; it cannot reset a password
+// without the email code. Never store the code, new password, or password grant.
+function rememberPasswordReset() {
+  try {
+    if (!passwordReset.email || passwordReset.passwordToken) { globalThis.sessionStorage?.removeItem(RESET_STORAGE_KEY); return; }
+    const { token, email, retryAt, verifyAt, expiresAt, resumeUntil } = passwordReset;
+    globalThis.sessionStorage?.setItem(RESET_STORAGE_KEY, JSON.stringify({ token, email, retryAt, verifyAt, expiresAt, resumeUntil }));
+  } catch { /* Restricted browser storage: the current tab can still complete recovery. */ }
+}
+
+function readPasswordReset() {
+  try {
+    const saved = JSON.parse(globalThis.sessionStorage?.getItem(RESET_STORAGE_KEY) || 'null');
+    if (saved && (saved.token === '' || /^[a-f0-9]{64}$/.test(saved.token)) && validUsername(saved.email) && saved.email.includes('@') &&
+        ['retryAt', 'verifyAt', 'expiresAt'].every(key => Number.isFinite(saved[key]) && saved[key] >= 0) &&
+        Number.isFinite(saved.resumeUntil ?? saved.expiresAt) && (saved.resumeUntil ?? saved.expiresAt) <= sessionNow() + 600000 &&
+        saved.expiresAt <= sessionNow() + 600000 && Math.max(saved.resumeUntil ?? saved.expiresAt, saved.retryAt, saved.verifyAt) > sessionNow() &&
+        Math.max(saved.retryAt, saved.verifyAt) <= sessionNow() + 86400000) {
+      saved.resumeUntil ??= saved.expiresAt;
+      saved.retryAt = Math.min(saved.retryAt, sessionNow() + 180000);
+      saved.verifyAt = Math.min(saved.verifyAt, sessionNow() + 180000);
+      return saved;
+    }
+    globalThis.sessionStorage?.removeItem(RESET_STORAGE_KEY);
+  } catch { /* Invalid or unavailable storage cannot grant access. */ }
+  return null;
+}
+
+function showResetCode() {
+  $('login-form').hidden = true;
+  $('reset-request-form').hidden = true;
+  $('reset-code-form').hidden = false;
+  $('reset-code').value = '';
+  $('auth-heading').textContent = 'Введите код из письма';
+  $('auth-description').textContent = passwordReset.email;
+  message($('reset-delivery-note'), passwordReset.token
+    ? 'Если эта почта привязана к администратору, на неё придёт код восстановления.'
+    : 'Введите уже полученный код для этой почты. Новое письмо не отправлялось.');
+  updateResetResend();
+}
+
+function resumePasswordReset(saved) {
+  if (!saved || auth.setupRequired || state.csrfToken) return false;
+  // Assign the allowlisted fields only, never a stored password grant or auth state.
+  for (const key of ['token', 'email', 'retryAt', 'verifyAt', 'expiresAt', 'resumeUntil']) passwordReset[key] = saved[key];
+  rememberPasswordReset(); showResetCode();
+  return true;
+}
+
+function clearPasswordReset() {
+  passwordReset.generation += 1;
+  clearTimeout(passwordReset.timer);
+  passwordReset.timer = null;
+  passwordReset.token = ''; passwordReset.passwordToken = ''; passwordReset.email = ''; passwordReset.retryAt = 0;
+  passwordReset.verifyAt = 0; passwordReset.completeAt = 0; passwordReset.expiresAt = 0; passwordReset.resumeUntil = 0;
+  rememberPasswordReset();
+  for (const id of ['reset-email', 'reset-code', 'reset-password', 'reset-password-confirm']) $(id).value = '';
+  for (const id of ['reset-request-form', 'reset-code-form', 'reset-password-form']) $(id).hidden = true;
+  for (const id of ['reset-request-error', 'reset-code-error', 'reset-password-error', 'reset-delivery-note', 'reset-request-wait', 'reset-code-wait', 'reset-password-wait']) message($(id), '');
+}
+
+function showPasswordReset(email = '') {
+  showLogin();
+  $('login-form').hidden = true;
+  $('reset-request-form').hidden = false;
+  $('reset-email').value = email.includes('@') ? email : '';
+  $('auth-heading').textContent = 'Восстановим пароль';
+  $('auth-description').textContent = 'Укажите почту, с которой входите в админку. Получите письмо или введите код, который уже пришёл.';
+  $('reset-email').focus();
+}
+
+function showNewPassword(token, email, temporary = false) {
+  passwordReset.token = ''; passwordReset.passwordToken = token; passwordReset.email = email;
+  passwordReset.expiresAt = 0; passwordReset.verifyAt = 0; rememberPasswordReset();
+  $('reset-code').value = ''; $('login-form').hidden = true; $('reset-request-form').hidden = true;
+  $('reset-code-form').hidden = true; $('reset-password-form').hidden = false;
+  $('reset-password-step').textContent = temporary ? 'Новый пароль' : '3 из 3 · Новый пароль';
+  $('auth-heading').textContent = 'Придумайте новый пароль';
+  $('auth-description').textContent = temporary ? 'Замените временный пароль на свой. Затем войдите с новым паролем.'
+    : auth.passwordOnly ? 'После смены пароля войдите с почтой и новым паролем.'
+      : 'После смены пароля войдите заново. Подтверждение через приложение останется подключённым.';
+}
+
+async function sendResetCode(email, errorId) {
+  if (auth.busy || sessionNow() < passwordReset.retryAt) return;
+  if (!email.includes('@') || !validUsername(email)) { message($(errorId), 'Укажите почту администратора.'); return; }
+  const generation = passwordReset.generation;
+  setAuthBusy(true); message($(errorId), '');
+  try {
+    const data = await api('password-reset/request', { method: 'POST', body: { email } });
+    if (generation !== passwordReset.generation) return;
+    if (typeof data.resetToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.resetToken)) throw new ApiError('Не удалось запросить код. Повторите попытку.');
+    passwordReset.email = email; passwordReset.token = data.resetToken; passwordReset.passwordToken = '';
+    passwordReset.retryAt = sessionNow() + resetRetrySeconds(data.retryAfter) * 1000;
+    passwordReset.expiresAt = (timingObservedAt.get(data) ?? sessionNow()) + Math.min(600, Math.max(1, Number(data.expiresIn) || 600)) * 1000;
+    passwordReset.resumeUntil = passwordReset.expiresAt;
+    rememberPasswordReset(); showResetCode();
+  } catch (error) {
+    if (generation === passwordReset.generation) {
+      if (error.status === 429) {
+        passwordReset.retryAt = sessionNow() + resetRetrySeconds(error.retryAfter) * 1000;
+        rememberPasswordReset();
+      }
+      message($(errorId), error.message);
+    }
+  }
+  finally { setAuthBusy(false); if (generation === passwordReset.generation && !$('reset-code-form').hidden) $('reset-code').focus(); }
+}
+
+$('forgot-password').addEventListener('click', () => { if (!auth.busy) showPasswordReset($('username').value.trim()); });
+$('reset-request-form').addEventListener('submit', async (event) => {
+  event.preventDefault(); await sendResetCode($('reset-email').value.trim().toLowerCase(), 'reset-request-error');
+});
+$('reset-have-code').addEventListener('click', () => {
+  if (auth.busy || auth.setupRequired) return;
+  const email = $('reset-email').value.trim().toLowerCase();
+  if (!email.includes('@') || !validUsername(email)) { message($('reset-request-error'), 'Укажите почту администратора.'); $('reset-email').focus(); return; }
+  if (email !== passwordReset.email) { passwordReset.token = ''; passwordReset.expiresAt = 0; }
+  passwordReset.email = email;
+  passwordReset.resumeUntil = sessionNow() + 600000;
+  rememberPasswordReset(); showResetCode(); $('reset-code').focus();
+});
+$('reset-resend').addEventListener('click', async () => {
+  if (sessionNow() < passwordReset.retryAt) return;
+  await sendResetCode(passwordReset.email, 'reset-code-error');
+});
+$('reset-change-email').addEventListener('click', () => { if (!auth.busy) showPasswordReset(passwordReset.email); });
+for (const id of ['reset-request-back', 'reset-code-back', 'reset-password-back']) $(id).addEventListener('click', () => {
+  if (auth.busy) return;
+  const email = passwordReset.email || $('reset-email').value;
+  showLogin(); if (email) $('username').value = email; $('password').focus();
+});
+$('reset-code-form').addEventListener('submit', async (event) => {
+  event.preventDefault(); if (auth.busy || sessionNow() < passwordReset.verifyAt) return;
+  if (passwordReset.expiresAt && sessionNow() >= passwordReset.expiresAt) { updateResetResend(); return; }
+  const code = $('reset-code').value.replace(/\s/g, '');
+  if (!/^[0-9]{8}$/.test(code)) { message($('reset-code-error'), 'Введите 8 цифр из письма.'); return; }
+  const generation = passwordReset.generation;
+  setAuthBusy(true); message($('reset-code-error'), '');
+  try {
+    const body = passwordReset.token ? { resetToken: passwordReset.token, code } : { email: passwordReset.email, code };
+    const data = await api('password-reset/verify', { method: 'POST', body });
+    if (generation !== passwordReset.generation) return;
+    if (typeof data.passwordToken !== 'string' || !/^[a-f0-9]{64}$/.test(data.passwordToken)) throw new ApiError('Не удалось подтвердить код. Запросите его заново.');
+    showNewPassword(data.passwordToken, passwordReset.email);
+  } catch (error) {
+    if (generation === passwordReset.generation) {
+      if (error.status === 429) { passwordReset.verifyAt = sessionNow() + resetRetrySeconds(error.retryAfter) * 1000; rememberPasswordReset(); }
+      message($('reset-code-error'), error.message);
+    }
+  }
+  finally { setAuthBusy(false); if (generation === passwordReset.generation && !$('reset-password-form').hidden) $('reset-password').focus(); }
+});
+$('reset-password-form').addEventListener('submit', async (event) => {
+  event.preventDefault(); if (auth.busy || sessionNow() < passwordReset.completeAt) return;
+  const password = $('reset-password').value;
+  if ([...password].length < 8 || [...password].length > 1024) { message($('reset-password-error'), 'Новый пароль должен содержать от 8 до 1024 символов.'); return; }
+  if (password !== $('reset-password-confirm').value) { message($('reset-password-error'), 'Пароли не совпадают.'); return; }
+  const generation = passwordReset.generation;
+  setAuthBusy(true); message($('reset-password-error'), '');
+  try {
+    const data = await api('password-reset/complete', { method: 'POST', body: { passwordToken: passwordReset.passwordToken, password } });
+    if (generation !== passwordReset.generation) return;
+    if (data.passwordChanged !== true) throw new ApiError('Не удалось подтвердить смену пароля.');
+    const email = passwordReset.email;
+    showLogin(); $('username').value = email;
+    message($('session-lock-note'), auth.passwordOnly ? 'Пароль изменён. Войдите с почтой и новым паролем.' : 'Пароль изменён. Войдите с новым паролем и подтвердите вход кодом из приложения.');
+  } catch (error) {
+    if (generation === passwordReset.generation) {
+      if (error.status === 429) passwordReset.completeAt = sessionNow() + resetRetrySeconds(error.retryAfter) * 1000;
+      message($('reset-password-error'), error.message);
+    }
+  }
+  finally { setAuthBusy(false); if (!$('login-form').hidden) $('password').focus(); }
+});
+
 function clearChallenge() {
+  clearPasswordReset();
   clearEnrollment();
   auth.trustedUsername = '';
   auth.challengeToken = '';
@@ -411,7 +647,7 @@ function showLogin(error = '') {
   $('auth-heading').textContent = auth.setupRequired ? 'Настроим доступ' : 'Рады видеть вас';
   $('auth-description').textContent = auth.setupRequired
     ? 'Для работы с меню нужен защищённый аккаунт администратора.'
-    : 'Войдите, чтобы добавлять блюда, обновлять фотографии и цены.';
+    : manualMenu ? 'Войдите, чтобы добавлять блюда, обновлять фотографии и цены.' : 'Войдите, чтобы размещать блюда из кассы, обновлять фотографии и цены.';
   message($('login-error'), error);
   message($('session-lock-note'), '');
   setAuthBusy(auth.busy);
@@ -552,10 +788,14 @@ async function cancelEnrollment(error = '') {
 }
 
 async function checkSession() {
+  const savedReset = readPasswordReset();
   await waitForPendingLogout();
   const generation = idle.generation;
   const session = await api('session');
   if (generation !== idle.generation) return;
+  auth.passwordOnly = session.authMode === 'password';
+  $('device-login-help').textContent = auth.passwordOnly ? 'Введите почту и пароль администратора.'
+    : 'Запомним этот браузер: в следующий раз понадобится только код из приложения. На чужом устройстве выберите «Выйти и забыть устройство».';
   if (session.authenticated === true && typeof session.csrfToken === 'string' && session.csrfToken) {
     const locked = readLockMarker();
     if (locked) {
@@ -574,7 +814,8 @@ async function checkSession() {
   auth.enrollmentAvailable = session.enrollmentAvailable === true;
   auth.setupRequired = !auth.enrollmentAvailable && (session.ready === false || (auth.production && session.configured === false));
   showLogin();
-  if (typeof session.trustedUsername === 'string' && validUsername(session.trustedUsername)) {
+  if (resumePasswordReset(savedReset)) return;
+  if (!auth.passwordOnly && typeof session.trustedUsername === 'string' && validUsername(session.trustedUsername)) {
     auth.setupRequired = false;
     showVerification('', session.trustedUsername);
     setAuthBusy(false);
@@ -593,15 +834,28 @@ function validateMenu(data) {
   if (!Array.isArray(data.items) || data.revision === undefined || data.revision === null) {
     throw new ApiError('Сервер вернул неполные данные меню. Обновите страницу или проверьте настройку сервера.');
   }
-  state.items = data.items.map((item) => {
+  const items = data.items.map((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)
-      || (Object.hasOwn(item, 'availableForOrder') && typeof item.availableForOrder !== 'boolean')) {
+      || (Object.hasOwn(item, 'availableForOrder') && typeof item.availableForOrder !== 'boolean')
+      || (Object.hasOwn(item, 'hiddenOnSite') && typeof item.hiddenOnSite !== 'boolean')) {
       throw new ApiError('Сервер вернул некорректную доступность блюда. Обновите меню.');
     }
     return { ...item, availableForOrder: Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true };
   });
+  try {
+    const normalized = normalizeMenuData({ ...data, items });
+    const { categories, sourceCategories } = normalized;
+    state.categories = orderedCategories(categories).map((category, order) => ({ ...category, parentId: null, order }));
+    state.items = normalized.items.map((item) => ({ ...item, published: !!item.category && item.hiddenOnSite !== true, availableForOrder: !!item.category && item.hiddenOnSite !== true && item.source?.testOnly !== true }));
+    state.sourceCategories = sourceCategories;
+  } catch {
+    throw new ApiError('Сервер вернул некорректные группы. Обновите меню или обратитесь к администратору.');
+  }
+  if (data.keeperSync && typeof data.keeperSync.configured === 'boolean') state.keeperSync = { ...data.keeperSync };
   state.revision = data.revision;
   state.loaded = true;
+  updateCategoryControls();
+  renderKeeperSync();
 }
 
 function imageUrl(value) {
@@ -619,6 +873,60 @@ function element(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+function categoryLabel(id) {
+  return categoryPath(state.categories, id).map((entry) => entry.name).join(' / ');
+}
+
+function updateCategoryControls() {
+  const editor = $('category');
+  const selectedEditor = editor.value;
+  const entries = orderedCategories(state.categories).filter((entry) => !entry.source);
+  const option = (value, label) => {
+    const node = element('option', '', label);
+    node.value = value;
+    return node;
+  };
+  if (!entries.some((entry) => entry.id === state.siteCategory)) state.siteCategory = entries[0]?.id || null;
+  if (!state.sourceCategories.some((entry) => entry.id === state.cashGroupId)) state.cashGroupId = null;
+  editor.replaceChildren(option('', 'Не размещать на сайте'), ...entries.map((entry) => option(entry.id, categoryLabel(entry.id))));
+  editor.value = state.categories.some((entry) => entry.id === selectedEditor) ? selectedEditor : '';
+  const buttons = entries.map((entry) => {
+    const ids = categoryDescendantIds(state.categories, entry.id);
+    const count = state.items.filter((item) => ids.has(item.category)).length;
+    const button = element('button', 'admin-category-tab');
+    button.type = 'button';
+    button.dataset.categoryId = entry.id;
+    button.setAttribute('aria-controls', 'items');
+    button.setAttribute('aria-pressed', 'false');
+    button.append(element('span', '', entry.parentId ? categoryLabel(entry.id) : entry.name), element('span', 'admin-category-count', String(count)));
+    return button;
+  });
+  $('category-tabs').replaceChildren(...buttons);
+}
+
+function keeperAvailabilityLabel(item) {
+  if (manualMenu) return '';
+  const availability = item?.keeperAvailability;
+  if (!availability) return '';
+  if (availability.forbidden === true) return 'В стоп-листе';
+  if (typeof availability.remaining === 'number' && Number.isFinite(availability.remaining)) {
+    return availability.remaining <= 0 ? 'Нет в наличии' : `Осталось: ${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(availability.remaining)} порц.`;
+  }
+  return '';
+}
+
+function renderKeeperSync() {
+  if (manualMenu) return;
+  const sync = state.keeperSync;
+  $('sync-availability').disabled = state.busy || !state.loaded || state.conflict || !sync.configured;
+  $('sync-availability').setAttribute('aria-busy', String(state.syncing));
+  $('sync-availability-label').textContent = state.syncing ? 'Синхронизируем…' : 'Синхронизировать стоп-лист и остатки';
+  const timestamp = sync.updatedAt ? new Date(sync.updatedAt) : null;
+  $('keeper-sync-status').textContent = !sync.configured ? 'Подключение к кассе не настроено' : timestamp && Number.isFinite(timestamp.getTime())
+    ? `Проверено: ${new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(timestamp)}`
+    : 'Стоп-лист и остатки ещё не проверялись';
 }
 
 function itemCard(item) {
@@ -640,27 +948,45 @@ function itemCard(item) {
     img.src = src;
     photo.append(img);
   }
-  photo.append(element('span', `item-status${item.published ? '' : ' is-hidden'}`, item.published ? 'На сайте' : 'Скрыто'));
+  photo.append(element('span', `item-status${item.published ? '' : ' is-hidden'}`,
+    item.published ? 'На сайте' : item.category ? 'Скрыто с сайта' : 'Только на кассе'));
   const body = element('div', 'admin-item-body');
-  body.append(element('p', 'item-category', categories[item.category] || 'Завтраки'));
+  const category = element('div', 'item-category-line');
+  category.append(element('p', 'item-category', item.category ? categoryLabel(item.category) : 'Группа на сайте не выбрана'));
+  if (!manualMenu && item.source?.provider === 'kds') category.append(element('span', 'item-source', 'Из кассы'));
+  body.append(category);
   const title = element('div', 'item-title-row');
   title.append(element('h2', '', item.name), element('p', 'item-price', currency.format(item.price)));
-  body.append(title, element('p', 'item-description', item.description || 'Описание пока не добавлено'), element('p', 'item-order', `Порядок в меню: ${item.order}`));
-  const available = item.availableForOrder !== false;
-  body.append(element('p', `item-availability${available && item.published ? '' : ' is-unavailable'}`,
-    available ? (item.published ? 'Можно заказать' : 'Можно заказать после публикации') : 'Временно недоступно'));
+  body.append(title, element('p', 'item-description', item.description || 'Описание пока не добавлено'));
+  const testOnly = item.source?.testOnly === true;
+  const keeperBlocked = item.keeperAvailability?.forbidden === true || (typeof item.keeperAvailability?.remaining === 'number' && item.keeperAvailability.remaining < 1);
+  const available = !testOnly && item.availableForOrder !== false && !keeperBlocked;
+  if (!manualMenu) body.append(element('p', `item-availability${available && item.published ? '' : ' is-unavailable'}`,
+    testOnly ? 'Тестовое блюдо · заказ недоступен' : available ? (item.published ? 'Можно заказать' : 'Можно заказать после публикации') : 'Временно недоступно'));
+  const keeperLabel = keeperAvailabilityLabel(item);
+  if (keeperLabel) body.append(element('p', 'item-availability is-unavailable', keeperLabel));
   const actions = element('div', 'item-actions');
-  const actionList = [
-    ['edit', 'edit-button', 'Редактировать', `Редактировать блюдо «${item.name}»`],
-    ['toggle', '', item.published ? 'Скрыть' : 'Показать', `${item.published ? 'Скрыть с сайта' : 'Показать на сайте'} блюдо «${item.name}»`],
-    ['delete', 'delete-button', '×', `Удалить блюдо «${item.name}»`],
-  ];
+  const actionList = [['edit', 'edit-button', 'Редактировать', `Редактировать блюдо «${item.name}»`]];
+  if (item.category) actionList.push(['visibility', 'visibility-button', item.hiddenOnSite ? 'Показать на сайте' : 'Скрыть с сайта', `${item.hiddenOnSite ? 'Показать на сайте' : 'Скрыть с сайта'} блюдо «${item.name}»`]);
+  if (!item.category) actionList.push(['place', '', 'На сайт', `Выбрать группу на сайте для блюда «${item.name}»`]);
+  if (manualMenu || !item.source) actionList.push(['delete', 'delete-button', '', `Удалить блюдо «${item.name}»`]);
+  else if (state.mode === 'site') actionList.push(['detach', 'detach-button', 'Убрать с сайта', `Убрать блюдо «${item.name}» с сайта, оставив на кассе`]);
   for (const [action, className, label, accessibleLabel] of actionList) {
     const button = element('button', className, label);
     button.type = 'button';
     button.dataset.itemAction = action;
     button.dataset.itemId = item.id;
     button.setAttribute('aria-label', accessibleLabel);
+    if (action === 'delete') {
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      icon.setAttribute('viewBox', '0 0 24 24');
+      icon.setAttribute('aria-hidden', 'true');
+      icon.setAttribute('focusable', 'false');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M6 6l12 12M18 6L6 18');
+      icon.append(path);
+      button.append(icon);
+    }
     button.disabled = state.busy || state.conflict || !state.loaded;
     actions.append(button);
   }
@@ -669,37 +995,125 @@ function itemCard(item) {
   return card;
 }
 
-function render() {
-  const query = $('search').value.trim().toLocaleLowerCase('ru');
-  const category = $('category-filter').value;
-  const filtered = state.items.filter((item) =>
-    (category === 'all' || item.category === category)
-    && `${item.name} ${item.description}`.toLocaleLowerCase('ru').includes(query),
-  ).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'ru'));
-  $('total-count').textContent = state.items.length;
-  const published = state.items.filter((item) => item.published).length;
-  $('published-count').textContent = published;
-  $('hidden-count').textContent = state.items.length - published;
-  $('results-count').textContent = state.loaded ? `Показано: ${filtered.length} из ${state.items.length}` : 'Загружаем меню…';
-  $('items').replaceChildren(...filtered.map(itemCard));
-  $('empty-state').hidden = filtered.length !== 0 || !state.loaded;
-  $('empty-title').textContent = state.items.length ? 'Ничего не нашлось' : 'Начнём с первого блюда';
-  $('empty-description').textContent = state.items.length ? 'Попробуйте другое название или выберите все разделы.' : 'Добавьте название, описание, цену и фотографию.';
+function cashGroupForItem(item) {
+  if (item.source?.provider !== 'kds') return null;
+  return state.sourceCategories.find((entry) => entry.source.organizationId === item.source.organizationId
+    && entry.source.externalId === item.source.groupExternalId) || null;
 }
 
-async function loadMenu({ preserveDraft = false } = {}) {
-  if (state.busy) return;
+function cashGroupCard(group) {
+  const descendants = categoryDescendantIds(state.sourceCategories, group.id);
+  const count = state.items.filter((item) => descendants.has(cashGroupForItem(item)?.id)).length;
+  const children = state.sourceCategories.filter((entry) => entry.parentId === group.id).length;
+  const button = element('button', 'cash-group-card');
+  button.type = 'button';
+  button.dataset.cashGroupId = group.id;
+  button.setAttribute('aria-label', `Открыть группу «${group.name}»`);
+  const top = element('span', 'cash-group-top');
+  const icon = element('span', 'cash-group-icon');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = '<svg viewBox="0 0 32 32" fill="none"><path d="M4 10V7a2 2 0 0 1 2-2h7l3 4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M4 12h24" stroke="currentColor" stroke-width="1.4"/></svg>';
+  const arrow = element('span', 'cash-group-arrow', '↗');
+  arrow.setAttribute('aria-hidden', 'true');
+  top.append(icon, arrow);
+  button.append(top, element('span', 'cash-group-name', group.name), element('span', 'cash-group-count',
+    `${children ? `Подгрупп: ${children} · ` : ''}Блюд: ${count}`));
+  return button;
+}
+
+function openCashGroup(id) {
+  if (id !== null && !state.sourceCategories.some((entry) => entry.id === id)) return;
+  state.cashGroupId = id;
+  state.cashSearch = '';
+  $('search').value = '';
+  render();
+}
+
+function setMenuMode(mode) {
+  if (!['site', 'cash'].includes(mode)) return;
+  state[`${state.mode}Search`] = $('search').value;
+  state.mode = mode;
+  $('search').value = state[`${mode}Search`];
+  render();
+}
+
+function renderCashBreadcrumbs() {
+  const path = categoryPath(state.sourceCategories, state.cashGroupId);
+  const nodes = [{ id: '', name: 'Меню кассы' }, ...path].map((entry, index) => {
+    if (index === path.length) {
+      const current = element('span', '', entry.name);
+      current.setAttribute('aria-current', 'page');
+      return current;
+    }
+    const button = element('button', '', entry.name);
+    button.type = 'button'; button.dataset.cashGroupId = entry.id;
+    return button;
+  });
+  $('cash-breadcrumbs').replaceChildren(...nodes);
+  $('cash-back').hidden = !state.cashGroupId;
+}
+
+function render() {
+  const cashMode = !manualMenu && state.mode === 'cash';
+  $('add-dish').hidden = !manualMenu;
+  $('add-dish').disabled = state.busy || !state.loaded || state.conflict;
+  const query = $('search').value.trim().toLocaleLowerCase('ru');
+  const categoryIds = categoryDescendantIds(state.categories, state.siteCategory);
+  const cashIds = state.cashGroupId ? categoryDescendantIds(state.sourceCategories, state.cashGroupId)
+    : new Set(state.sourceCategories.map((entry) => entry.id));
+  let groups = [];
+  let filtered;
+  if (cashMode) {
+    groups = orderedCategories(state.sourceCategories).filter((entry) => query
+      ? cashIds.has(entry.id) && entry.name.toLocaleLowerCase('ru').includes(query)
+      : entry.parentId === state.cashGroupId);
+    filtered = state.items.filter((item) => {
+      const group = cashGroupForItem(item);
+      return group && (query ? cashIds.has(group.id) : group.id === state.cashGroupId);
+    });
+  } else filtered = state.items.filter((item) => categoryIds.has(item.category));
+  filtered = filtered.filter((item) => `${item.name} ${item.description}`.toLocaleLowerCase('ru').includes(query))
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'ru'));
+  $('mode-site').setAttribute('aria-pressed', String(!cashMode));
+  $('mode-cash').setAttribute('aria-pressed', String(cashMode));
+  $('category-tabs').hidden = cashMode;
+  $('cash-navigation').hidden = !cashMode;
+  $('manage-categories').hidden = cashMode;
+  $('menu-toolbar').classList.toggle('is-cash', cashMode);
+  $('search').placeholder = cashMode ? 'Найти в меню кассы' : 'Найти блюдо';
+  for (const button of $('category-tabs').children) button.setAttribute('aria-pressed', String(button.dataset.categoryId === state.siteCategory));
+  const group = state.sourceCategories.find((entry) => entry.id === state.cashGroupId);
+  $('category-heading').textContent = cashMode ? group?.name || 'Меню кассы' : categoryLabel(state.siteCategory) || 'Группы сайта';
+  $('category-context').textContent = cashMode ? query ? 'Поиск в этой группе и всех вложенных группах.'
+    : 'Откройте группу или выберите блюдо для размещения на сайте.' : 'Все блюда группы, включая скрытые с сайта.';
+  if (cashMode) renderCashBreadcrumbs();
+  $('cash-groups').replaceChildren(...groups.map(cashGroupCard));
+  $('cash-groups').hidden = !cashMode || groups.length === 0;
+  $('menu-dish-grid').classList.toggle('is-cash', cashMode);
+  $('results-count').textContent = state.loaded ? `${cashMode && groups.length ? `Групп: ${groups.length} · ` : ''}Блюд: ${filtered.length}` : 'Загружаем меню…';
+  $('items').replaceChildren(...filtered.map(itemCard));
+  $('empty-state').hidden = filtered.length !== 0 || groups.length !== 0 || !state.loaded;
+  $('empty-title').textContent = query ? 'Ничего не нашлось' : cashMode ? 'В этой группе пока нет блюд' : 'В этой группе пока нет блюд';
+  $('empty-description').textContent = query ? 'Попробуйте другое название или откройте другую группу.'
+    : cashMode ? state.sourceCategories.length ? 'Вернитесь к предыдущей группе и выберите другую.' : 'Меню кассы пока не загружено.'
+      : manualMenu ? 'Нажмите «Добавить блюдо», чтобы заполнить эту группу.' : 'Выберите блюдо во вкладке «На кассе» и укажите группу сайта.';
+  $('empty-browse-cash').hidden = manualMenu || !!query || cashMode;
+  $('empty-browse-cash').disabled = state.busy || state.conflict || !state.loaded;
+}
+
+async function loadMenu({ preserveDraft = false, announce = false } = {}) {
+  if (state.busy) return false;
   setBusy(true);
   try {
     validateMenu(await api('menu'));
-    if (preserveDraft && draft.isNew && state.items.some((item) => item.id === draft.id)) draft.isNew = false;
     state.conflict = false;
     $('editor-conflict').hidden = true;
     render();
-    notice(preserveDraft ? 'Список обновлён. Проверьте открытый черновик перед сохранением.' : 'Меню обновлено.');
+    notice(preserveDraft ? 'Список обновлён. Проверьте открытый черновик перед сохранением.' : announce ? 'Меню обновлено.' : '');
     if (preserveDraft) {
       message($('editor-error'), 'Актуальное меню загружено. Ваш черновик сохранён — проверьте его перед повторным сохранением.');
     }
+    return true;
   } catch (error) {
     if (!sessionExpired(error)) {
       notice(error.message, { error: true, refresh: true });
@@ -708,9 +1122,9 @@ async function loadMenu({ preserveDraft = false } = {}) {
         $('editor-conflict').hidden = false;
       }
     }
+    return false;
   } finally {
     setBusy(false);
-    $('add-item').disabled = !state.loaded || state.conflict;
   }
 }
 
@@ -723,11 +1137,16 @@ async function enterDashboard() {
   $('dashboard').hidden = false;
   $('logout').hidden = false;
   $('signout-actions').hidden = false;
+  $('logout-forget').hidden = auth.passwordOnly;
   await loadMenu({ preserveDraft: draft.resume });
   if (generation !== idle.generation || !idle.active || idle.suspended) return;
   if (draft.resume && state.csrfToken) {
     draft.resume = false;
     $('editor-dialog').showModal();
+  } else if (categoryDraft.resume && state.csrfToken) {
+    categoryDraft.resume = false;
+    $('categories-dialog').showModal();
+    if (categoryDraft.revision !== state.revision) showCategoryReopenNotice();
   }
 }
 
@@ -735,12 +1154,11 @@ function markConflict(text) {
   state.conflict = true;
   notice(text, { error: true, refresh: true });
   $('editor-conflict').hidden = false;
-  $('add-item').disabled = true;
 }
 
-async function persist(items) {
+async function persist(items, { categories = state.categories } = {}) {
   try {
-    validateMenu(await api('menu', { method: 'PUT', body: { items, revision: state.revision } }));
+    validateMenu(await api('menu', { method: 'PUT', body: { items: items.map(({ keeperAvailability, ...item }) => item), categories, sourceCategories: state.sourceCategories, categoryMappings: [], revision: state.revision } }));
     render();
   } catch (error) {
     if (error.status === 409) markConflict('Меню изменилось в другой вкладке. Обновите данные перед следующими изменениями.');
@@ -764,11 +1182,14 @@ function updatePreview() {
   $('remove-photo').hidden = !src;
 }
 
-function openEditor(item = null) {
-  if (state.busy || !state.loaded || state.conflict) return;
+function openEditor(item) {
+  if (state.busy || !state.loaded || state.conflict || (!item && !manualMenu) || (item && !state.items.some((entry) => entry.id === item.id))) return;
+  const isNew = !item;
+  if (isNew && !state.categories.length) { notice('Сначала добавьте группу для нового блюда.'); return; }
+  item ??= { id: crypto.randomUUID(), category: state.siteCategory || state.categories[0]?.id };
   clearPreviewUrl();
-  draft.id = item?.id || crypto.randomUUID();
-  draft.isNew = !item;
+  draft.id = item.id;
+  draft.isNew = isNew;
   draft.image = item?.image || '';
   draft.file = null;
   draft.dirty = false;
@@ -776,13 +1197,20 @@ function openEditor(item = null) {
   $('item-form').reset();
   $('item-name').value = item?.name || '';
   $('description').value = item?.description || '';
-  $('price').value = item ? item.price : '';
-  $('category').value = item?.category || 'signature';
-  $('order').value = item ? item.order : Math.min(100000, Math.max(0, ...state.items.map((entry) => entry.order)) + 10);
-  $('published').checked = item ? item.published : true;
-  $('available-for-order').checked = item?.availableForOrder !== false;
-  $('editor-title').textContent = item ? 'Редактировать блюдо' : 'Добавить блюдо';
-  $('editor-eyebrow').textContent = item ? 'ЗАБОТА О ДЕТАЛЯХ' : 'НОВОЕ В МЕНЮ';
+  $('price').value = item.price ?? '';
+  const groupOptions = categoryOptions(state.categories, { placeholder: 'Не размещать на сайте' });
+  $('category').replaceChildren(...(item.source ? groupOptions : groupOptions.slice(1)));
+  $('category').value = item.category || '';
+  $('show-on-site').checked = item.hiddenOnSite !== true;
+  $('editor-source-note').hidden = manualMenu || item?.source?.provider !== 'kds';
+  const keeperLabel = keeperAvailabilityLabel(item);
+  const testNote = item.source?.testOnly ? 'Тестовое блюдо: только для просмотра, заказать его нельзя.' : '';
+  $('editor-keeper-status').textContent = [testNote, keeperLabel ? `${keeperLabel}. Данные кассы обновляются кнопкой синхронизации.` : ''].filter(Boolean).join(' ');
+  $('editor-keeper-status').hidden = manualMenu || (!keeperLabel && !testNote);
+  $('category').disabled = false;
+  $('category').required = !item.source;
+  $('editor-title').textContent = isNew ? 'Добавить блюдо' : 'Редактировать блюдо';
+  $('editor-eyebrow').textContent = 'ЗАБОТА О ДЕТАЛЯХ';
   $('editor-conflict').hidden = true;
   message($('editor-error'), '');
   updatePreview();
@@ -797,6 +1225,237 @@ function closeEditor() {
   draft.resume = false;
   clearPreviewUrl();
   $('editor-dialog').close();
+}
+
+function categoryOptions(categories, { placeholder = '', exclude = new Set() } = {}) {
+  const option = (value, label) => {
+    const node = element('option', '', label);
+    node.value = value;
+    return node;
+  };
+  return [option('', placeholder), ...orderedCategories(categories).filter((entry) => !exclude.has(entry.id))
+    .map((entry) => option(entry.id, categoryPath(categories, entry.id).map((parent) => parent.name).join(' / ')))];
+}
+
+function markCategoriesDirty() { categoryDraft.dirty = true; }
+
+function refreshCategoryLabels() {
+  // Keep the visible name and accessible movement labels consistent.
+  for (const row of categoryControls.rows) {
+    const category = categoryDraft.categories.find((entry) => entry.id === row.id);
+    if (!category) continue;
+    const name = category.name.trim() || 'Без названия';
+    row.label.textContent = name;
+    row.handle.setAttribute('aria-label', `Переместить группу «${name}»`);
+    row.up.setAttribute('aria-label', `Переместить «${name}» выше`);
+    row.down.setAttribute('aria-label', `Переместить «${name}» ниже`);
+  }
+}
+
+function selectedCategory() {
+  return categoryDraft.categories.find((entry) => entry.id === categoryDraft.selectedId);
+}
+
+function focusCategoryRow(id, action = 'select') {
+  const row = categoryControls.rows.find((entry) => entry.id === id);
+  const target = row?.[action];
+  (target && !target.disabled ? target : row?.handle || $('new-category-name')).focus();
+}
+
+function reorderCategory(id, targetIndex, { focus = 'handle' } = {}) {
+  if (state.busy) return;
+  const entries = [...categoryDraft.categories].sort((a, b) => a.order - b.order);
+  const index = entries.findIndex((entry) => entry.id === id);
+  if (index < 0) return;
+  const destination = Math.max(0, Math.min(entries.length - 1, targetIndex));
+  if (destination === index) return;
+  const [moved] = entries.splice(index, 1);
+  entries.splice(destination, 0, moved);
+  categoryDraft.categories = entries.map((entry, order) => ({ ...entry, parentId: null, order }));
+  markCategoriesDirty();
+  renderCategoryManager();
+  $('group-sort-announcement').textContent = `«${moved.name}»: место ${destination + 1} из ${entries.length}. Сохраните группы, чтобы применить порядок.`;
+  focusCategoryRow(id, focus);
+}
+
+function renderCategoryManager() {
+  const entries = [...categoryDraft.categories].sort((a, b) => a.order - b.order);
+  if (!selectedCategory()) categoryDraft.selectedId = entries[0]?.id || null;
+  const selected = selectedCategory();
+  categoryControls.rows = [];
+  const rows = entries.map((entry, index) => {
+    const row = element('li', 'category-sort-row');
+    row.dataset.groupId = entry.id;
+    row.classList.toggle('is-selected', entry.id === categoryDraft.selectedId);
+    const handle = element('button', 'category-drag-handle', '⠿');
+    handle.type = 'button'; handle.dataset.groupDrag = entry.id;
+    handle.setAttribute('aria-describedby', 'group-sort-help');
+    const select = element('button', 'category-sort-select');
+    select.type = 'button'; select.dataset.groupSelect = entry.id;
+    select.setAttribute('aria-pressed', String(entry.id === categoryDraft.selectedId));
+    const label = element('span', 'category-sort-name', entry.name);
+    const count = categoryDraft.items.filter((item) => item.category === entry.id).length;
+    select.append(label, element('span', 'category-sort-count', `Блюд: ${count}`));
+    const controls = element('div', 'category-sort-actions');
+    const up = element('button', 'category-sort-arrow', '↑');
+    const down = element('button', 'category-sort-arrow', '↓');
+    for (const [button, direction] of [[up, -1], [down, 1]]) {
+      button.type = 'button'; button.dataset.groupMove = entry.id; button.dataset.direction = String(direction);
+    }
+    up.disabled = index === 0; down.disabled = index === entries.length - 1;
+    controls.append(up, down); row.append(handle, select, controls);
+    categoryControls.rows.push({ id: entry.id, row, label, handle, select, up, down });
+    return row;
+  });
+  $('category-sort-list').replaceChildren(...rows);
+  $('category-sort-list').hidden = !entries.length;
+  refreshCategoryLabels();
+  $('delete-category').hidden = !selected;
+  $('category-delete-panel').hidden = true;
+  const count = categoryDraft.items.filter((item) => item.category === selected?.id).length;
+  $('selected-category-count').textContent = selected ? `Блюд в группе: ${count}. Изменения применятся после сохранения.` : 'Добавьте первую группу для размещения блюд на сайте.';
+  if (!selected) $('new-category-section').open = true;
+}
+
+function clearCategoryDrag() {
+  if (!categoryDrag) return;
+  const { pointerId, row } = categoryDrag;
+  categoryDrag = null;
+  row.classList.remove('is-dragging'); row.style.removeProperty('transform');
+  for (const entry of categoryControls.rows) {
+    entry.row.classList.remove('drop-before', 'drop-after');
+  }
+  if ($('category-sort-list').hasPointerCapture?.(pointerId)) $('category-sort-list').releasePointerCapture(pointerId);
+}
+
+function beginCategoryDrag(event) {
+  const handle = event.target.closest('button[data-group-drag]');
+  if (!handle || state.busy || (event.button !== undefined && event.button !== 0)) return;
+  const entry = categoryControls.rows.find((row) => row.id === handle.dataset.groupDrag);
+  if (!entry) return;
+  clearCategoryDrag();
+  const index = categoryControls.rows.indexOf(entry);
+  categoryDrag = { id: entry.id, pointerId: event.pointerId, row: entry.row, startY: event.clientY, target: index, active: false };
+  $('category-sort-list').setPointerCapture?.(event.pointerId);
+  handle.focus();
+  event.preventDefault();
+}
+
+function moveCategoryDrag(event) {
+  if (!categoryDrag || event.pointerId !== categoryDrag.pointerId) return;
+  const drag = categoryDrag;
+  const distance = event.clientY - drag.startY;
+  if (!drag.active && Math.abs(distance) < 5) return;
+  drag.active = true;
+  event.preventDefault();
+  drag.row.classList.add('is-dragging');
+  drag.row.style.transform = `translateY(${distance}px)`;
+  const list = $('category-sort-list');
+  const box = list.getBoundingClientRect();
+  if (event.clientY < box.top + 30) list.scrollTop -= 12;
+  else if (event.clientY > box.bottom - 30) list.scrollTop += 12;
+  const others = categoryControls.rows.filter((entry) => entry.id !== drag.id);
+  let target = others.findIndex((entry) => {
+    const rect = entry.row.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2;
+  });
+  if (target < 0) target = others.length;
+  drag.target = target;
+  for (const entry of categoryControls.rows) entry.row.classList.remove('drop-before', 'drop-after');
+  if (others[target]) others[target].row.classList.add('drop-before');
+  else others.at(-1)?.row.classList.add('drop-after');
+}
+
+function finishCategoryDrag(event, cancelled = false) {
+  if (!categoryDrag || event.pointerId !== categoryDrag.pointerId) return;
+  const { id, target, active } = categoryDrag;
+  clearCategoryDrag();
+  if (active && !cancelled) reorderCategory(id, target);
+}
+
+function prepareCategoryDeletion() {
+  if (state.busy || !selectedCategory()) return;
+  const selected = selectedCategory();
+  const items = categoryDraft.items.filter((item) => item.category === selected.id);
+  const alternatives = categoryDraft.categories.filter((entry) => entry.id !== selected.id);
+  const canDetach = !manualMenu && items.every((item) => item.source?.provider === 'kds');
+  const options = categoryOptions(categoryDraft.categories, { placeholder: 'Выберите другую группу', exclude: new Set([selected.id]) });
+  if (items.length && canDetach) {
+    const detach = element('option', '', 'Убрать с сайта, оставить на кассе'); detach.value = '__cash__'; options.push(detach);
+  }
+  $('delete-category-destination').replaceChildren(...options);
+  $('delete-category-destination').value = '';
+  $('delete-category-destination-field').hidden = !items.length;
+  $('delete-category-title').textContent = `Удалить «${selected.name.trim() || 'Без названия'}»?`;
+  $('delete-category-description').textContent = `Блюд в группе: ${items.length}. Остальные группы останутся без изменений.`;
+  const blocked = items.length && !canDetach && !alternatives.length;
+  $('delete-category-help').textContent = manualMenu
+    ? items.length ? alternatives.length ? 'Выберите другую группу для переноса блюд. Они останутся в меню.' : 'Сначала добавьте другую группу для переноса блюд или удалите блюда из этой группы.' : 'Группа будет удалена после нажатия «Сохранить группы».'
+    : blocked
+    ? 'Здесь есть блюда без связи с кассой. Сначала добавьте другую группу, чтобы перенести их и сохранить в меню.'
+    : items.length && !canDetach ? 'Здесь есть блюда без связи с кассой: выберите другую группу для переноса. Блюда сохранят свои настройки публикации.'
+      : items.length ? 'Перенесите блюда в другую группу или уберите их с сайта. На кассе блюда останутся.'
+        : 'Группа будет удалена только после нажатия «Сохранить группы».';
+  $('confirm-delete-category').disabled = !!blocked || items.length > 0;
+  $('category-delete-panel').hidden = false;
+  if (items.length && !blocked) $('delete-category-destination').focus();
+  else $('cancel-delete-category').focus();
+}
+
+function deleteSelectedCategory() {
+  if (state.busy || $('category-delete-panel').hidden) return;
+  const selected = selectedCategory();
+  if (!selected) return;
+  const items = categoryDraft.items.filter((item) => item.category === selected.id);
+  const destination = $('delete-category-destination').value;
+  const targetExists = categoryDraft.categories.some((entry) => entry.id !== selected.id && entry.id === destination);
+  const canDetach = destination === '__cash__' && items.every((item) => item.source?.provider === 'kds');
+  if (items.length && !targetExists && !canDetach) {
+    message($('categories-error'), 'Выберите другую группу для блюд. Удаление не должно оставлять их без места в меню.');
+    return;
+  }
+  categoryDraft.items = categoryDraft.items.map((item) => item.category !== selected.id ? item : canDetach
+    ? { ...item, category: null, published: false, availableForOrder: false } : { ...item, category: destination });
+  categoryDraft.categories = categoryDraft.categories.filter((entry) => entry.id !== selected.id)
+    .map((entry, order) => ({ ...entry, parentId: null, order }));
+  categoryDraft.selectedId = targetExists ? destination : null;
+  markCategoriesDirty();
+  message($('categories-error'), '');
+  renderCategoryManager();
+  focusCategoryRow(categoryDraft.selectedId);
+}
+
+function showCategoryReopenNotice(prefix = 'Меню обновилось.') {
+  message($('categories-error'), `${prefix} Закройте это окно и снова нажмите «Редактировать группы», чтобы увидеть сохранённый список.`);
+}
+
+function resetCategoryManager() {
+  clearCategoryDrag();
+  categoryDraft.categories = orderedCategories(state.categories).filter((category) => !category.source).map((category, order) => ({ ...category, parentId: null, order }));
+  categoryDraft.items = state.items.map((item) => ({ ...item }));
+  categoryDraft.selectedId = state.siteCategory;
+  categoryDraft.revision = state.revision;
+  categoryDraft.dirty = false;
+  categoryDraft.resume = false;
+  $('new-category-name').value = '';
+  message($('categories-error'), '');
+  renderCategoryManager();
+}
+
+function openCategoryManager() {
+  if (state.busy || !state.loaded || state.conflict) return;
+  resetCategoryManager();
+  $('categories-dialog').showModal();
+  focusCategoryRow(categoryDraft.selectedId);
+}
+
+function closeCategoryManager() {
+  if (state.busy) return;
+  if (categoryDraft.dirty && !window.confirm('Закрыть группы? Несохранённые изменения будут потеряны.')) return;
+  clearCategoryDrag();
+  categoryDraft.dirty = false;
+  categoryDraft.resume = false;
+  $('categories-dialog').close();
 }
 
 $('login-form').addEventListener('submit', async (event) => {
@@ -821,9 +1480,15 @@ $('login-form').addEventListener('submit', async (event) => {
     const data = await api('login', { method: 'POST', body: { username, password: $('password').value } });
     if (generation !== auth.generation) return;
     $('password').value = '';
-    if (data.enrollmentRequired === true && typeof data.challengeToken === 'string' && data.challengeToken) {
+    if (auth.passwordOnly && data.authMode === 'password' && data.passwordChangeRequired === true && /^[a-f0-9]{64}$/.test(data.passwordToken || '')) {
+      clearChallenge(); showNewPassword(data.passwordToken, username, true);
+    } else if (auth.passwordOnly && data.authMode === 'password' && data.authenticated === true && typeof data.csrfToken === 'string' && data.csrfToken) {
+      acceptSessionTiming(data, { initial: true });
+      clearLockMarker(); state.csrfToken = data.csrfToken;
+      await enterDashboard();
+    } else if (!auth.passwordOnly && data.enrollmentRequired === true && typeof data.challengeToken === 'string' && data.challengeToken) {
       showEnrollment(data);
-    } else if (data.mfaRequired === true && typeof data.challengeToken === 'string' && data.challengeToken) {
+    } else if (!auth.passwordOnly && data.mfaRequired === true && typeof data.challengeToken === 'string' && data.challengeToken) {
       showVerification(data.challengeToken);
     } else {
       throw new ApiError('Сервер не подтвердил вход. Проверьте настройку доступа.');
@@ -834,6 +1499,7 @@ $('login-form').addEventListener('submit', async (event) => {
   } finally {
     setAuthBusy(false);
     if (!$('enrollment-form').hidden) $('enrollment-username').focus();
+    else if (!$('reset-password-form').hidden) $('reset-password').focus();
     else if (!$('verify-form').hidden) $('verification-code').focus();
     else if (!$('login-form').hidden && !$('login-panel').hidden) $('password').focus();
   }
@@ -1029,11 +1695,145 @@ $('logout').addEventListener('click', () => logout());
 $('logout-forget').addEventListener('click', () => logout(true));
 $('recovery-logout').addEventListener('click', () => logout());
 
-$('add-item').addEventListener('click', () => openEditor());
+$('empty-browse-cash').addEventListener('click', () => setMenuMode('cash'));
+$('manage-categories').addEventListener('click', async () => {
+  if (state.busy || !state.loaded || $('categories-dialog').open) return;
+  if (await loadMenu()) openCategoryManager();
+});
+$('close-categories').addEventListener('click', closeCategoryManager);
+$('cancel-categories').addEventListener('click', closeCategoryManager);
+$('categories-dialog').addEventListener('cancel', (event) => { event.preventDefault(); closeCategoryManager(); });
+$('category-sort-list').addEventListener('click', (event) => {
+  if (state.busy) return;
+  const move = event.target.closest('button[data-group-move]');
+  if (move) {
+    const index = categoryControls.rows.findIndex((row) => row.id === move.dataset.groupMove);
+    reorderCategory(move.dataset.groupMove, index + Number(move.dataset.direction), { focus: Number(move.dataset.direction) < 0 ? 'up' : 'down' });
+    return;
+  }
+  const select = event.target.closest('button[data-group-select]');
+  if (!select) return;
+  categoryDraft.selectedId = select.dataset.groupSelect;
+  message($('categories-error'), ''); renderCategoryManager();
+  focusCategoryRow(categoryDraft.selectedId);
+});
+$('category-sort-list').addEventListener('keydown', (event) => {
+  const handle = event.target.closest('button[data-group-drag]');
+  if (!handle || !['ArrowUp', 'ArrowDown', 'Home', 'End', 'Escape'].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === 'Escape') { clearCategoryDrag(); return; }
+  const index = categoryControls.rows.findIndex((row) => row.id === handle.dataset.groupDrag);
+  const target = event.key === 'Home' ? 0 : event.key === 'End' ? categoryControls.rows.length - 1 : index + (event.key === 'ArrowUp' ? -1 : 1);
+  reorderCategory(handle.dataset.groupDrag, target);
+});
+$('category-sort-list').addEventListener('pointerdown', beginCategoryDrag);
+$('category-sort-list').addEventListener('pointermove', moveCategoryDrag);
+$('category-sort-list').addEventListener('pointerup', (event) => finishCategoryDrag(event));
+$('category-sort-list').addEventListener('pointercancel', (event) => finishCategoryDrag(event, true));
+$('category-sort-list').addEventListener('lostpointercapture', (event) => finishCategoryDrag(event, true));
+$('delete-category').addEventListener('click', prepareCategoryDeletion);
+$('delete-category-destination').addEventListener('change', () => {
+  const selected = selectedCategory();
+  const items = categoryDraft.items.filter((item) => item.category === selected?.id);
+  const destination = $('delete-category-destination').value;
+  $('confirm-delete-category').disabled = !selected || !(categoryDraft.categories.some((entry) => entry.id !== selected.id && entry.id === destination)
+    || (destination === '__cash__' && items.every((item) => item.source?.provider === 'kds')));
+});
+$('cancel-delete-category').addEventListener('click', () => {
+  $('category-delete-panel').hidden = true; $('delete-category').focus();
+});
+$('confirm-delete-category').addEventListener('click', deleteSelectedCategory);
+$('new-category-name').addEventListener('input', markCategoriesDirty);
+function appendNewCategory({ focus = true } = {}) {
+  if (state.busy) return false;
+  const name = $('new-category-name').value.trim();
+  if (!name || name.length > 160) {
+    message($('categories-error'), 'Введите название новой группы — до 160 символов.');
+    $('new-category-name').focus();
+    return false;
+  }
+  if (categoryDraft.categories.length >= 100) {
+    message($('categories-error'), 'В меню может быть не больше 100 групп.');
+    return false;
+  }
+  const parentId = null;
+  if (categoryDraft.categories.some((entry) => entry.parentId === parentId && entry.name.trim().toLocaleLowerCase('ru') === name.toLocaleLowerCase('ru'))) {
+    message($('categories-error'), 'Группа с таким названием здесь уже есть. Выберите другое название.');
+    $('new-category-name').focus();
+    return false;
+  }
+  const category = { id: `site-${crypto.randomUUID()}`, name, parentId,
+    order: Math.min(100000, Math.max(0, ...categoryDraft.categories.map((entry) => entry.order)) + 1) };
+  try { normalizeMenuCategories([...categoryDraft.categories, category]); }
+  catch { message($('categories-error'), 'Проверьте название новой группы.'); return false; }
+  categoryDraft.categories.push(category);
+  categoryDraft.selectedId = category.id;
+  $('new-category-name').value = '';
+  markCategoriesDirty();
+  message($('categories-error'), '');
+  renderCategoryManager();
+  if (focus) $('new-category-name').focus();
+  return true;
+}
+$('add-category').addEventListener('click', () => appendNewCategory());
+$('categories-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (state.busy || state.conflict || !state.loaded) return;
+  if (categoryDraft.revision !== state.revision) {
+    showCategoryReopenNotice();
+    return;
+  }
+  if ($('new-category-name').value.trim() && !appendNewCategory({ focus: false })) return;
+  if (!categoryDraft.dirty) { $('categories-dialog').close(); return; }
+  let categories;
+  try { categories = normalizeMenuCategories(categoryDraft.categories.map((entry, order) => ({ ...entry, parentId: null, order }))); }
+  catch { message($('categories-error'), 'Проверьте названия групп. Каждой группе нужно непустое название.'); return; }
+  setBusy(true);
+  message($('categories-error'), '');
+  try {
+    await persist(categoryDraft.items, { categories });
+    categoryDraft.dirty = false;
+    $('categories-dialog').close();
+    notice('Группы сайта сохранены.');
+  } catch (error) {
+    sessionExpired(error);
+    if (state.conflict) showCategoryReopenNotice(error.status === 0 ? 'Ответ о сохранении не получен.' : 'Меню обновилось.');
+    else message($('categories-error'), error.message);
+  } finally { setBusy(false); }
+});
+$('category-tabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-category-id]');
+  if (!button) return;
+  state.siteCategory = button.dataset.categoryId;
+  render();
+});
+$('add-dish').addEventListener('click', () => openEditor());
+$('sync-availability').addEventListener('click', async () => {
+  if (manualMenu) return;
+  if (state.busy || !state.loaded || state.conflict || !state.keeperSync.configured) return;
+  state.syncing = true;
+  setBusy(true);
+  try {
+    validateMenu(await api('sync-availability', { method: 'POST', body: {} }));
+    render();
+    notice('Стоп-лист и остатки обновлены.');
+  } catch (error) {
+    if (!sessionExpired(error)) notice(error.message, { error: true });
+  } finally {
+    state.syncing = false;
+    setBusy(false);
+  }
+});
+$('mode-site').addEventListener('click', () => setMenuMode('site'));
+$('mode-cash').addEventListener('click', () => setMenuMode('cash'));
+for (const id of ['cash-groups', 'cash-breadcrumbs']) $(id).addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-cash-group-id]');
+  if (button) openCashGroup(button.dataset.cashGroupId || null);
+});
+$('cash-back').addEventListener('click', () => openCashGroup(state.sourceCategories.find((entry) => entry.id === state.cashGroupId)?.parentId || null));
 $('search').addEventListener('input', render);
-$('category-filter').addEventListener('change', render);
-$('refresh').addEventListener('click', () => loadMenu());
-$('retry-load').addEventListener('click', () => loadMenu());
+$('refresh').addEventListener('click', () => loadMenu({ announce: true }));
+$('retry-load').addEventListener('click', () => loadMenu({ announce: true }));
 $('refresh-draft').addEventListener('click', () => loadMenu({ preserveDraft: true }));
 $('close-editor').addEventListener('click', closeEditor);
 $('cancel-editor').addEventListener('click', closeEditor);
@@ -1077,8 +1877,16 @@ $('item-form').addEventListener('submit', async (event) => {
     $('item-name').focus();
     return;
   }
-  if (!draft.isNew && !state.items.some((item) => item.id === draft.id)) {
-    message($('editor-error'), 'Это блюдо уже удалено из меню. Скопируйте нужные данные и добавьте его как новое блюдо.');
+  if (!(manualMenu && draft.isNew) && !state.items.some((item) => item.id === draft.id)) {
+    message($('editor-error'), 'Это блюдо больше недоступно в меню. Обновите список и выберите блюдо снова.');
+    return;
+  }
+  const existingItem = state.items.find((entry) => entry.id === draft.id);
+  const selectedCategory = $('category').value;
+  if ((!selectedCategory && !existingItem?.source)
+    || (selectedCategory && !state.categories.some((entry) => !entry.source && entry.id === selectedCategory))) {
+    message($('editor-error'), 'Выберите группу блюда. Возможно, список групп был обновлён.');
+    $('category').focus();
     return;
   }
   setBusy(true);
@@ -1091,16 +1899,18 @@ $('item-form').addEventListener('submit', async (event) => {
       draft.file = null;
     }
     const item = {
+      ...(existingItem?.source ? { source: existingItem.source } : {}),
       id: draft.id, name, description: $('description').value.trim(), price: Number($('price').value),
-      category: $('category').value, image: draft.image, published: $('published').checked,
-      availableForOrder: $('available-for-order').checked, order: Number($('order').value),
+      category: selectedCategory || null, image: draft.image, hiddenOnSite: !$('show-on-site').checked, published: !!selectedCategory && $('show-on-site').checked,
+      availableForOrder: !!selectedCategory && $('show-on-site').checked && existingItem?.source?.testOnly !== true, order: existingItem?.order ?? Math.max(0, ...state.items.map(entry => entry.order)) + 1,
     };
     const items = draft.isNew ? [...state.items, item] : state.items.map((entry) => entry.id === item.id ? item : entry);
     await persist(items);
     draft.dirty = false;
     clearPreviewUrl();
     $('editor-dialog').close();
-    notice(!item.published ? `«${name}» сохранено. Блюдо скрыто от гостей.` : item.availableForOrder
+    notice(item.hiddenOnSite ? `«${name}» сохранено. Скрыто с сайта, доступно в админке.` : manualMenu ? `«${name}» сохранено${item.category ? '. Видно на сайте.' : '.'}` : !item.category ? `«${name}» сохранено в меню кассы. На сайте блюдо не размещено.` : item.source?.testOnly
+      ? `«${name}» сохранено для просмотра. Тестовые блюда заказать нельзя.` : item.availableForOrder
       ? `«${name}» сохранено. Видно на сайте и можно заказать.`
       : `«${name}» сохранено. Видно на сайте, временно недоступно для заказа.`);
   } catch (error) {
@@ -1108,7 +1918,6 @@ $('item-form').addEventListener('submit', async (event) => {
     message($('editor-error'), error.status === 409 ? 'Не удалось сохранить: меню уже изменилось. Ваш черновик остался в форме.' : error.message);
   } finally {
     setBusy(false);
-    $('add-item').disabled = state.conflict || !state.loaded;
   }
 });
 
@@ -1118,24 +1927,33 @@ $('items').addEventListener('click', async (event) => {
   const item = state.items.find((entry) => entry.id === button.dataset.itemId);
   if (!item) return;
   if (button.dataset.itemAction === 'edit') return openEditor(item);
-  if (button.dataset.itemAction === 'delete') {
+  if (button.dataset.itemAction === 'place') { openEditor(item); $('category').focus(); return; }
+  if (button.dataset.itemAction === 'visibility' && item.category) {
+    const hiddenOnSite = item.hiddenOnSite !== true;
+    setBusy(true);
+    try {
+      await persist(state.items.map(entry => entry.id === item.id ? { ...entry, hiddenOnSite } : entry));
+      notice(hiddenOnSite ? `«${item.name}» скрыто с сайта. Блюдо осталось в этой группе в админке.` : `«${item.name}» снова видно на сайте.`);
+    } catch (error) {
+      if (!sessionExpired(error) && !state.conflict) notice(error.message, { error: true });
+    } finally {
+      setBusy(false);
+    }
+    $('items').querySelector(`[data-item-id="${item.id}"][data-item-action="visibility"]`)?.focus();
+    return;
+  }
+  if (button.dataset.itemAction === 'delete' || button.dataset.itemAction === 'detach') {
+    if (!manualMenu && item.source && state.mode !== 'site') return;
     deleteId = item.id;
-    $('delete-description').textContent = `«${item.name}» будет удалено из меню. Если блюдо ещё пригодится, его можно просто скрыть с сайта.`;
+    $('delete-title').textContent = !manualMenu && item.source ? 'Убрать блюдо с сайта?' : 'Удалить блюдо?';
+    $('confirm-delete').textContent = !manualMenu && item.source ? 'Убрать с сайта' : 'Удалить';
+    $('delete-description').textContent = !manualMenu && item.source ? `«${item.name}» исчезнет из группы сайта и останется в своей группе во вкладке «На кассе». Его можно будет разместить снова.`
+      : `«${item.name}» будет удалено из меню. Если блюдо ещё пригодится, его можно просто скрыть с сайта.`;
     message($('delete-error'), '');
     $('delete-dialog').showModal();
     return;
   }
-  setBusy(true);
-  try {
-    await persist(state.items.map((entry) => entry.id === item.id ? { ...entry, published: !entry.published } : entry));
-    notice(`«${item.name}» ${item.published ? 'скрыто с сайта' : 'снова видно на сайте'}.`);
-  } catch (error) {
-    if (!state.conflict) notice(error.message, { error: true });
-  } finally {
-    setBusy(false);
-    $('add-item').disabled = state.conflict || !state.loaded;
-    [...document.querySelectorAll('[data-item-action="toggle"]')].find((entry) => entry.dataset.itemId === item.id)?.focus();
-  }
+
 });
 
 $('cancel-delete').addEventListener('click', () => { if (!state.busy) $('delete-dialog').close(); });
@@ -1146,30 +1964,36 @@ $('confirm-delete').addEventListener('click', async () => {
   if (!item) return $('delete-dialog').close();
   setBusy(true);
   try {
-    await persist(state.items.filter((entry) => entry.id !== deleteId));
+    await persist(!manualMenu && item.source ? state.items.map((entry) => entry.id === deleteId
+      ? { ...entry, category: null, published: false, availableForOrder: false } : entry) : state.items.filter((entry) => entry.id !== deleteId));
     $('delete-dialog').close();
-    notice(`«${item.name}» удалено из меню.`);
-    $('add-item').focus();
+    notice(!manualMenu && item.source ? `«${item.name}» убрано с сайта и осталось в меню кассы.` : `«${item.name}» удалено из меню.`);
+    $('search').focus();
   } catch (error) {
     if (state.conflict) $('delete-dialog').close();
     else message($('delete-error'), error.message);
   } finally {
     setBusy(false);
-    $('add-item').disabled = state.conflict || !state.loaded;
   }
 });
 
 window.addEventListener('beforeunload', (event) => {
-  if (auth.recoveryPending || auth.enrollmentToken || (draft.dirty && ($('editor-dialog').open || draft.resume))) {
+  if (auth.recoveryPending || auth.enrollmentToken || (draft.dirty && ($('editor-dialog').open || draft.resume))
+    || (categoryDraft.dirty && ($('categories-dialog').open || categoryDraft.resume))) {
     event.preventDefault();
     event.returnValue = '';
   }
 });
 
 window.addEventListener('pagehide', () => {
+  const savedReset = readPasswordReset();
   // A back/forward cache entry must never retain a QR secret or one-time recovery list.
-  if (auth.enrollmentPhase || auth.challengeToken || auth.busy) showLogin();
+  if (auth.enrollmentPhase || auth.challengeToken || auth.busy || !$('reset-request-form').hidden || !$('reset-code-form').hidden || passwordReset.token || passwordReset.passwordToken) showLogin();
   else clearChallenge();
+  // Preserve only an outstanding mail request when visiting email/reloading.
+  if (savedReset) {
+    try { globalThis.sessionStorage?.setItem(RESET_STORAGE_KEY, JSON.stringify(savedReset)); } catch { /* Optional. */ }
+  }
 });
 
 for (const type of ['pointerdown', 'pointermove', 'keydown', 'input', 'wheel', 'touchstart', 'touchmove']) {
@@ -1185,6 +2009,9 @@ function suspendProtectedUi() {
   draft.resume = draft.resume || $('editor-dialog').open;
   $('editor-dialog').close();
   $('delete-dialog').close();
+  clearCategoryDrag();
+  categoryDraft.resume = categoryDraft.resume || $('categories-dialog').open;
+  $('categories-dialog').close();
   clearTimeout(idle.timer);
 }
 
@@ -1213,6 +2040,7 @@ async function checkVisibleSession() {
       if (idle.dashboardWasVisible) {
         $('dashboard').hidden = false;
         if (draft.resume && state.loaded) { draft.resume = false; $('editor-dialog').showModal(); }
+        else if (categoryDraft.resume && state.loaded) { categoryDraft.resume = false; $('categories-dialog').showModal(); }
       }
     }
   } catch (error) {
@@ -1223,7 +2051,11 @@ async function checkVisibleSession() {
 }
 document.addEventListener('visibilitychange', checkVisibleSession);
 window.addEventListener('focus', checkVisibleSession);
-window.addEventListener('pageshow', checkVisibleSession);
+window.addEventListener('pageshow', () => {
+  if (!auth.busy && !$('login-form').hidden) resumePasswordReset(readPasswordReset());
+  updateResetResend();
+  return checkVisibleSession();
+});
 
 if (authChannel) authChannel.onmessage = ({ data }) => {
   if (!data || typeof data !== 'object') return;

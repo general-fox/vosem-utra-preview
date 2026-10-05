@@ -48,7 +48,7 @@ function cafe_snapshot(string $directory, bool $includeOrders): array {
             $auth->validatePortableState($state);
             $menu = CafeStorage::readJson($directory.'/admin-data/menu.json');
             if (!is_array($menu) || !is_int($menu['revision'] ?? null) || $menu['revision'] < 1) throw new RuntimeException('Saved menu not found or invalid.');
-            cafe_validate_items($menu['items'] ?? null);
+            cafe_normalize_catalog($menu);
             $files = []; $size = 0;
             $add = static function (string $name, string $file) use (&$files, &$size): void {
                 if (is_link($file) || !is_file($file)) throw new RuntimeException('Invalid private file.');
@@ -117,7 +117,7 @@ function cafe_import_private(string $bundle, string $keyFile, string $destinatio
     if (($snapshot['version'] ?? null) !== 1 || ($snapshot['source'] ?? null) !== 'vosem-php' || !is_array($snapshot['config'] ?? null)
         || !is_array($snapshot['auth'] ?? null) || !is_array($snapshot['files'] ?? null)) throw new RuntimeException('Invalid backup contents.');
     if (($snapshot['localTestData'] ?? false) && str_starts_with($origin, 'https:') && (isset($snapshot['files']['orders-data/orders.sqlite']) || ($snapshot['ordersConfig'] ?? null) !== null)) throw new RuntimeException('Do not transfer local test orders to a live site. Use export without --include-orders.');
-    $menu = $snapshot['menu']; cafe_validate_items($menu['items'] ?? null);
+    $menu = $snapshot['menu']; cafe_normalize_catalog($menu);
     if (!is_int($menu['revision'] ?? null) || $menu['revision'] < 1) throw new RuntimeException('Invalid menu revision.');
     $decoded = [];
     foreach ($snapshot['files'] as $name => $encoded) {

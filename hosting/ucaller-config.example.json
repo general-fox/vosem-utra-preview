@@ -1,0 +1,8 @@
+{
+  "serviceId": "",
+  "secretKey": "",
+  "trustedPhone": "",
+  "publicOrigin": "https://test888.ru",
+  "mode": "test",
+  "dailyCallLimit": 10
+}

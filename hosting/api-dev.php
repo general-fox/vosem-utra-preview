@@ -19,11 +19,17 @@ try {
     // Only the secret-authenticated bridge may choose this local browser origin.
     $_SERVER['HTTP_HOST'] = substr($origin, 7);
     $config = cafe_site_config($privateDir);
+    if (getenv('CAFE_SITE_PROFILE') === 'catalog') {
+        $config = array_replace($config, ['delivery_enabled'=>false, 'keeper_enabled'=>false, 'manual_menu_enabled'=>true, 'telegram_enabled'=>false]);
+    }
     header('X-Cafe-Runtime: php');
     header('X-Robots-Tag: noindex, nofollow');
     cafe_security_headers(false);
     $menu = new CafeMenu($privateDir, $config);
     $path = explode('?', $_SERVER['REQUEST_URI'] ?? '/')[0];
+    if (($config['delivery_enabled'] ?? true) !== true && preg_match('~^/api/(?:ordering|orders|staff|telegram)(?:/|$)~', $path)) {
+        cafe_json_response(['error'=>'Страница не найдена.', 'code'=>'not_found'],404); exit;
+    }
     if (preg_match('~^/api/(?:ordering|orders(?:/.*)?|staff(?:/.*)?)$~D', $path)) {
         // Local test orders remain opt-in and isolated from any transferred real DB.
         $config['orders_environment'] = 'staging';

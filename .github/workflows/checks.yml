@@ -30,4 +30,11 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run build:reg
+      - run: npm run build:reg:test
+      - run: npm run test:catalog
+      - run: npm run build:reg:test:ucaller
+      - run: node --test tests/ucaller-http.test-reg.mjs
+      - run: npm run build:reg:delivery
       - run: npm run test:reg
+      - run: npm run build:reg:test:delivery
+      - run: npm run test:staging

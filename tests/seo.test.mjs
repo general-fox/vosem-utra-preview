@@ -18,11 +18,11 @@ test('preview stays noindex while rendering real breakfast cards without JavaScr
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
   assert.doesNotMatch(html, /rel="canonical"|property="og:|application\/ld\+json|site-verification|yandex-verification/);
   assert.ok(html.includes(`<title>${SEO_TITLE}</title>`));
-  assert.equal((slot(html, 'DISH-GRID').match(/<article /g) || []).length, 13);
-  assert.equal((slot(html, 'DISH-EXTRAS').match(/<article /g) || []).length, 6);
+  assert.equal((slot(html, 'DISH-GRID').match(/<article /g) || []).length, seed.items.filter(item => item.published && item.image).length);
+  assert.equal((slot(html, 'DISH-EXTRAS').match(/<article /g) || []).length, seed.items.filter(item => item.published && !item.image).length);
   assert.match(html, /Авокадо-тост с яйцом пашот и гуакамоле/);
+  assert.match(html, /data-menu-roots/);
   assert.match(html, /data-extra-section>/);
-  assert.match(html, /data-menu-filter="all"/);
   assert.doesNotMatch(html, /Чтобы увидеть карточки блюд/);
 });
 
@@ -68,11 +68,15 @@ test('JSON-LD uses only established cafe facts and the visible published menu', 
 
 test('re-rendering built HTML replaces old cards, counts and schema with the live menu', () => {
   const initial = transformPage(home, { production: true, items: [item({ name: 'Старый завтрак' }), item({ id: 'porridge', name: 'Каша', image: '' })] });
+  assert.doesNotMatch(slot(initial, 'DISH-GRID'), /Каша/);
+  assert.match(slot(initial, 'DISH-EXTRAS'), /Каша/);
+  assert.match(initial, /data-extra-section>/);
   const live = transformPage(initial, { production: true, items: [item({ name: 'Новый завтрак', price: 650.5 })] });
   assert.doesNotMatch(live, /Старый завтрак|>Каша<|"name":"Каша"/);
   assert.deepEqual(renderedNames(live), ['Новый завтрак']);
   assert.match(live, /650,5(?:\u00a0| )₽/);
   assert.match(live, /data-extra-section hidden>/);
+  assert.equal(slot(live, 'DISH-EXTRAS').trim(), '');
   assert.match(live, /data-menu-count[^>]*>1 блюдо<\/span>/);
   assert.equal((live.match(/id="cafe-structured-data"/g) || []).length, 1);
   assert.equal((live.match(/rel="canonical"/g) || []).length, 1);
@@ -164,4 +168,58 @@ test('initial cards expose accessible cart controls for both photo and text dish
     assert.match(attributes, /aria-label="Временно недоступно: /);
   }
   assert.match(markup, /aria-label="Временно недоступно: Тост &amp; сыр"/);
+});
+
+test('SSR hides cash-only imports, marks manually placed test dishes and never advertises a test zero price as free', () => {
+  const source = { provider: 'kds', organizationId: 'baa06e7a-b091-4296-97bc-275bc22d9af9', externalId: '100', testOnly: true };
+  const categories = [
+    { id: 'breakfast', name: 'Завтраки', parentId: null, order: 0 },
+    { id: 'drinks', name: 'Напитки', parentId: null, order: 1 },
+    { id: 'redbox', name: 'Меню REDBOX', parentId: null, order: 2, source },
+    { id: 'sushi', name: 'Суши', parentId: 'redbox', order: 0, source:{...source,externalId:'101'} },
+  ];
+  const rendered = renderMenu([
+    item({ id: 'free-real', name: 'Настоящая бесплатная позиция', category: 'breakfast', price: 0, availableForOrder: true }),
+    item({ id: 'inherited-test', name: 'Тестовые суши', category: 'sushi', price: 0, source:{...source,externalId:'200',groupExternalId:'101'}, availableForOrder: true }),
+    item({ id: 'mapped-test', name: 'Тестовый кофе', category: 'drinks', price: 0, source, availableForOrder: true }),
+    item({ id: 'priced-test', name: 'Тест с ценой', category: 'drinks', price: 250, source, availableForOrder: true }),
+  ], categories);
+  const cards = [...rendered.grid.matchAll(/<article\b[^>]*>[\s\S]*?<\/article>/g)].map(match => match[0]);
+  assert.equal(cards.length, 3);
+  assert.doesNotMatch(rendered.grid,/Тестовые суши|inherited-test/);
+  assert.match(cards[0], /class="dish-price">0(?:\u00a0| )₽<\/span>/);
+  assert.doesNotMatch(cards[0], /Тестовое блюдо| disabled/);
+  for (const card of cards.slice(1)) {
+    assert.match(card, /Тестовое блюдо · /);
+    assert.match(card, /<button\b[^>]* disabled>Временно недоступно<\/button>/);
+  }
+  for (const card of cards.slice(1, 2)) {
+    assert.match(card, /class="dish-price is-unset">Цена уточняется<\/span>/);
+    assert.doesNotMatch(card, />0(?:\u00a0| )₽<\/span>/);
+  }
+  assert.match(cards[1], /data-menu-category="drinks"/);
+  assert.match(cards[1], /Тестовое блюдо · Напитки<\/p>/);
+  assert.match(cards[2], /class="dish-price">250(?:\u00a0| )₽<\/span>/);
+});
+
+test('production JSON-LD excludes both source test branches and test dishes mapped into ordinary categories', () => {
+  const source = { provider: 'kds', organizationId: 'baa06e7a-b091-4296-97bc-275bc22d9af9', externalId: '100', testOnly: true };
+  const categories = [
+    { id: 'breakfast', name: 'Завтраки', parentId: null, order: 0 },
+    { id: 'drinks', name: 'Напитки', parentId: null, order: 1 },
+    { id: 'redbox', name: 'Меню REDBOX', parentId: null, order: 2, source },
+    { id: 'sushi', name: 'Суши', parentId: 'redbox', order: 0, source:{...source,externalId:'101'} },
+  ];
+  const html = transformPage(home, { production: true, categories, items: [
+    item({ category: 'breakfast' }),
+    item({ id: 'real-coffee', name: 'Обычный кофе', category: 'drinks', price: 250 }),
+    item({ id: 'inherited-test', name: 'Тестовые суши', category: 'sushi', price: 0, source:{...source,externalId:'200',groupExternalId:'101'} }),
+    item({ id: 'mapped-test', name: 'Тестовый кофе', category: 'drinks', price: 250, source }),
+  ] });
+  const data = schema(html);
+  assert.deepEqual(data.hasMenu.hasMenuSection.map(section => section.name), ['Завтраки', 'Напитки']);
+  assert.deepEqual(data.hasMenu.hasMenuSection.flatMap(section => section.hasMenuItem.map(dish => dish.name)), ['Тост с яйцом', 'Обычный кофе']);
+  assert.doesNotMatch(JSON.stringify(data), /Тестовые суши|Тестовый кофе|REDBOX|"price":0/);
+  assert.doesNotMatch(slot(html, 'DISH-GRID'), /Тестовые суши/);
+  assert.match(slot(html, 'DISH-GRID'), /Тестовый кофе/);
 });

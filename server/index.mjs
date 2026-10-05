@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createMenuMiddleware, validateItems } from './menu-api.mjs';
+import { createMenuMiddleware, normalizeStoredMenu } from './menu-api.mjs';
 import { SITE_URL, transformPage, renderRobots, renderSitemap } from './seo.mjs';
 import { securityHeaders, secureHtml } from './http-security.mjs';
 
@@ -29,12 +29,12 @@ export async function createSiteServer(options = {}) {
     let saved;
     try {
       saved = JSON.parse(await readFile(path.join(dataDir, 'menu.json'), 'utf8'));
-      if (!Number.isSafeInteger(saved.revision) || saved.revision < 1) throw new Error('Invalid menu revision');
+      if (!Number.isSafeInteger(saved.revision) || saved.revision < 1 || saved.revision >= Number.MAX_SAFE_INTEGER) throw new Error('Invalid menu revision');
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
       saved = JSON.parse(await readFile(path.join(projectRoot, 'public/data/menu.json'), 'utf8'));
     }
-    return validateItems(saved.items);
+    return normalizeStoredMenu(saved);
   }
 
   function respond(req, res, status, type, content, cache = 'no-store') {
@@ -73,7 +73,7 @@ export async function createSiteServer(options = {}) {
     if (path.extname(filename) === '.html') {
       const page = path.basename(filename, '.html');
       try {
-        content = transformPage(content.toString('utf8'), { page, production, items: page === 'index' ? await currentMenu() : [], ...verification });
+        content = transformPage(content.toString('utf8'), { page, production, ...(page === 'index' ? await currentMenu() : {items:[]}), ...verification });
       } catch {
         res.setHeader('X-Robots-Tag', 'noindex, nofollow');
         return respond(req, res, 503, 'text/plain; charset=utf-8', 'Сайт временно недоступен. Пожалуйста, повторите позже.');

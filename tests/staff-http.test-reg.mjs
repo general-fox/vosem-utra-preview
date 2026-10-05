@@ -44,6 +44,8 @@ test('assembled staff API authenticates Telegram, isolates roles and commits acc
   async function saveConfig() { await writeFile(path.join(privateDir, 'test-telegram.json'), JSON.stringify(config)); }
   try {
     await cp(path.join(root, 'dist-reg'), directory, { recursive: true });
+    // The release pins the production domain; this isolated TLS fixture owns its own origin.
+    await writeFile(path.join(privateDir, 'app/deployment.php'), `<?php return ['publicOrigin'=>'${publicOrigin}','public_origin'=>'${publicOrigin}','staging'=>false];\n`);
     await writeFile(path.join(privateDir, 'admin-config.php'), `<?php return ['publicOrigin'=>'${publicOrigin}'];\n`);
     await writeFile(path.join(privateDir, 'orders-config.php'), "<?php $c=CafeOrders::developmentConfig(); $c['mode']='production'; $c['termsApproved']=true; return $c;\n");
     await writeFile(path.join(privateDir, 'telegram-config.php'), "<?php return json_decode(file_get_contents(__DIR__.'/test-telegram.json'),true,32,JSON_THROW_ON_ERROR);\n");

@@ -18,6 +18,7 @@ final class CafeOrders
     private ?DateTimeZone $zone = null;
     private bool $enabled = false;
     private bool $configurationReady = false;
+    private ?CafeKdsDelivery $kds = null;
     private const QUOTE_SECONDS = 300;
     private const GUEST_SECONDS = 28800;
     private const BODY_LIMIT = 32768;
@@ -82,7 +83,17 @@ final class CafeOrders
         $c = $this->config;
         if (!$this->secureConfigured()) return false;
         $mode = $c['mode'] ?? 'production';
-        if (!in_array($mode, ['production', 'development'], true) || ($mode === 'development' ? !$this->devAllowed() : ($c['termsApproved'] ?? false) !== true)) return false;
+        if (!in_array($mode, ['production', 'development', 'staging'], true)) return false;
+        if ($mode === 'development' && !$this->devAllowed()) return false;
+        if ($mode === 'production' && ($c['termsApproved'] ?? false) !== true) return false;
+        // Public test deployments need explicit server configuration and HTTPS.
+        // Demonstration terms must never enable ordering on the customer's domain.
+        if ($mode === 'staging') {
+            $origin = parse_url((string)($this->site['public_origin'] ?? ''));
+            if (($this->site['staging'] ?? false) !== true || ($this->site['orders_environment'] ?? '') !== 'staging'
+                || ($this->site['indexing'] ?? true) !== false || ($origin['scheme'] ?? '') !== 'https'
+                || in_array(strtolower($origin['host'] ?? ''), ['vosem-utra.ru', 'www.vosem-utra.ru'], true)) return false;
+        }
         try { $this->zone = new DateTimeZone($c['timezone'] ?? ''); } catch (Throwable) { return false; }
         if (!in_array($c['timezone'] ?? '', DateTimeZone::listIdentifiers(), true)) return false;
         foreach (['cafeAddress', 'cafePhone', 'paymentNotice'] as $field) if (!is_string($c[$field] ?? null) || trim($c[$field]) === '' || strlen($c[$field]) > 3000) return false;
@@ -158,6 +169,7 @@ final class CafeOrders
     public function atomic(callable $operation): mixed { return $this->transaction($operation); }
     public function configuration(): array { return $this->config; }
     public function timestamp(): int { return $this->now(); }
+    public function attachKds(CafeKdsDelivery $delivery): void { $this->kds = $delivery; }
     public function timeString(int $timestamp): string { return $this->iso($timestamp); }
     public function environment(): string { return in_array($this->site['orders_environment'] ?? null,['staging','production'],true) ? $this->site['orders_environment'] : (($this->config['mode'] ?? 'production') === 'production' ? 'production' : 'staging'); }
     public function withMenuSnapshot(callable $operation, bool $requireLock = false): mixed
@@ -204,6 +216,8 @@ final class CafeOrders
     public function settings(?string $token = null, string $peer = 'unknown'): array
     {
         $base = ['enabled'=>$this->enabled, 'mode'=>$this->config['mode'] ?? 'production', 'notice'=>$this->enabled ? ($this->config['notice'] ?? '') : 'Приём заказов через сайт пока не подключён. Условия оформления готовятся.', 'serverNow'=>$this->iso($this->now()), 'csrfToken'=>null, 'settings'=>null, 'availability'=>['pickup'=>['asap'=>false,'slots'=>[]], 'delivery'=>['asap'=>false,'slots'=>[]]]];
+        $base['kds'] = ['enabled'=>$this->kds !== null];
+        if ($this->kds !== null) $base['notice'] = 'Тестовая заявка поступит в КДС. Используйте вымышленные данные; банковской оплаты и исполнения заказа нет.';
         if (!$this->enabled) return $base;
         $this->limit('settings', $peer, 120, 3000);
         $session = $this->transaction(function () use ($token): array {
@@ -301,16 +315,38 @@ final class CafeOrders
         $menu ??= ($this->menuProvider)();
         if (!is_array($menu) || !is_array($menu['items'] ?? null) || !is_int($menu['revision'] ?? null)) throw new CafeOrderException(503, 'Актуальное меню недоступно. Попробуйте позже.', 'menu_unavailable');
         $catalog = []; foreach ($menu['items'] as $item) $catalog[$item['id']] = $item;
-        $lines = []; $unavailable = []; $subtotal = 0;
+        $lines = []; $unavailable = []; $subtotal = 0; $stockGroups = [];
         foreach ($draft['items'] as $line) {
             $item = $catalog[$line['id']] ?? null;
             if (!$item || ($item['published'] ?? false) !== true || ($item['availableForOrder'] ?? true) !== true) { $unavailable[] = ['id'=>$line['id'],'available'=>false]; continue; }
+            $stock = $item['keeperAvailability'] ?? null;
+            if (is_array($stock) && array_key_exists('remaining', $stock)) {
+                $remaining = $stock['remaining'];
+                if ($remaining !== null && ((!is_int($remaining) && !is_float($remaining)) || !is_finite((float)$remaining) || $remaining < 0)) throw new CafeOrderException(503, 'Остаток блюда требует проверки. Попробуйте позже.', 'menu_unavailable');
+                // Only the server's menu snapshot supplies stock identity; request fields never reach here.
+                $stockKey = $stock['stockKey'] ?? null;
+                if (!is_string($stockKey) || !preg_match('/^[a-f0-9]{64}$/D', $stockKey)) {
+                    $source = $item['source'] ?? [];
+                    $stockKey = ($source['provider'] ?? '') === 'kds' && is_string($source['organizationId'] ?? null) && is_string($source['externalId'] ?? null)
+                        ? 'source:'.strtolower($source['organizationId']).':'.$source['externalId'] : 'item:'.$line['id'];
+                }
+                $group = $stockGroups[$stockKey] ?? ['quantity'=>0, 'remaining'=>null, 'ids'=>[]];
+                $group['quantity'] += $line['quantity'];
+                $group['ids'][] = $line['id'];
+                if ($remaining !== null) $group['remaining'] = $group['remaining'] === null ? $remaining : min($group['remaining'], $remaining);
+                $stockGroups[$stockKey] = $group;
+            }
             $price = $item['price'] ?? null;
             if ((!is_int($price) && !is_float($price)) || !is_finite((float)$price) || $price < 0 || $price > 1000000 || abs($price * 100 - round($price * 100)) > 0.00001) throw new CafeOrderException(503, 'Цена блюда требует проверки. Попробуйте позже.', 'menu_unavailable');
             $minor = (int)round($price * 100, 0, PHP_ROUND_HALF_UP); $total = $minor * $line['quantity']; $subtotal += $total;
             $lines[] = ['id'=>$line['id'],'name'=>$item['name'],'quantity'=>$line['quantity'],'unitPriceMinor'=>$minor,'lineTotalMinor'=>$total];
         }
         if ($unavailable) throw new CafeOrderException(409, 'Некоторые блюда временно недоступны. Проверьте корзину.', 'item_unavailable', ['items'=>$unavailable]);
+        $limited = [];
+        foreach ($stockGroups as $group) if ($group['remaining'] !== null && $group['quantity'] > $group['remaining']) {
+            foreach ($group['ids'] as $id) $limited[] = ['id'=>$id, 'available'=>true, 'maxQuantity'=>(int)floor($group['remaining'])];
+        }
+        if ($limited) throw new CafeOrderException(409, 'Остаток некоторых блюд изменился. Уменьшите количество в корзине.', 'item_limited', ['items'=>$limited]);
         $minimum = $this->config['minimumSubtotalMinor'][$draft['fulfilment']['type']];
         if ($subtotal < $minimum) throw new CafeOrderException(422, 'Сумма блюд меньше минимальной для выбранного способа получения.', 'minimum_not_met', ['minimumSubtotalMinor'=>$minimum,'subtotalMinor'=>$subtotal]);
         $delivery = $this->config['delivery'];
@@ -379,11 +415,13 @@ final class CafeOrders
             $sequence = (int)$this->statement("SELECT value FROM order_sequences WHERE name='order_number'")->fetchColumn();
             $number = ($this->environment() === 'production' ? '' : 'TEST-').str_pad((string)$sequence,6,'0',STR_PAD_LEFT);
             $order = ['number'=>$number,'status'=>'new','createdAt'=>$this->iso($now),'payment'=>['method'=>null,'status'=>'not_configured','paidAmountMinor'=>null]] + $snapshot;
+            if ($this->kds !== null) $order['trackingId'] = $id;
             $this->statement('INSERT INTO orders(id,number,guest_hash,idempotency_hash,payload_hash,status,created_at,original_request,snapshot,environment) VALUES(?,?,?,?,?,?,?,?,?,?)', [$id,$number,$guest,$keyHash,$payload,'new',$now,self::json($draft),self::json($order),$this->environment()]);
             $this->statement('INSERT INTO order_history(order_id,event,author,created_at,snapshot) VALUES(?,?,?,?,?)', [$id,'created','guest',$now,self::json(['request'=>$draft,'order'=>$order])]);
             $this->statement('INSERT INTO notifications(id,order_id,channel,status,created_at) VALUES(?,?,NULL,?,?)', [bin2hex(random_bytes(16)),$id,'pending',$now]);
             $this->statement('INSERT INTO outbox VALUES(?,?,?,?,?,?)', [bin2hex(random_bytes(16)),$id,'order.created','pending',$now,self::json(['orderId'=>$id])]);
             $this->statement('UPDATE quotes SET order_id=? WHERE token_hash=?', [$id,hash('sha256',$quoteId)]);
+            $this->kds?->enqueue($id);
             return ['order'=>$order,'_replayed'=>false];
         }));
         if (isset($result['_changed'])) throw new CafeOrderException(409, 'Условия или состав заказа изменились. Проверьте новый расчёт и отправьте ещё раз.', 'quote_changed', ['quote'=>$result['_changed']]);
@@ -393,6 +431,16 @@ final class CafeOrders
     {
         if (!hash_equals($previous['guest_hash'],$guest) || !hash_equals($previous['payload_hash'],$payload)) throw new CafeOrderException(409, 'Ключ отправки уже использован для другого запроса.', 'idempotency_conflict');
         return ['order'=>json_decode($previous['snapshot'],true,512,JSON_THROW_ON_ERROR),'_replayed'=>true];
+    }
+    public function track(string $id, ?string $token, ?string $csrf, string $peer, bool $sync): array
+    {
+        $guest=$this->guest($token,$sync ? $csrf : null);
+        $this->limit('track',$peer,300,6000);
+        if (!preg_match('/^[a-f0-9]{32}$/D',$id)) throw new CafeOrderException(404,'Заказ не найден.','not_found');
+        $row=$this->statement('SELECT guest_hash,snapshot FROM orders WHERE id=? AND environment=?',[$id,$this->environment()])->fetch();
+        if (!$row || !hash_equals($row['guest_hash'],$guest)) throw new CafeOrderException(404,'Заказ не найден.','not_found');
+        $delivery=$this->kds === null ? ['state'=>'not_connected','pendingNumber'=>null,'pollAfterMs'=>0] : ($sync ? $this->kds->sync($id) : $this->kds->state($id));
+        return ['order'=>json_decode($row['snapshot'],true,64,JSON_THROW_ON_ERROR),'delivery'=>$delivery];
     }
     /** Only call behind the existing authenticated MFA administrator boundary. No public route. */
     public function list(int $limit = 50, int $offset = 0): array
@@ -427,11 +475,18 @@ final class CafeOrders
     }
     public function dispatch(string $path, string $method): bool
     {
-        if (!in_array($path,['/api/ordering','/api/orders/quote','/api/orders'],true)) return false;
+        $tracking=preg_match('~^/api/orders/([a-f0-9]{32})/(status|sync)$~D',$path,$trackingMatch)===1;
+        if (!$tracking && !in_array($path,['/api/ordering','/api/orders/quote','/api/orders'],true)) return false;
         try {
             $peer = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
             $this->checkRequestSecurity($_SERVER['HTTP_ORIGIN'] ?? null,$_SERVER['HTTP_SEC_FETCH_SITE'] ?? null,!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',$peer,$method !== 'GET');
             $token = is_string($_COOKIE['vosem_order_guest'] ?? null) ? $_COOKIE['vosem_order_guest'] : null;
+            if ($tracking) {
+                $sync=$trackingMatch[2]==='sync';
+                if ($method!==($sync ? 'POST' : 'GET')) throw new CafeOrderException(405,'Метод не поддерживается.','method');
+                if ($sync) self::body();
+                self::response($this->track($trackingMatch[1],$token,(string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ''),$peer,$sync)); return true;
+            }
             if ($path === '/api/ordering' && $method === 'GET') {
                 $result = $this->settings($token,$peer);
                 if (isset($result['_guestToken'])) { setcookie('vosem_order_guest',$result['_guestToken'],['expires'=>time()+self::GUEST_SECONDS,'path'=>'/api','secure'=>!$this->devAllowed(),'httponly'=>true,'samesite'=>'Strict']); unset($result['_guestToken']); }

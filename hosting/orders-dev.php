@@ -25,9 +25,10 @@ try {
         $saved = CafeStorage::readJson(is_file($savedPath) ? $savedPath : $root.'/public/data/menu.json');
         $revision = $saved['revision'] ?? 1;
         if (!is_int($revision) || $revision < 1) throw new RuntimeException('Invalid menu revision');
-        $items = array_values(array_filter(cafe_validate_items($saved['items'] ?? null), static fn(array $item): bool => $item['published']));
+        $catalog = cafe_normalize_catalog($saved);
+        $items = array_values(array_filter($catalog['items'], static fn(array $item): bool => $item['published']));
         usort($items, static fn(array $a, array $b): int => $a['order'] <=> $b['order']);
-        return ['items'=>$items, 'revision'=>$revision];
+        return ['categories'=>$catalog['categories'], 'items'=>$items, 'revision'=>$revision];
     };
     $privateDir = $root.'/.data/orders-development';
     $siteConfig = ['public_origin'=>$origin, 'production'=>false, 'allow_http_dev'=>true];

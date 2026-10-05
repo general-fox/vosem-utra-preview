@@ -45,9 +45,7 @@ fwrite($handle, "<?php\ndeclare(strict_types=1);\nreturn " . var_export($config,
 fclose($handle);
 $handle = fopen($directory . '/admin-access.txt', 'x');
 if ($handle === false) { throw new RuntimeException('Cannot save initial access'); }
-$mfa = $import !== null && ($import['account']['totp'] ?? null) !== null
-    ? "Подключённое приложение и неиспользованные резервные коды перенесены. Используйте существующую запись «Восемь утра».\n"
-    : "После входа подключите второй фактор и сохраните резервные коды.\n";
+$mfa = "Вход по почте и паролю. QR-код и приложение не требуются. Восстановление пароля доступно через письмо после настройки отправки почты.\n";
 fwrite($handle, "Вход на REG.RU: https://vosem-utra.ru/admin\nПочта: {$config['username']}\nПервоначальный пароль: {$password}\n\nХраните в менеджере паролей. Этот файл не загружается на сайт и не попадает в GitHub.\n".$mfa."Локальный аккаунт Node.js этим инструментом не изменяется.\n");
 fclose($handle);
 echo "Private configuration and access instructions created. Keep them outside the public site and Git.\n";

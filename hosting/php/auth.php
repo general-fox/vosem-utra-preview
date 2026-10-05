@@ -7,6 +7,7 @@ final class CafeAuth
 {
     private const CHALLENGE_MS = 300000;
     private const RATE_MS = 900000;
+    private const RESET_RATE_MS = 180000;
     // Browser persistence, not an authenticated session. Renewed only after real TOTP.
     private const DEVICE_COOKIE_SECONDS = 34560000;
     private string $directory;
@@ -32,6 +33,11 @@ final class CafeAuth
     }
 
     private function now(): int { return ($this->clock)(); }
+    private function passwordOnly(): bool { return ($this->config['auth_mode'] ?? '') === 'password'; }
+    private function requireMfaMode(): void
+    {
+        if ($this->passwordOnly()) throw new CafeAuthException(410, 'Войдите с почтой и паролем.', 'auth_method_disabled');
+    }
     private static function token(): string { return bin2hex(random_bytes(32)); }
     private static function tokenKey(mixed $token): ?string { return is_string($token) && preg_match('/\A[a-f0-9]{64}\z/', $token) === 1 ? hash('sha256', $token) : null; }
     private static function invalid(): CafeAuthException { return new CafeAuthException(401, 'Неверные данные для входа.', 'invalid_credentials'); }
@@ -181,9 +187,10 @@ final class CafeAuth
             $before = $state;
             $state['accounts'] ??= [];
             $state['devices'] ??= [];
-            if (!is_array($state['accounts']) || !is_array($state['devices'])) throw new RuntimeException('Invalid account storage.');
+            $state['passwordResets'] ??= [];
+            if (!is_array($state['accounts']) || !is_array($state['devices']) || !is_array($state['passwordResets'])) throw new RuntimeException('Invalid account storage.');
             $this->checkpointed = false;
-            foreach (['sessions', 'challenges', 'enrollments', 'devices'] as $section) foreach ($state[$section] as $key => $value) {
+            foreach (['sessions', 'challenges', 'enrollments', 'devices', 'passwordResets'] as $section) foreach ($state[$section] as $key => $value) {
                 if ($section === 'devices' && ($value['persistent'] ?? false) === true) continue;
                 if (($value['expiresAt'] ?? 0) <= $this->now()) unset($state[$section][$key]);
             }
@@ -223,6 +230,7 @@ final class CafeAuth
             if ($account === null) return ['current' => null, 'ready' => false, 'enrollmentAvailable' => false];
             if (!$this->originReady()) return ['current' => $account, 'ready' => false, 'enrollmentAvailable' => false];
             $this->encryptionKey();
+            if ($this->passwordOnly()) return ['current'=>$account, 'ready'=>true, 'enrollmentAvailable'=>false];
             if ($account['totp'] !== null) {
                 if (!is_int($account['totp']['lastCounter'] ?? null) || !is_array($account['recovery'] ?? null)) throw new RuntimeException('Invalid MFA state.');
                 foreach ($account['recovery'] as $code) if (!is_string($code) || !preg_match('/\A[a-f0-9]{64}\z/', $code)) throw new RuntimeException('Invalid recovery code state.');
@@ -238,6 +246,7 @@ final class CafeAuth
     }
     private function trustedDevice(array $state, ?string $token): ?array
     {
+        if ($this->passwordOnly()) return null;
         $key = self::tokenKey($token);
         $device = $key ? ($state['devices'][$key] ?? null) : null;
         if (!$device || (($device['persistent'] ?? false) !== true && ($device['expiresAt'] ?? 0) <= $this->now())) return null;
@@ -257,6 +266,7 @@ final class CafeAuth
     }
     public function resume(?string $deviceToken, string $peer): array
     {
+        $this->requireMfaMode();
         return $this->transaction(function (array &$state) use ($deviceToken, $peer) {
             $device = $this->trustedDevice($state, $deviceToken);
             if (!$device) throw new CafeAuthException(401, 'Браузер не распознан. Войдите с почтой и паролем.', 'device_expired');
@@ -267,12 +277,22 @@ final class CafeAuth
     }
     private function reserve(array &$state, string $peer, string $phase): array
     {
+        $reset = str_starts_with($phase, 'reset_');
+        $window = $reset ? self::RESET_RATE_MS : self::RATE_MS;
         $keys = [$phase . ':peer:' . hash('sha256', $peer), $phase . ':global'];
         foreach ($keys as $index => $key) {
+            // Shorten existing recovery limits from the original window's start.
+            // Do not restart the wait on every request or touch normal login limits.
+            if ($reset && isset($state['buckets'][$key]) && !($state['buckets'][$key]['resetWindow'] ?? false)) {
+                $state['buckets'][$key]['until'] -= self::RATE_MS - self::RESET_RATE_MS;
+                $state['buckets'][$key]['resetWindow'] = true;
+                if ($state['buckets'][$key]['until'] <= $this->now()) unset($state['buckets'][$key]);
+            }
             $bucket = $state['buckets'][$key] ?? null;
-            if ($bucket && $bucket['count'] >= ($index === 0 ? 8 : 40)) throw new CafeAuthException(429, 'Слишком много попыток. Повторите позже.', 'rate_limit', (int)ceil(($bucket['until'] - $this->now()) / 1000));
+            $limit = str_starts_with($phase, 'reset_verify_address:') ? 5 : ($index === 0 ? 8 : 40);
+            if ($bucket && $bucket['count'] >= $limit) throw new CafeAuthException(429, 'Слишком много попыток. Повторите позже.', 'rate_limit', (int)ceil(($bucket['until'] - $this->now()) / 1000));
         }
-        foreach ($keys as $key) { $state['buckets'][$key] ??= ['count' => 0, 'until' => $this->now() + self::RATE_MS]; $state['buckets'][$key]['count']++; }
+        foreach ($keys as $key) { $state['buckets'][$key] ??= ['count' => 0, 'until' => $this->now() + $window, 'resetWindow' => $reset]; $state['buckets'][$key]['count']++; }
         // Reservation survives a killed PHP worker; the successful request refunds only itself.
         CafeStorage::atomicJson($this->directory . '/auth-state.json', $state);
         $this->checkpointed = true;
@@ -297,6 +317,7 @@ final class CafeAuth
     {
         $key = self::tokenKey($token); $session = $key !== null ? ($state['sessions'][$key] ?? null) : null;
         if ($session === null) return null;
+        if (!$this->passwordOnly() && ($session['authMode'] ?? '') === 'password') { unset($state['sessions'][$key]); return null; }
         $fresh = $this->readiness($state, $session['username']);
         if (!$fresh['ready'] || $session['credentialVersion'] !== $fresh['current']['credentialVersion'] || $session['expiresAt'] <= $this->now() || $session['lastSeen'] + ($this->config['idle_ms'] ?? 900000) <= $this->now()) { unset($state['sessions'][$key]); return null; }
         if ($touch) $session['lastSeen'] = $state['sessions'][$key]['lastSeen'] = $this->now();
@@ -311,10 +332,10 @@ final class CafeAuth
     {
         if ($oldKey = self::tokenKey($oldToken)) unset($state['sessions'][$oldKey]);
         $token = self::token(); $csrfToken = self::token();
-        $session = ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'csrfToken' => $csrfToken, 'expiresAt' => $this->now() + ($this->config['session_ms'] ?? 28800000), 'lastSeen' => $this->now()];
+        $session = ['username' => $account['username'], 'credentialVersion' => $account['credentialVersion'], 'csrfToken' => $csrfToken, 'expiresAt' => $this->now() + ($this->config['session_ms'] ?? 28800000), 'lastSeen' => $this->now(), 'authMode'=>$this->passwordOnly() ? 'password' : 'mfa'];
         $this->boundedAdd($state['sessions'], $token, $session);
         $this->audit('login.succeeded', $peer, ['username' => $account['username']]);
-        return ['authenticated' => true, 'username' => $account['username'], 'token' => $token, 'csrfToken' => $csrfToken, 'session' => $this->sessionTiming($session)];
+        return ['authenticated' => true, 'username' => $account['username'], 'token' => $token, 'csrfToken' => $csrfToken, 'session' => $this->sessionTiming($session), 'authMode'=>$this->passwordOnly() ? 'password' : 'mfa'];
     }
     public function audit(string $event, string $peer = '', array $detail = []): void
     {
@@ -334,10 +355,10 @@ final class CafeAuth
     {
         return $this->transaction(function (array &$state) use ($token, $deviceToken) {
             $session = $this->sessionInState($state, $token);
-            if ($session !== null) return ['authenticated' => true, 'username' => $session['username'], 'csrfToken' => $session['csrfToken'], 'session' => $this->sessionTiming($session)];
+            if ($session !== null) return ['authenticated' => true, 'username' => $session['username'], 'csrfToken' => $session['csrfToken'], 'session' => $this->sessionTiming($session), 'authMode'=>$this->passwordOnly() ? 'password' : 'mfa'];
             $fresh = $this->readiness($state);
             $device = $this->trustedDevice($state, $deviceToken);
-            return ['authenticated' => false, 'configured' => $fresh['current'] !== null, 'mfaRequired' => true, 'production' => !($this->config['allow_http_dev'] ?? false), 'ready' => $fresh['ready'], 'enrollmentAvailable' => $fresh['enrollmentAvailable']] + ($device ? ['trustedUsername' => $device['username']] : []);
+            return ['authenticated' => false, 'configured' => $fresh['current'] !== null, 'mfaRequired' => !$this->passwordOnly(), 'authMode'=>$this->passwordOnly() ? 'password' : 'mfa', 'production' => !($this->config['allow_http_dev'] ?? false), 'ready' => $fresh['ready'], 'enrollmentAvailable' => $fresh['enrollmentAvailable']] + ($device ? ['trustedUsername' => $device['username']] : []);
         });
     }
     /** Offline migration/provisioning only. No HTTP route may expose this method. */
@@ -418,6 +439,147 @@ final class CafeAuth
     {
         return $this->transaction(function (array &$state) use ($token, $peer) { if ($key = self::tokenKey($token)) unset($state['sessions'][$key]); $this->audit('logout', $peer); return ['authenticated' => false]; });
     }
+    /** Exact persisted account only: recovery never provisions a bootstrap or unknown user. */
+    private function resetAccount(array $state, string $username): ?array
+    {
+        return $state['accounts'][$username] ?? (($state['account']['username'] ?? null) === $username ? $state['account'] : null);
+    }
+    private static function invalidReset(): CafeAuthException
+    {
+        return new CafeAuthException(400, 'Код неверный или срок его действия истёк. Проверьте письмо или запросите новый код.', 'invalid_reset');
+    }
+    private function resetMail(string $username, string $subject, string $message): bool
+    {
+        if (!is_callable($this->config['password_reset_sender'] ?? null)) return false;
+        try { return ($this->config['password_reset_sender'])($username, $subject, $message) === true; }
+        catch (Throwable) { return false; } // Never expose mail-server errors or credentials.
+    }
+    public function requestPasswordReset(array $body, string $peer): array
+    {
+        if (!is_callable($this->config['password_reset_sender'] ?? null)) throw new CafeAuthException(503, 'Отправка кодов пока не настроена. Обратитесь к администратору сайта.', 'reset_unavailable');
+        $username = self::normalizeUsername($body['email'] ?? null);
+        if (!str_contains($username, '@')) throw new CafeAuthException(400, 'Укажите почту администратора.', 'invalid_username');
+        $started = hrtime(true);
+        $token = self::token();
+        $code = str_pad((string)random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+        try {
+            $send = $this->transaction(function (array &$state) use ($username, $peer, $token, $code): bool {
+                $addressKey = 'reset_address:'.hash('sha256', $username);
+                $bucket = $state['buckets'][$addressKey] ?? ['count'=>0, 'last'=>0];
+                // Keep only the one-minute mail cooldown, including on old installations.
+                // Historical hourly counts no longer prevent entering or requesting a code.
+                if ($bucket['count'] > 0 && $bucket['last']+60000 > $this->now()) {
+                    $until = $bucket['last']+60000;
+                    throw new CafeAuthException(429, 'Код уже запрошен. Проверьте почту или повторите позже.', 'rate_limit', max(1, (int)ceil(($until-$this->now())/1000)));
+                }
+                // Rejected resends must not consume another IP/global mail allowance.
+                $this->reserve($state, $peer, 'reset_request');
+                $state['buckets'][$addressKey] = ['count'=>1, 'last'=>$this->now(), 'until'=>$this->now()+self::RESET_RATE_MS];
+                $account = $this->resetAccount($state, $username);
+                $fresh = $account ? $this->readiness($state, $username) : null;
+                $send = $account !== null && ($fresh['ready'] || $fresh['enrollmentAvailable']);
+                // Identical handle and verification behaviour for an unknown address.
+                $this->boundedAdd($state['passwordResets'], $token, ['username'=>$username,
+                    'credentialVersion'=>$send ? $account['credentialVersion'] : self::token(),
+                    'codeHash'=>hash_hmac('sha256', 'reset-code-v2:'.self::tokenKey($token).':'.$code, $this->encryptionKey()), 'codeHashVersion'=>2,
+                    'phase'=>'code', 'attempts'=>0, 'expiresAt'=>$this->now()+600000]);
+                $this->audit('password_reset.requested', $peer);
+                return $send;
+            });
+            if ($send) {
+                $origin = $this->config['public_origin'];
+                $sent = $this->resetMail($username, 'Восемь утра — код восстановления пароля',
+                    "Код восстановления пароля: {$code}\n\nСайт: {$origin}\nКод действует 10 минут с момента запроса и используется один раз. На странице восстановления укажите почту, нажмите «Уже есть код» и введите его.\nНикому не сообщайте код. Если вы не запрашивали смену пароля, просто проигнорируйте письмо. Ваш пароль не изменён.\n");
+                if (!$sent) {
+                    $this->transaction(function (array &$state) use ($token, $peer) {
+                        // Preserve a dummy challenge so delivery failure cannot reveal an account.
+                        $key = self::tokenKey($token);
+                        if (isset($state['passwordResets'][$key])) $state['passwordResets'][$key]['codeHash'] = self::token();
+                        $this->audit('password_reset.mail_failed', $peer);
+                    });
+                }
+            }
+            return ['resetToken'=>$token, 'expiresIn'=>600, 'retryAfter'=>60,
+                'message'=>'Если эта почта привязана к администратору, на неё придёт код. Проверьте также папку «Спам».'];
+        } finally {
+            // Only local encrypted enqueue runs here; SMTP is performed by the CLI worker.
+            $floor = (int)($this->config['password_reset_response_floor_ms'] ?? 800);
+            $remaining = $floor*1000 - (int)((hrtime(true)-$started)/1000);
+            if ($remaining > 0) usleep($remaining);
+        }
+    }
+    public function verifyPasswordReset(array $body, string $peer): array
+    {
+        return $this->transaction(function (array &$state) use ($body, $peer): array {
+            $this->reserve($state, $peer, 'reset_verify');
+            $key = self::tokenKey($body['resetToken'] ?? null);
+            $candidates = [];
+            if (array_key_exists('resetToken', $body)) {
+                $pending = $key !== null ? ($state['passwordResets'][$key] ?? null) : null;
+                if (!$pending || $pending['phase'] !== 'code' || $pending['attempts'] >= 5) throw self::invalidReset();
+                $username = $pending['username'];
+                $candidates[$key] = $pending;
+            } else {
+                $username = self::normalizeUsername($body['email'] ?? null);
+                if (!str_contains($username, '@')) throw self::invalidReset();
+                foreach ($state['passwordResets'] as $id=>$record) {
+                    if ($record['phase'] === 'code' && $record['username'] === $username
+                        && ($record['codeHashVersion'] ?? 1) === 2 && $record['attempts'] < 5) $candidates[$id] = $record;
+                }
+            }
+            // A code can be entered in a new tab, but attempts are shared for the
+            // email across tabs, peers and all outstanding requests, including unknown emails.
+            $this->reserve($state, $peer, 'reset_verify_address:'.hash('sha256', $username));
+            $code = $body['code'] ?? null;
+            $matched = null;
+            foreach ($candidates as $id=>$record) {
+                $state['passwordResets'][$id]['attempts']++;
+                $prefix = ($record['codeHashVersion'] ?? 1) === 2 ? 'reset-code-v2:'.$id : $body['resetToken'];
+                if (is_string($code) && preg_match('/\A[0-9]{8}\z/', $code)
+                    && hash_equals($record['codeHash'], hash_hmac('sha256', $prefix.':'.$code, $this->encryptionKey()))) $matched = $record;
+            }
+            if ($matched === null) throw self::invalidReset();
+            $pending = $matched;
+            $account = $this->resetAccount($state, $pending['username']);
+            if (!$account || !hash_equals($account['credentialVersion'], $pending['credentialVersion'])) throw self::invalidReset();
+            foreach ($state['passwordResets'] as $id=>$record) {
+                if ($record['phase'] === 'code' && $record['username'] === $pending['username']) unset($state['passwordResets'][$id]);
+            }
+            $grant = self::token();
+            $this->boundedAdd($state['passwordResets'], $grant, ['username'=>$pending['username'],
+                'credentialVersion'=>$pending['credentialVersion'], 'phase'=>'password', 'expiresAt'=>$this->now()+300000]);
+            return ['passwordToken'=>$grant, 'expiresIn'=>300];
+        });
+    }
+    public function completePasswordReset(array $body, string $peer): array
+    {
+        $username = $this->transaction(function (array &$state) use ($body, $peer): string {
+            $this->reserve($state, $peer, 'reset_complete');
+            $key = self::tokenKey($body['passwordToken'] ?? null);
+            $pending = $key !== null ? ($state['passwordResets'][$key] ?? null) : null;
+            if (!$pending || $pending['phase'] !== 'password') throw self::invalidReset();
+            $account = $this->resetAccount($state, $pending['username']);
+            if (!$account || !hash_equals($account['credentialVersion'], $pending['credentialVersion'])) throw self::invalidReset();
+            if (!is_string($body['password'] ?? null)) throw new CafeAuthException(400, 'Укажите новый пароль.', 'invalid_password');
+            if (($account['temporaryPassword'] ?? false) && self::checkPassword($body['password'], $account['passwordHash'])) throw new CafeAuthException(400, 'Задайте свой пароль, отличный от временного.', 'invalid_password');
+            $account['passwordHash'] = self::hashPassword($body['password']);
+            $account['credentialVersion'] = self::token();
+            unset($account['temporaryPassword'], $account['initialExpiresAt']);
+            // Keep TOTP and recovery codes. Only this account's sessions/devices are revoked.
+            $this->saveAccount($state, $account);
+            foreach (['sessions','challenges','enrollments','devices','passwordResets'] as $section) {
+                foreach ($state[$section] as $id=>$record) {
+                    if (($record['username'] ?? null) === $account['username'] || ($record['credentialVersion'] ?? null) === $pending['credentialVersion']) unset($state[$section][$id]);
+                }
+            }
+            $this->audit('password_reset.completed', $peer, ['username'=>$account['username']]);
+            return $account['username'];
+        });
+        // Notification failure cannot roll back a committed password change.
+        if (!$this->resetMail($username, 'Восемь утра — пароль изменён',
+            "Пароль администратора на сайте ".$this->config['public_origin']." изменён.\nПредыдущие сеансы завершены. Войдите с новым паролем.\nЕсли пароль меняли не вы, свяжитесь с владельцем сайта и проверьте доступ к почтовому ящику.\n")) $this->audit('password_reset.notification_failed', $peer);
+        return ['passwordChanged'=>true]; // Never grants an authenticated session.
+    }
     public function login(array $body, string $peer, ?string $oldToken = null): array
     {
         return $this->transaction(function (array &$state) use ($body, $peer, $oldToken) {
@@ -429,6 +591,17 @@ final class CafeAuth
             $validPassword = self::checkPassword($password, $account['passwordHash']);
             if (!$validPassword || !hash_equals($account['username'], $username) || (isset($account['initialExpiresAt']) && $account['initialExpiresAt'] <= $this->now())) { $this->audit('login.failed', $peer); throw self::invalid(); }
             $this->refund($state, $reservation);
+            if ($this->passwordOnly()) {
+                // Persist a verified bootstrap before allowing password changes/recovery.
+                if (self::passwordLength($password) >= 8 && password_needs_rehash($account['passwordHash'], self::passwordAlgorithm(), self::passwordOptions(self::passwordAlgorithm()))) $account['passwordHash'] = self::hashPassword($password);
+                $this->saveAccount($state, $account);
+                if (($account['temporaryPassword'] ?? false) || self::passwordLength($password) < 8) {
+                    $grant = self::token();
+                    $this->boundedAdd($state['passwordResets'], $grant, ['username'=>$account['username'], 'credentialVersion'=>$account['credentialVersion'], 'phase'=>'password', 'expiresAt'=>$this->now()+300000]);
+                    return ['passwordChangeRequired'=>true, 'passwordToken'=>$grant, 'username'=>$account['username'], 'expiresIn'=>300, 'authMode'=>'password'];
+                }
+                return $this->issue($state, $account, $peer, $oldToken);
+            }
             $token = self::token();
             $pending = ['username' => $account['username'], 'secondary' => ($account['secondary'] ?? false) === true, 'credentialVersion' => $account['credentialVersion'], 'peer' => hash('sha256', $peer), 'expiresAt' => $this->now() + self::CHALLENGE_MS, 'attempts' => 0];
             if ($account['totp'] === null) {
@@ -447,6 +620,7 @@ final class CafeAuth
     }
     public function enrollStart(array $body, string $peer): array
     {
+        $this->requireMfaMode();
         return $this->transaction(function (array &$state) use ($body, $peer) {
             [$key, $pending] = $this->pending($state['challenges'], $body['challengeToken'] ?? null, $peer, 'enrollment');
             $fresh = $this->readiness($state, $pending['username'] ?? null);
@@ -469,6 +643,7 @@ final class CafeAuth
     private static function recoveryHash(string $code): string { return hash('sha256', 'vosem-recovery-v1:' . str_replace(['-', ' '], '', strtolower($code))); }
     public function enrollConfirm(array $body, string $peer): array
     {
+        $this->requireMfaMode();
         return $this->transaction(function (array &$state) use ($body, $peer) {
             [$key, $pending] = $this->pending($state['enrollments'], $body['enrollmentToken'] ?? null, $peer);
             $fresh = $this->readiness($state, $pending['accountUsername'] ?? null);
@@ -506,6 +681,7 @@ final class CafeAuth
     }
     public function verify(array $body, string $peer, ?string $deviceToken = null): array
     {
+        $this->requireMfaMode();
         return $this->transaction(function (array &$state) use ($body, $peer, $deviceToken) {
             [$key, $pending] = $this->pending($state['challenges'], $body['challengeToken'] ?? null, $peer, 'mfa');
             $fresh = $this->readiness($state, $pending['username'] ?? null);

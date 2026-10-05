@@ -21,21 +21,28 @@ function cafe_text_field(mixed $value, string $field, int $maximum, int $minimum
     }
     return cafe_trim($value);
 }
+require_once __DIR__.'/menu-categories.php';
+require_once __DIR__.'/menu-availability.php';
 
 /** Keep the JSON contract shared with the menu editor and public menu client. */
-function cafe_validate_items(mixed $items): array {
+function cafe_validate_items(mixed $items, ?array $categories = null, bool $migrateLegacy = false): array {
+    if ($categories === null) { $categories = cafe_default_categories(); $migrateLegacy = true; }
+    $categoryIds = array_column($categories, 'id');
     if (!is_array($items) || !array_is_list($items) || count($items) > 300) throw new CafeMenuException(400, 'Меню должно содержать не более 300 позиций.', 'invalid_items');
-    $ids = []; $validated = [];
+    $ids = []; $validated = []; $sources = [];
     foreach ($items as $index => $item) {
         if (!is_array($item) || array_is_list($item)) throw new CafeMenuException(400, 'Некорректная позиция '.($index + 1).'.', 'invalid_item');
         $id = cafe_text_field($item['id'] ?? null, 'идентификатор', 100, 1);
         if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/D', $id) || isset($ids[$id])) throw new CafeMenuException(400, 'Идентификаторы позиций должны быть уникальными.', 'invalid_id');
         $ids[$id] = true;
+        $source = array_key_exists('source', $item) ? cafe_menu_source($item['source']) : null;
         $category = $item['category'] ?? null;
-        if (!is_string($category) || !in_array($category, ['signature', 'eggs', 'porridge', 'sweet'], true)) throw new CafeMenuException(400, 'Выберите категорию завтрака.', 'invalid_category');
+        if ($migrateLegacy && in_array($category, ['signature', 'eggs', 'porridge', 'sweet'], true)) $category = 'breakfast';
+        if (!(($category === null && $source !== null) || (is_string($category) && in_array($category, $categoryIds, true)))) throw new CafeMenuException(400, 'Выберите группу меню.', 'invalid_category');
         $price = $item['price'] ?? null;
         if ((!is_int($price) && !is_float($price)) || !is_finite((float)$price) || $price < 0 || $price > 1000000 || abs($price * 100 - round($price * 100)) > 0.00001) throw new CafeMenuException(400, 'Укажите корректную цену в рублях.', 'invalid_price');
         if (!is_bool($item['published'] ?? null)) throw new CafeMenuException(400, 'Укажите видимость позиции.', 'invalid_published');
+        if (array_key_exists('hiddenOnSite', $item) && !is_bool($item['hiddenOnSite'])) throw new CafeMenuException(400, 'Укажите видимость позиции.', 'invalid_visibility');
         $availableForOrder = array_key_exists('availableForOrder', $item) ? $item['availableForOrder'] : true;
         if (!is_bool($availableForOrder)) throw new CafeMenuException(400, 'Укажите доступность позиции для заказа.', 'invalid_availability');
         if (!is_int($item['order'] ?? null) || $item['order'] < 0 || $item['order'] > 100000) throw new CafeMenuException(400, 'Укажите корректный порядок позиции.', 'invalid_order');
@@ -44,7 +51,17 @@ function cafe_validate_items(mixed $items): array {
             if (!str_starts_with($image, '/')) $image = '/'.$image;
             if (!preg_match('~^/(menu-images|uploads)/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$~iD', $image) || str_contains($image, '..')) throw new CafeMenuException(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
         }
-        $validated[] = ['id'=>$id, 'name'=>cafe_text_field($item['name'] ?? null, 'название', 160, 1), 'description'=>cafe_text_field($item['description'] ?? null, 'описание', 2000), 'price'=>$price, 'category'=>$category, 'image'=>$image, 'published'=>$item['published'], 'availableForOrder'=>$availableForOrder, 'order'=>$item['order']];
+        $entry = ['id'=>$id, 'name'=>cafe_text_field($item['name'] ?? null, 'название', 160, 1), 'description'=>cafe_text_field($item['description'] ?? null, 'описание', 2000), 'price'=>$price, 'category'=>$category, 'image'=>$image, 'published'=>$item['published'], 'availableForOrder'=>$availableForOrder, 'order'=>$item['order']];
+        if (array_key_exists('hiddenOnSite', $item)) $entry['hiddenOnSite'] = $item['hiddenOnSite'];
+        if (($item['hiddenOnSite'] ?? false) === true) { $entry['published'] = false; $entry['availableForOrder'] = false; }
+        if ($source !== null) {
+            $entry['source'] = $source; $key = cafe_source_key($entry['source']);
+            if (($entry['source']['testOnly'] ?? false) === true) $entry['availableForOrder'] = false;
+            if ($category === null) { $entry['published'] = false; $entry['availableForOrder'] = false; }
+            if (isset($sources[$key])) throw new CafeMenuException(400, 'Позиция источника повторяется.', 'invalid_source');
+            $sources[$key] = true;
+        }
+        $validated[] = $entry;
     }
     return $validated;
 }
@@ -86,13 +103,23 @@ final class CafeMenu {
     private string $seedPath;
     private string $uploadsDir;
     private array $config;
+    private CafeMenuAvailability $availability;
     public function __construct(string $privateDir, array $config) {
         $this->dataDir = $privateDir.'/admin-data';
         $this->menuFile = $this->dataDir.'/menu.json';
         $this->seedPath = $privateDir.'/app/seed/menu.json';
         $this->uploadsDir = $this->dataDir.'/uploads';
         $this->config = $config;
+        // Mail configuration failure must not break regular administrator login.
+        if (is_file(__DIR__.'/password-reset-mail.php')) {
+            require_once __DIR__.'/password-reset-mail.php';
+            try {
+                $resetMail = cafe_reset_mail($privateDir, $config);
+                if ($resetMail) $config['password_reset_sender'] = $resetMail->enqueue(...);
+            } catch (Throwable) { /* Recovery remains unavailable until private SMTP settings are fixed. */ }
+        }
         $this->auth = new CafeAuth($this->dataDir, $config);
+        $this->availability = new CafeMenuAvailability($privateDir, $config);
     }
     private function menuLock(callable $operation): mixed {
         if (!is_dir($this->dataDir) && !@mkdir($this->dataDir, 0700, true) && !is_dir($this->dataDir)) throw new RuntimeException('Menu storage unavailable');
@@ -102,18 +129,75 @@ final class CafeMenu {
         try {
             $saved = CafeStorage::readJson($this->menuFile);
             if (!is_array($saved) || !is_int($saved['revision'] ?? null) || $saved['revision'] < 1 || $saved['revision'] >= 9007199254740991) throw new RuntimeException();
-            return ['items'=>cafe_validate_items($saved['items'] ?? null), 'revision'=>$saved['revision']];
+            return cafe_normalize_persisted_catalog($saved) + ['revision'=>$saved['revision']];
         } catch (Throwable) { throw new CafeMenuException(503, 'Сохранённое меню временно недоступно.', 'menu_unavailable'); }
+    }
+    /** Called only while holding menu.lock; retain exact pre-migration bytes for recovery. */
+    private function backupBeforeMigration(int $revision): void {
+        $bytes = file_get_contents($this->menuFile);
+        if ($bytes === false) throw new RuntimeException('Cannot read menu migration backup.');
+        $path = $this->dataDir.'/menu-before-editor-rules-'.gmdate('Ymd-His').'-'.$revision.'-'.bin2hex(random_bytes(6)).'.json';
+        $stream = @fopen($path, 'xb');
+        if (!$stream) throw new RuntimeException('Cannot create menu migration backup.');
+        @chmod($path, 0600); $complete = false;
+        try {
+            for ($offset = 0; $offset < strlen($bytes); $offset += $written) {
+                $written = fwrite($stream, substr($bytes, $offset));
+                if (!$written) throw new RuntimeException('Cannot write menu migration backup.');
+            }
+            if (!fflush($stream) || (function_exists('fsync') && !fsync($stream))) throw new RuntimeException('Cannot flush menu migration backup.');
+            $complete = true;
+        } finally { fclose($stream); if (!$complete) @unlink($path); }
     }
     public function read(): array {
         if (!is_file($this->menuFile)) {
             $this->menuLock(function (): void {
                 if (is_file($this->menuFile)) return;
                 $seed = CafeStorage::readJson($this->seedPath);
-                CafeStorage::atomicJson($this->menuFile, ['items'=>cafe_validate_items($seed['items'] ?? null), 'revision'=>1]);
+                CafeStorage::atomicJson($this->menuFile, cafe_normalize_persisted_catalog($seed) + ['revision'=>1]);
             });
         }
-        return $this->readSaved();
+        $saved=$this->readSaved();
+        try {
+            if (cafe_catalog_needs_editor_migration(CafeStorage::readJson($this->menuFile))) {
+                $this->menuLock(function (): void {
+                    $current = $this->readSaved();
+                    if (!cafe_catalog_needs_editor_migration(CafeStorage::readJson($this->menuFile))) return;
+                    $this->backupBeforeMigration($current['revision']);
+                    $current['revision']++;
+                    CafeStorage::atomicJson($this->menuFile, $current);
+                });
+                $saved = $this->readSaved();
+            }
+        } catch (Throwable) { throw new CafeMenuException(503, 'Сохранённое меню временно недоступно.', 'menu_unavailable'); }
+        $testItems=$this->config['kds_test_items'] ?? [];
+        if ($testItems) {
+            $this->menuLock(function () use($testItems): void {
+                $current=$this->readSaved(); $ids=array_column($current['items'],'id');
+                $markerFile=$this->dataDir.'/kds-test-seed.json';
+                $marker=is_file($markerFile) ? CafeStorage::readJson($markerFile) : ['version'=>1,'ids'=>[]];
+                if (!is_array($marker) || ($marker['version'] ?? null)!==1 || !is_array($marker['ids'] ?? null) || !array_is_list($marker['ids'])) throw new CafeMenuException(503, 'Сохранённое меню временно недоступно.', 'menu_unavailable');
+                $processed=$marker['ids']; $extra=[]; $categoryIds=array_column($current['categories'],'id');
+                foreach ($testItems as $item) {
+                    if (in_array($item['id'],$processed,true)) continue;
+                    // Record existing entries too: a later explicit deletion must remain a deletion.
+                    $processed[]=$item['id'];
+                    if (in_array($item['id'],$ids,true)) continue;
+                    if (in_array($item['category'] ?? null,['signature','eggs','porridge','sweet'],true)) $item['category']='breakfast';
+                    if (!in_array($item['category'] ?? null,$categoryIds,true)) continue; // Never recreate a deleted group or publish in an arbitrary replacement.
+                    $extra[]=$item;
+                }
+                if ($extra) {
+                    $current['items'] = cafe_validate_items(cafe_derive_website_item_flags(array_merge($current['items'],$extra)), $current['categories'], true);
+                    $current['revision']++;
+                    CafeStorage::atomicJson($this->menuFile, $current);
+                }
+                // Written last: after a crash, existing IDs are recognized without inserting duplicates.
+                if ($processed !== $marker['ids'] || !is_file($markerFile)) CafeStorage::atomicJson($markerFile,['version'=>1,'ids'=>$processed]);
+            });
+            $saved=$this->readSaved();
+        }
+        return $saved;
     }
     public function published(): array {
         return $this->catalog()['items'];
@@ -121,23 +205,69 @@ final class CafeMenu {
     /** Same lock as catalog edits. Always acquire this before an orders DB transaction. */
     public function withLockedSnapshot(callable $operation): mixed {
         $this->read(); // Seed, if necessary, before entering the non-reentrant lock.
-        return $this->menuLock(fn(): mixed => $operation($this->readSaved()));
+        return $this->menuLock(fn(): mixed => $operation($this->orderable($this->readSaved())));
     }
     /** Published items and their revision must come from one authoritative read. */
     public function catalog(): array {
-        $menu = $this->read();
-        $items = array_values(array_filter($menu['items'], static fn(array $item): bool => $item['published']));
+        $menu = $this->orderable($this->read());
+        $items = array_values(array_filter($menu['items'], static fn(array $item): bool => $item['published'] && $item['category'] !== null));
+        if (($this->config['delivery_enabled'] ?? true) !== true) {
+            $items = array_values(array_filter($items, static fn(array $item): bool => ($item['source']['testOnly'] ?? false) !== true && !str_starts_with($item['id'], 'kds-test-')));
+            foreach ($items as &$item) $item['availableForOrder'] = false;
+            unset($item);
+        }
         usort($items, static fn(array $left, array $right): int => $left['order'] <=> $right['order']);
-        return ['items'=>$items, 'revision'=>$menu['revision']];
+        return ['categories'=>$menu['categories'], 'items'=>$items, 'revision'=>$menu['revision']];
     }
-    public function update(array $items, mixed $revision): array {
-        $items = cafe_validate_items($items);
+    private function orderable(array $menu): array {
+        if (isset($this->config['orderable_ids'])) foreach($menu['items'] as &$item) {
+            if (!in_array($item['id'],$this->config['orderable_ids'],true)) $item['availableForOrder']=false;
+        }
+        return $this->availability->decorate($menu, true);
+    }
+    public function update(array $items, mixed $revision, ?array $categories = null, ?array $sourceCategories = null, ?array $categoryMappings = null): array {
         if (!is_int($revision) || $revision < 1 || $revision >= 9007199254740991) throw new CafeMenuException(400, 'Некорректная версия меню.', 'invalid_revision');
         $this->read();
-        return $this->menuLock(function () use ($items, $revision): array {
+        return $this->menuLock(function () use ($items, $revision, $categories, $sourceCategories, $categoryMappings): array {
             $menu = $this->readSaved();
             if ($revision !== $menu['revision']) throw new CafeMenuException(409, 'Меню уже изменено в другой вкладке. Загрузите актуальную версию.', 'conflict');
-            $updated = ['items'=>$items, 'revision'=>$revision + 1];
+            $tree = cafe_validate_categories($categories ?? $menu['categories']);
+            foreach ($tree as $category) if (isset($category['source'])) throw new CafeMenuException(400, 'Группы сайта создаются вручную. Дерево кассы хранится отдельно.', 'manual_category_required');
+            foreach ($tree as $category) if ($category['parentId'] !== null) throw new CafeMenuException(400, 'Группы сайта располагаются на одном уровне, без подгрупп.', 'flat_site_groups');
+            if ($categoryMappings !== null && $categoryMappings !== []) throw new CafeMenuException(400, 'Выберите группу сайта в карточке каждого блюда.', 'manual_assignment_required');
+            if ($sourceCategories !== null && cafe_validate_categories($sourceCategories) != $menu['sourceCategories']) throw new CafeMenuException(400, 'Группы кассы изменяются только при выгрузке из базы.', 'immutable_source');
+            $previous = array_column($menu['items'], null, 'id');
+            foreach ($items as &$item) {
+                if (!is_array($item) || !is_string($item['id'] ?? null)) continue; // Report malformed items through the common validator below.
+                if (!isset($previous[$item['id']])) {
+                    if (($this->config['manual_menu_enabled'] ?? false) !== true) throw new CafeMenuException(400, 'Новые блюда добавляются только при выгрузке из базы кассы.', 'import_only');
+                    if (array_key_exists('source', $item)) throw new CafeMenuException(400, 'Источник блюда нельзя задать вручную.', 'immutable_source');
+                }
+                $savedSource = $previous[$item['id']]['source'] ?? null;
+                if (array_key_exists('source', $item)) {
+                    if ($item['source'] === null || cafe_menu_source($item['source']) != $savedSource) throw new CafeMenuException(400, 'Привязка блюда к кассе изменяется только при выгрузке из базы.', 'immutable_source');
+                } elseif ($savedSource !== null) {
+                    // Older editors may omit source metadata; importing again must still find these records.
+                    $item['source'] = $savedSource;
+                }
+            }
+            unset($item);
+            $items = cafe_validate_items(cafe_derive_website_item_flags($items), $tree, $categories === null);
+            $updated = cafe_normalize_persisted_catalog(['categories'=>$tree, 'sourceCategories'=>$menu['sourceCategories'], 'categoryMappings'=>[], 'items'=>$items]) + ['revision'=>$revision + 1];
+            CafeStorage::atomicJson($this->menuFile, $updated);
+            return $updated;
+        });
+    }
+    /** CLI imports share the editor lock and never touch credentials or order state. */
+    public function importKdsGroup(array $sourceMenu, string $organizationId, string $externalId): array {
+        if (PHP_SAPI !== 'cli') throw new CafeMenuException(403, 'Импорт доступен только оператору сервера.', 'offline_only');
+        require_once __DIR__.'/menu-import.php';
+        $this->read();
+        return $this->menuLock(function () use ($sourceMenu, $organizationId, $externalId): array {
+            $current = $this->readSaved();
+            $updated = cafe_import_kds_group($current, $sourceMenu, $organizationId, $externalId);
+            if ($updated === array_diff_key($current, ['revision'=>true])) return $current;
+            $updated['revision'] = $current['revision'] + 1;
             CafeStorage::atomicJson($this->menuFile, $updated);
             return $updated;
         });
@@ -207,6 +337,19 @@ final class CafeMenu {
             if (!in_array($method, ['GET','HEAD'], true)) $this->origin();
             if (in_array($pathname, ['/api/menu','/data/menu.json'], true) && in_array($method, ['GET','HEAD'], true)) { cafe_json_response($this->catalog()); return true; }
             if ($pathname === '/api/admin/session' && $method === 'GET') { cafe_json_response($this->auth->status($this->token(), $this->deviceToken())); return true; }
+            if (($this->config['auth_mode'] ?? '') === 'password' &&
+                ($pathname === '/api/admin/resume' || $pathname === '/api/admin/verify' || str_starts_with($pathname, '/api/admin/enroll/'))) {
+                throw new CafeMenuException(404, 'Войдите с почтой и паролем.', 'not_found');
+            }
+            if ($method === 'POST' && in_array($pathname, ['/api/admin/password-reset/request','/api/admin/password-reset/verify','/api/admin/password-reset/complete'], true)) {
+                $body = cafe_json_body();
+                $result = match ($pathname) {
+                    '/api/admin/password-reset/request'=>$this->auth->requestPasswordReset($body, $this->peer()),
+                    '/api/admin/password-reset/verify'=>$this->auth->verifyPasswordReset($body, $this->peer()),
+                    default=>$this->auth->completePasswordReset($body, $this->peer()),
+                };
+                cafe_json_response($result, str_ends_with($pathname, '/request') ? 202 : 200); return true;
+            }
             if ($pathname === '/api/admin/activity' && $method === 'POST') { cafe_json_response($this->auth->activity($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)); return true; }
             if ($pathname === '/api/admin/resume' && $method === 'POST') { cafe_json_response($this->auth->resume($this->deviceToken(), $this->peer()), 202); return true; }
             if ($pathname === '/api/admin/forget-device' && $method === 'POST') {
@@ -224,7 +367,7 @@ final class CafeMenu {
                     '/api/admin/verify'=>$this->auth->verify($body, $this->peer(), $this->deviceToken()),
                     default=>$this->auth->enrollConfirm($body, $this->peer()),
                 };
-                if (($result['mfaRequired'] ?? false) || ($result['enrollmentRequired'] ?? false)) cafe_json_response($result, 202);
+                if (($result['mfaRequired'] ?? false) || ($result['enrollmentRequired'] ?? false) || ($result['passwordChangeRequired'] ?? false)) cafe_json_response($result, 202);
                 else {
                     $this->cookie($result['token'], (int)(($this->config['session_ms'] ?? 28800000) / 1000));
                     $this->auth->forgetDevice($this->deviceToken());
@@ -242,13 +385,22 @@ final class CafeMenu {
                 }
                 cafe_json_response($this->auth->status(null, $this->deviceToken())); return true;
             }
-            if ($pathname === '/api/admin/menu' && $method === 'GET') { $this->requireSession(); cafe_json_response($this->read()); return true; }
+            if ($pathname === '/api/admin/menu' && $method === 'GET') { $this->requireSession(); cafe_json_response($this->availability->decorate($this->read())); return true; }
+            if ($pathname === '/api/admin/sync-availability' && $method === 'POST') {
+                if (($this->config['keeper_enabled'] ?? true) !== true) throw new CafeMenuException(404, 'Адрес API не найден.', 'not_found');
+                $this->requireSession(true); cafe_json_body(true);
+                $this->availability->sync(fn(callable $save) => $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, $save));
+                $this->auth->audit('menu.availability-synced', $this->peer());
+                cafe_json_response($this->availability->decorate($this->read())); return true;
+            }
             if ($pathname === '/api/admin/menu' && $method === 'PUT') {
                 $this->requireSession(true); $body = cafe_json_body();
-                $items = cafe_validate_items($body['items'] ?? null);
-                $updated = $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, fn() => $this->update($items, $body['revision'] ?? null));
-                $this->auth->audit('menu.updated', $this->peer(), ['revision'=>$updated['revision'], 'count'=>count($items)]);
-                cafe_json_response($updated); return true;
+                if (!is_array($body['items'] ?? null)) throw new CafeMenuException(400, 'Проверьте список блюд.', 'invalid_items');
+                $categories = array_key_exists('categories', $body) ? cafe_validate_categories($body['categories']) : null;
+                foreach (['sourceCategories','categoryMappings'] as $key) if (array_key_exists($key, $body) && !is_array($body[$key])) throw new CafeMenuException(400, 'Проверьте связи групп.', 'invalid_category_mapping');
+                $updated = $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, fn() => $this->update($body['items'], $body['revision'] ?? null, $categories, $body['sourceCategories'] ?? null, $body['categoryMappings'] ?? null));
+                $this->auth->audit('menu.updated', $this->peer(), ['revision'=>$updated['revision'], 'count'=>count($updated['items'])]);
+                cafe_json_response($this->availability->decorate($updated)); return true;
             }
             if ($pathname === '/api/admin/upload' && $method === 'POST') {
                 $this->requireSession(true);

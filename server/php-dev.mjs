@@ -10,12 +10,12 @@ import { phpBinary, phpEnvironment } from '../scripts/php-runtime.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const router = fileURLToPath(new URL('../hosting/api-dev.php', import.meta.url));
 const loopbackHost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?$/;
-const apiPath = /^\/(?:api\/(?:admin(?:\/.*)?|menu|ordering|orders(?:\/.*)?|staff(?:\/.*)?)|data\/menu\.json|uploads(?:\/.*)?)$/;
+const apiPath = /^\/(?:api\/(?:admin(?:\/.*)?|menu|ordering|orders(?:\/.*)?|staff(?:\/.*)?|telegram(?:\/.*)?)|data\/menu\.json|uploads(?:\/.*)?)$/;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Vite serves editable assets only. Authentication, menu and orders run the SAME
 // PHP classes as REG.RU, with a private loopback-only transport (not a public proxy).
-export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary } = {}) {
+export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary, deliveryEnabled = true } = {}) {
   const secret = randomBytes(32).toString('hex');
   let child, starting, port, closed = false;
   async function start() {
@@ -27,7 +27,7 @@ export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary } =
       await new Promise((resolve) => reservation.close(resolve));
       child = spawn(php, ['-S', `127.0.0.1:${port}`, '-t', path.join(projectRoot, 'public'), router], {
         cwd: projectRoot, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'],
-        env: { ...phpEnvironment, CAFE_ENV: 'development', CAFE_DEV_BRIDGE: secret, CAFE_DEV_PROJECT: projectRoot },
+        env: { ...phpEnvironment, CAFE_ENV: 'development', CAFE_DEV_BRIDGE: secret, CAFE_DEV_PROJECT: projectRoot, CAFE_SITE_PROFILE: deliveryEnabled ? 'delivery' : 'catalog' },
       });
       let failure;
       child.once('error', (error) => { failure = error; });
@@ -69,7 +69,7 @@ export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary } =
         if (!res.headersSent && !res.destroyed) { res.writeHead(response.statusCode, forwarded); response.pipe(res); }
         else response.destroy();
       });
-      upstream.setTimeout(20000, () => upstream.destroy(new Error('PHP timeout')));
+      upstream.setTimeout((req.url || '').split('?')[0] === '/api/admin/sync-availability' ? 95000 : 20000, () => upstream.destroy(new Error('PHP timeout')));
       upstream.on('error', () => error(res, 503, 'Не удалось получить ответ локального сервера. Повторите попытку.'));
       let size = 0;
       req.on('data', (chunk) => { size += chunk.length; if (size > maxSize) { error(res, 413, 'Слишком большой запрос.'); upstream.destroy(); } });

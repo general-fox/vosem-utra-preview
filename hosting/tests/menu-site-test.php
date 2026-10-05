@@ -31,7 +31,7 @@ if (($argv[1] ?? '') === '--race-worker') {
     $menu = new CafeMenu($argv[2], ['public_origin'=>'https://vosem-utra.ru']);
     $deadline = microtime(true) + 10;
     while (!is_file($argv[3])) { if (microtime(true) > $deadline) exit(2); usleep(1000); }
-    try { $menu->update([item($argv[4])], 1); echo '200'; }
+    try { $menu->update([array_replace(item(), ['name'=>$argv[4]])], 1); echo '200'; }
     catch (CafeMenuException $error) { echo (string)$error->status; }
     exit;
 }
@@ -64,28 +64,48 @@ try {
     rejects(static fn()=>$menu->update([item()], 1), 'conflict');
     $restarted = new CafeMenu($private, $config);
     check($restarted->read()['items'][0]['name'] === 'Свежий завтрак', 'Changes survive a fresh instance');
-    check($restarted->published() === [], 'Hidden item excluded');
+    check(count($restarted->published())===1 && $restarted->read()['items'][0]['published'], 'Assigned dish remains visible despite an obsolete manual visibility flag');
     file_put_contents($private.'/admin-data/menu.json', '{corrupt');
     rejects(static fn()=>$restarted->read(), 'menu_unavailable');
     check(file_get_contents($private.'/admin-data/menu.json') === '{corrupt', 'Corruption cannot reset to seed');
-    $passed[] = 'durable menu, revisions, hidden positions and corruption fail closed';
+    $passed[] = 'durable menu, derived visibility, revisions and corruption fail closed';
 
-    $availabilityPrivate = fixture($root, 'availability'); $availabilityMenu = new CafeMenu($availabilityPrivate, $config);
-    $legacyJson = json_encode(['items'=>[item()], 'revision'=>17], JSON_THROW_ON_ERROR);
+    $availabilityPrivate = fixture($root, 'availability'); $availabilityConfig=$config+['orderable_ids'=>[]]; $availabilityMenu = new CafeMenu($availabilityPrivate, $availabilityConfig);
+    $legacyJson = json_encode(['items'=>[item(), item('second')], 'revision'=>17], JSON_THROW_ON_ERROR);
     file_put_contents($availabilityPrivate.'/admin-data/menu.json', $legacyJson);
     check($availabilityMenu->read()['items'][0]['availableForOrder'] === true, 'Saved legacy catalog defaults on read');
     check(file_get_contents($availabilityPrivate.'/admin-data/menu.json') === $legacyJson, 'Legacy read does not rewrite the stored catalog');
-    $availabilitySaved = $availabilityMenu->update([array_replace(item(), ['availableForOrder'=>false]), array_replace(item('hidden'), ['published'=>false,'availableForOrder'=>true])], 17);
+    $availabilitySaved = $availabilityMenu->update([array_replace(item(), ['availableForOrder'=>false]), array_replace(item('second'), ['published'=>false,'availableForOrder'=>true])], 17);
     $catalog = $availabilityMenu->catalog();
     check($catalog['revision'] === $availabilitySaved['revision'] && $catalog['revision'] === 18, 'Published catalog revision matches authoritative save');
-    check(count($catalog['items']) === 1 && $catalog['items'][0]['published'] && !$catalog['items'][0]['availableForOrder'], 'Visible unavailable dish is retained; hidden dish is omitted');
-    check((new CafeMenu($availabilityPrivate, $config))->catalog() === $catalog, 'Availability and revision survive reload');
+    check(count($catalog['items']) === 2 && $catalog['items'][0]['published'] && !$catalog['items'][0]['availableForOrder'], 'Assigned dishes stay visible while runtime order restrictions remain effective');
+    check($availabilitySaved['items'][0]['availableForOrder']&&$availabilitySaved['items'][1]['published'],'Manual visibility and availability input cannot override group-derived flags');
+    check((new CafeMenu($availabilityPrivate, $availabilityConfig))->catalog() === $catalog, 'Runtime availability and revision survive reload');
     $_SERVER['REQUEST_METHOD']='GET';
     foreach (['/api/menu','/data/menu.json'] as $route) {
         ob_start(); $availabilityMenu->dispatch($route, 'GET'); $response=json_decode(ob_get_clean(), true, 512, JSON_THROW_ON_ERROR);
         check($response === $catalog, 'Public route returns the complete current catalog snapshot');
     }
-    $passed[] = 'independent order availability, legacy compatibility and public catalog revision';
+    $passed[] = 'group-derived stored flags, independent runtime restrictions and public catalog revision';
+
+    $seedPrivate = fixture($root, 'one-time-test-seed');
+    $demoItem = array_replace(item('demo'), ['category'=>'porridge']);
+    $seedConfig = $config + ['kds_test_items'=>[$demoItem]];
+    $seedMenu = new CafeMenu($seedPrivate, $seedConfig); $seeded = $seedMenu->read();
+    check(count($seeded['items'])===2 && $seeded['revision']===2, 'Legacy test item is introduced once');
+    $moved = $seeded['items']; foreach($moved as &$dish) $dish['category']='dinner'; unset($dish);
+    $dinnerOnly = array_values(array_filter($seeded['categories'], static fn(array $group): bool => $group['id']==='dinner'));
+    $moved = $seedMenu->update($moved,2,$dinnerOnly);
+    $deleted = $seedMenu->update(array_values(array_filter($moved['items'],static fn(array $dish): bool => $dish['id']!=='demo')),3,$dinnerOnly);
+    check($seedMenu->read()===$deleted && (new CafeMenu($seedPrivate,$seedConfig))->read()===$deleted, 'Deleted legacy test item is not recreated after its old group was removed');
+    $newDemo = array_replace($demoItem,['id'=>'new-demo']);
+    $newSeedMenu = new CafeMenu($seedPrivate,$config+['kds_test_items'=>[$demoItem,$newDemo]]); $newSeed = $newSeedMenu->read();
+    check(count($newSeed['items'])===1 && !array_filter($newSeed['items'],static fn(array $dish): bool => $dish['id']==='new-demo'), 'Unseen legacy test entry with a deleted group is not published in an arbitrary replacement');
+    check(array_column($newSeed['categories'],'id')===['dinner'], 'Seeding never recreates a removed website group');
+    $empty = $newSeedMenu->update([],$newSeed['revision'],[]);
+    $noGroups = new CafeMenu($seedPrivate,$config+['kds_test_items'=>[$demoItem,$newDemo,array_replace($demoItem,['id'=>'future-demo'])]]);
+    check($noGroups->read()===$empty && $noGroups->read()===$empty, 'With no website groups, legacy test seed skips new entries without breaking reads');
+    $passed[] = 'one-time legacy test seeding preserves explicit deletions and deleted website groups';
 
     $racePrivate = fixture($root, 'race'); (new CafeMenu($racePrivate, $config))->read();
     $gate = $root.'/race-go'; $workers = [];
@@ -94,7 +114,7 @@ try {
         check(is_resource($process), 'Race worker started'); fclose($pipes[0]); $workers[] = [$process, $pipes];
     }
     file_put_contents($gate, 'go'); $statuses = [];
-    foreach ($workers as [$process,$pipes]) { $statuses[] = stream_get_contents($pipes[1]); $errors=stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]); check(proc_close($process) === 0 && $errors === '', 'Race worker completed'); }
+    foreach ($workers as [$process,$pipes]) { $statuses[] = stream_get_contents($pipes[1]); $errors=stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]); check(proc_close($process) === 0 && $errors === '', 'Race worker completed: '.$errors); }
     sort($statuses); check($statuses === ['200','409','409','409'], 'Exactly one stale-revision concurrent writer wins');
     check((new CafeMenu($racePrivate, $config))->read()['revision'] === 2, 'Single committed revision after race');
     $passed[] = 'cross-process file lock prevents concurrent lost updates';
@@ -105,6 +125,11 @@ try {
     check(!str_contains($html, '<script>bad()</script>'), 'Description cannot close a script');
     check(!str_contains($html, 'SECRET HIDDEN DISH'), 'Hidden dish absent from HTML and schema');
     check(str_contains($html, '2 блюда') && str_contains($html, '123,45') && str_contains($html, '120,5'), 'Count and decimal money rendered');
+    preg_match('~<!-- SEO:DISH-GRID:START -->(.*?)<!-- SEO:DISH-GRID:END -->~s', $html, $gridSlot);
+    preg_match('~<!-- SEO:DISH-EXTRAS:START -->(.*?)<!-- SEO:DISH-EXTRAS:END -->~s', $html, $listSlot);
+    check(substr_count($gridSlot[1], '<article ') === 1 && !str_contains($gridSlot[1], 'Каша'), 'Only photographed dishes appear in the card grid');
+    check(substr_count($listSlot[1], '<article ') === 1 && str_contains($listSlot[1], 'Каша') && !str_contains($listSlot[1], '<img '), 'Dishes without photos appear once in the list below');
+    check(str_contains($html, 'data-extra-section>'), 'List is visible before JavaScript loads');
     check(str_contains($html, 'href="https://vosem-utra.ru/"') && str_contains($html, 'https://vosem-utra.ru/social-cover.webp'), 'Stable canonical and social photo');
     preg_match('~<script type="application/ld\+json" id="cafe-structured-data">(.*?)</script>~s', $html, $schemaMatch);
     $schema = json_decode($schemaMatch[1], true, 512, JSON_THROW_ON_ERROR);
@@ -114,6 +139,7 @@ try {
     check(in_array(item()['name'], $schemaNames, true), 'Escaped JSON roundtrips original dish name');
     $again = cafe_transform_page($html, 'index', true, [array_replace(item(), ['name'=>'Changed after build'])]);
     check(substr_count($again, 'id="cafe-structured-data"') === 1 && !str_contains($again, 'Каша') && str_contains($again, 'Changed after build'), 'Live transform replaces old menu and schema');
+    check(str_contains($again, 'data-extra-section hidden>'), 'An empty list is hidden after edits');
     $empty = cafe_transform_page($again, 'index', true, []);
     check(str_contains($empty, 'data-menu-empty>') && str_contains($empty, '0 блюд'), 'Empty menu state is visible');
     foreach (['admin','registration','privacy','consent'] as $page) check(str_contains(cafe_transform_page(template(), $page, true), 'content="noindex,'), 'Utility noindex');

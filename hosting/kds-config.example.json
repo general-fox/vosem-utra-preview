@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "enableTestOrders": false,
+  "environment": "staging",
+  "allowHttpForTest": false,
+  "baseUrl": "",
+  "localBaseUrl": "",
+  "serviceName": "",
+  "servicePassword": "",
+  "organizationId": "",
+  "menuMap": {},
+  "testItems": []
+}

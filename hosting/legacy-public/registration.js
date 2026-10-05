@@ -1,5 +1,6 @@
 'use strict';
 import { cookieConsent } from './cookies.js?v=20260921-reg3';
+import { PhoneVerification } from './phone-verification.js?v=20261002-1';
 const form = document.getElementById('registration-form');
 const submit = document.getElementById('submit-button');
 const message = document.getElementById('form-message');
@@ -12,16 +13,40 @@ dateInput.max = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')
 let sending = false, csrf = '', captchaWidget = null, captchaMode = 'checkbox';
 let captchaAllowed = false, captchaPromise = null, captchaPending = null, uncertain = false;
 let googleStarted = false, stopping = false, permissionWithdrawn = false, postedOnce = false, confirmed = false;
+let recaptchaRequired = form.dataset.phoneTest !== 'true';
+function sessionError(text) { const error = new Error(text); error.userMessage = true; return error; }
+const phoneCheck = new PhoneVerification({ document, request: async payload => {
+  const response = await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload)});
+  const data = await response.json();
+  if (!response.ok || data.IsSuccess !== true) {
+    const error = new Error(data.Message || 'Не удалось подтвердить телефон. Попробуйте ещё раз.');
+    error.retryAfter = Number(data.retryAfter) || 0; error.userMessage = true;
+    if (error.retryAfter > 0) error.message += ` Повторный звонок будет доступен через ${Math.ceil(error.retryAfter/60)} мин.`;
+    throw error;
+  }
+  return data;
+} });
+phoneCheck.configure(form.dataset.phoneVerification === 'true',form.dataset.phoneTest === 'true');
+document.getElementById('captcha-privacy').hidden = !recaptchaRequired;
+document.getElementById('captcha-notice').hidden = !recaptchaRequired;
+function submitLabel() { return uncertain ? 'Уточните результат у кофейни' : phoneCheck.required ? phoneCheck.challenge ? 'Подтвердить и зарегистрироваться' : 'Подтвердить номер' : 'Зарегистрироваться'; }
+submit.textContent = submitLabel();
 function showMessage(text) { message.textContent = text; message.hidden = false; }
-function showSuccess() {
+function showSuccess(test = false) {
   form.reset(); form.hidden = true;
   document.querySelector('h1').textContent = 'Добро пожаловать!';
   document.querySelector('.intro').hidden = true;
   document.querySelector('.required-help').hidden = true;
   const success = document.getElementById('registration-success'); success.hidden = false; success.focus();
+  if (test) {
+    document.querySelector('h1').textContent = 'Номер подтверждён';
+    success.querySelector('h2').textContent = 'Проверка прошла успешно';
+    success.querySelector('p').textContent = 'Это тест: анкета не отправлена в FlexBonus, бонусы не начислялись.';
+  }
+  phoneCheck.dispose();
 }
 function requirePermission() {
-  if (stopping || permissionWithdrawn || !cookieConsent.allowed()) throw new Error('consent_revoked');
+  if (stopping || (recaptchaRequired && (permissionWithdrawn || !cookieConsent.allowed()))) throw new Error('consent_revoked');
 }
 async function request(url, options = {}, timeout = 50000) {
   const controller = new AbortController();
@@ -70,12 +95,22 @@ function loadCaptcha(siteKey, mode) {
 }
 async function getToken() {
   const response = await request('api/register.php',{headers:{Accept:'application/json'}});
-  const data = await response.json();
-  if (!response.ok || typeof data.csrf !== 'string' || !data.recaptchaSiteKey) throw new Error('session');
+  let data;
+  try { data = await response.json(); }
+  catch { throw sessionError('Сервер не смог загрузить настройки формы. Обновите страницу; если ошибка повторится, сообщите администратору.'); }
+  if (!response.ok || data?.IsSuccess === false) throw sessionError(typeof data?.Message === 'string' && data.Message.trim() ? data.Message : 'Настройки подтверждения телефона пока недоступны. Сообщите администратору.');
+  if (!data || typeof data.csrf !== 'string' || (data.recaptchaRequired !== false && !data.recaptchaSiteKey)) throw sessionError('Не удалось получить настройки формы. Обновите страницу; если ошибка повторится, сообщите администратору.');
   if (data.consentVersion !== consentVersion) throw new Error('consent_version');
   csrf = data.csrf;
-  requirePermission();
-  await loadCaptcha(data.recaptchaSiteKey,data.recaptchaMode);
+  recaptchaRequired = data.recaptchaRequired !== false;
+  phoneCheck.configure(data.phoneVerificationRequired === true,data.phoneTestMode === true);
+  document.getElementById('captcha-privacy').hidden = !recaptchaRequired;
+  document.getElementById('captcha-notice').hidden = !recaptchaRequired;
+  if (recaptchaRequired) {
+    captchaAllowed = await cookieConsent.request();
+    requirePermission();
+    await loadCaptcha(data.recaptchaSiteKey,data.recaptchaMode);
+  }
 }
 function requestCaptchaToken() {
   requirePermission();
@@ -108,6 +143,7 @@ async function stopGoogle() {
   location.replace(destination.href);
 }
 cookieConsent.subscribe(allowed => {
+  if (!recaptchaRequired) return;
   captchaAllowed = allowed;
   if (allowed) return;
   if (sending) permissionWithdrawn = true;
@@ -171,6 +207,42 @@ phone.addEventListener('beforeinput', event => {
   phone.setCustomValidity('');
 });
 phone.addEventListener('blur', applyPhoneMask);
+phone.addEventListener('input', () => {
+  if (phoneCheck.number && phoneCheck.number !== normalizedPhone(phone.value)) { phoneCheck.reset(); submit.textContent = submitLabel(); }
+});
+
+async function verificationPayload() {
+  await getToken();
+  const token = recaptchaRequired ? await requestCaptchaToken() : '';
+  if (recaptchaRequired && !token) throw Error('captcha_failed');
+  return {Phone:normalizedPhone(phone.value),Consent:form.elements.namedItem('Consent').checked,PhoneConsent:document.getElementById('phone-consent').checked,
+    ConsentVersion:consentVersion,CaptchaConsent:captchaAllowed,RecaptchaToken:token};
+}
+document.getElementById('phone-check').addEventListener('click',async()=>{
+  if (sending) return;
+  const button=document.getElementById('phone-check'), result=document.getElementById('phone-check-result');
+  button.disabled=true; sending=true; submit.disabled=true; result.hidden=false; result.textContent='Проверяем соединение без звонка…';
+  try {
+    await getToken();
+    if (!phoneCheck.test) throw sessionError('Проверка доступна только на тестовом сайте.');
+    if (!form.elements.namedItem('Consent').checked || !document.getElementById('phone-consent').checked) throw sessionError('Сначала отметьте согласия в форме.');
+    const response=await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify({Action:'phone-check',Consent:true,PhoneConsent:true,ConsentVersion:consentVersion})});
+    const data=await response.json();
+    if (!response.ok || data.IsSuccess!==true) throw sessionError(data.Message || 'Не удалось проверить соединение.');
+    result.textContent=data.connection.message;
+  } catch(error) { result.textContent=error.userMessage ? error.message : 'Не удалось получить результат проверки соединения.'; }
+  finally { button.disabled=false; sending=false; submit.disabled=uncertain; }
+});
+document.getElementById('phone-resend').addEventListener('click',async()=>{
+  if (sending || uncertain || !form.reportValidity()) return;
+  sending = true; submit.disabled = true;
+  try {
+    const payload = await verificationPayload();
+    await phoneCheck.send(payload,true);
+    if (normalizedPhone(phone.value)!==payload.Phone) phoneCheck.reset();
+  } catch(error) { showMessage(error.message); }
+  finally { sending=false;submit.disabled=false;submit.textContent=submitLabel();try{if(captchaWidget!==null)window.grecaptcha.reset(captchaWidget);}catch{} }
+});
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
@@ -184,32 +256,27 @@ form.addEventListener('submit', async event => {
   form.setAttribute('aria-busy','true'); message.hidden = true;
   let posted = false;
   try {
-    // The banner choice is separate from consent to process the guest's form.
-    captchaAllowed = await cookieConsent.request();
-    if (!captchaAllowed || !cookieConsent.allowed()) {
-      showMessage('Для онлайн-регистрации разрешите проверку Google в настройках cookie. Или присоединитесь к клубу в кофейне.');
-      return;
-    }
-    captchaStatus.textContent = 'Проверяем, что вы не робот…';
-    await getToken();
-    const captchaToken = await requestCaptchaToken();
-    if (!captchaToken) { showMessage('Пройдите проверку «Я не робот» перед отправкой.'); return; }
+    const verification = await verificationPayload();
     // A guest may edit fields while completing the challenge; validate them again.
     const currentNumber = normalizedPhone(phone.value);
     phone.setCustomValidity(currentNumber ? '' : 'Введите номер телефона: +7 и 10 цифр.');
     if (!form.reportValidity()) return;
     requirePermission();
     const values = new FormData(form);
-    const payload = {Phone:currentNumber,Consent:values.get('Consent') === 'on',ConsentVersion:consentVersion,CaptchaConsent:captchaAllowed,RecaptchaToken:captchaToken};
+    const payload = {...verification,Phone:currentNumber,Consent:values.get('Consent') === 'on'};
     for (const name of ['LastName','FirstName','MiddleName','BirthDate','Comment']) payload[name] = String(values.get(name)||'').trim();
+    const verified = await phoneCheck.confirm(payload);
+    if (normalizedPhone(phone.value)!==payload.Phone) { phoneCheck.reset(); showMessage('Номер изменился. Подтвердите новый номер.'); return; }
+    if (!verified) return;
     submit.textContent = 'Регистрируем…'; posted = true; postedOnce = true;
     const response = await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload)});
     const data = await response.json();
     if (response.ok && data.IsSuccess === true) {
-      confirmed = true; showSuccess();
+      confirmed = true; showSuccess(data.TestMode === true);
     } else {
       if (response.status === 403) csrf = '';
       uncertain = data.Outcome === 'unknown';
+      if (phoneCheck.required && !uncertain) phoneCheck.invalidate();
       showMessage(typeof data.Message === 'string' && data.Message.trim() ? data.Message : 'Не удалось завершить регистрацию. Свяжитесь с кофейней.');
     }
   } catch (error) {
@@ -220,14 +287,14 @@ form.addEventListener('submit', async event => {
         ? 'Проверка Google отключена. Анкета не отправлена.'
         : error.message === 'consent_version'
         ? 'Текст согласия обновился. Обновите страницу и ознакомьтесь с ним повторно.'
-        : 'Не удалось завершить проверку. Нажмите «Зарегистрироваться» ещё раз или свяжитесь с кофейней.');
+        : error.userMessage ? error.message : 'Не удалось завершить проверку. Повторите попытку или свяжитесь с кофейней.');
   } finally {
     try { if (cookieConsent.allowed() && captchaWidget !== null && window.grecaptcha) window.grecaptcha.reset(captchaWidget); } catch {}
     sending = false; submit.disabled = uncertain;
-    submit.textContent = uncertain ? 'Уточните результат у кофейни' : 'Зарегистрироваться';
+    submit.textContent = submitLabel();
     captchaStatus.textContent = '';
     form.removeAttribute('aria-busy');
-    if ((permissionWithdrawn || !cookieConsent.allowed()) && (googleStarted || csrf)) await stopGoogle();
+    if (recaptchaRequired && (permissionWithdrawn || !cookieConsent.allowed()) && (googleStarted || csrf)) await stopGoogle();
   }
 });
 const resetResult = new URL(location.href).searchParams.get('cookie-reset');

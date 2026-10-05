@@ -8,7 +8,7 @@ const bootstrap = fs.readFileSync(path + 'index.html', 'utf8').match(/<script>([
 
 function harness(options = {}) {
   const listeners = {}, frames = [], timers = new Map(), observed = new Set();
-  let timerId = 0, observerCallback;
+  let timerId = 0, observerCallback, mutationCallback;
   const preference = { matches: !!options.reduce, addEventListener: (name, callback) => { listeners.motion = callback; } };
   const root = { dataset: {}, removeAttribute: name => { delete root.dataset[name.replace('data-', '')]; } };
   const group = { contains: element => elements.includes(element) };
@@ -27,14 +27,22 @@ function harness(options = {}) {
     unobserve(element) { observed.delete(element); }
     disconnect() { observed.clear(); }
   }
+  const menuGrid = {};
+  class Mutations {
+    constructor(callback) { mutationCallback = callback; }
+    observe(target, config) { assert.equal(target, menuGrid); assert.deepEqual(JSON.parse(JSON.stringify(config)), { childList: true }); }
+    disconnect() { mutationCallback = undefined; }
+  }
   const location = new URL('http://127.0.0.1:5173/index.html' + (options.hash || ''));
   const document = { documentElement: root, hidden: false, activeElement: null,
-    querySelectorAll: () => elements, getElementById: () => group,
+    querySelectorAll: selector => selector.includes('data-dish-grid') ? [menuGrid] : elements, getElementById: () => group,
     addEventListener: (name, callback) => { listeners[name] = callback; } };
   const window = { innerHeight: 800, scrollY: options.scrollY || 0,
     addEventListener: (name, callback) => { listeners[name] = callback; } };
   if (!options.noObserver) window.IntersectionObserver = Observer;
+  window.MutationObserver = Mutations;
   const context = vm.createContext({ document, window, location, URL, IntersectionObserver: Observer,
+    MutationObserver: Mutations,
     matchMedia: () => preference,
     performance: { getEntriesByType: () => [{ type: options.backForward ? 'back_forward' : 'navigate' }] },
     setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; },
@@ -47,6 +55,7 @@ function harness(options = {}) {
   while (frames.length) frames.shift()();
   return { root, elements, observed, listeners, timers, preference, document, boot,
     enter: (...targets) => observerCallback(targets.map(target => ({ target, isIntersecting: true }))),
+    replaceMenu: () => mutationCallback?.(),
   };
 }
 async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
@@ -107,5 +116,15 @@ async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
   assert.equal(replacement.dataset.revealState, 'shown', 'Seen dishes do not blink on refresh or filtering');
   assert(!h.observed.has(dynamic), 'Detached cards are unobserved');
   assert(!h.observed.has(replacement), 'Seen replacement does not replay');
+  h = harness();
+  const missedEventCard = { ...h.elements[1], dataset: { reveal: 'visual', revealKey: 'dish:new' }, top: 100, isConnected: true };
+  h.elements.push(missedEventCard); h.replaceMenu(); await flush();
+  assert.equal(missedEventCard.dataset.revealState, 'revealing', 'Visible hydration cards appear even when the menu event was missed');
+  const laterCard = { ...missedEventCard, dataset: { reveal: 'visual', revealKey: 'dish:later' }, top: 1800 };
+  h.elements.push(laterCard); h.replaceMenu(); await flush();
+  assert.equal(laterCard.dataset.revealState, undefined, 'Offscreen hydration cards retain scroll reveal');
+  assert(h.observed.has(laterCard));
+  h.listeners.focusin({ target: { parent: laterCard, contains: () => false } });
+  assert.equal(laterCard.dataset.revealState, 'shown', 'Dynamically registered cards are immediately visible on keyboard focus');
   console.log('PASS: pre-paint bootstrap, once-only entry, rhythm, focus, pointer, reduced motion, fail-open watchdog, deep links, history, restored scroll, broken/slow images, fast-scroll exit, dynamic menu cards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

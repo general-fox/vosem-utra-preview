@@ -150,11 +150,11 @@ test('Vite PHP transport protects login, cookies and CSRF; menu changes survive 
     const req = http.get(origin + '/api/admin/session', { headers: { Host: 'evil.example' } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); }); req.on('error', reject);
   });
   assert.equal(foreignHost, 403);
-  const pending = await request('/api/admin/login', { body: { username: 'owner@example.test', password: PASSWORD } });
-  assert.equal(pending.status, 202); assert.equal(pending.json.mfaRequired, true); assert.equal(pending.json.deviceToken, undefined);
-  const verified = await request('/api/admin/verify', { body: { challengeToken: pending.json.challengeToken, code: totp(SECRET) } });
+  const verified = await request('/api/admin/login', { body: { username: 'owner@example.test', password: PASSWORD } });
+  assert.equal(verified.json.authMode, 'password'); assert.equal(verified.json.deviceToken, undefined);
   assert.equal(verified.status, 200, verified.text); csrf = verified.json.csrfToken;
-  assert.ok(cookies.get('vosem_admin_device')); assert.match(verified.headers.get('set-cookie'), /HttpOnly/i);
+  assert.equal((await request('/api/admin/verify', { body: { code: totp(SECRET) } })).status,404);
+  assert.match(verified.headers.get('set-cookie'), /HttpOnly/i);
   const current = (await request('/api/admin/menu')).json; current.items[0].price += 1;
   assert.equal((await request('/api/admin/menu', { method: 'PUT', body: current, headers: { 'X-CSRF-Token': 'bad' } })).status, 403);
   assert.equal((await request('/api/admin/menu', { method: 'PUT', body: current })).status, 200);
@@ -164,14 +164,14 @@ test('Vite PHP transport protects login, cookies and CSRF; menu changes survive 
   assert.equal((await request('/api/menu')).json.revision, 8);
   const orderSettings = await request('/api/ordering'); assert.equal(orderSettings.status, 200); assert.equal(orderSettings.json.mode, 'development');
   assert.equal((await request('/api/admin/logout', { body: {} })).status, 200);
-  assert.equal((await request('/api/admin/session')).json.trustedUsername, 'owner@example.test');
+  assert.equal((await request('/api/admin/session')).json.trustedUsername, undefined);
   assert.equal((await request('/api/admin/logout', { body: { forgetDevice: true } })).status, 200);
   assert.equal((await request('/api/admin/session')).json.trustedUsername, undefined);
 
-  // Consume a recovery code BEFORE export; it must never become reusable again.
+  // Old app recovery codes cannot authenticate; archives retain them without using them.
   const login = await request('/api/admin/login', { body: { username: 'owner@example.test', password: PASSWORD } });
   const recovered = await request('/api/admin/verify', { body: { challengeToken: login.json.challengeToken, code: app.owner.recoveryCodes[0] } });
-  assert.equal(recovered.status, 200);
+  assert.equal(login.status,200); assert.equal(recovered.status,404);
   const bundle = path.join(app.project, 'private.cafebackup'), key = path.join(app.project, 'private.key');
   const exported = transfer('export', app.runtime, bundle, key); assert.equal(exported.status, 0, exported.stderr);
   const encrypted = await readFile(bundle, 'utf8'); assert.ok(!encrypted.includes(PASSWORD)); assert.ok(!encrypted.includes('owner@example.test')); assert.ok(!encrypted.includes(KEY.toString('hex')));
@@ -181,7 +181,7 @@ test('Vite PHP transport protects login, cookies and CSRF; menu changes survive 
   const saved = JSON.parse(await readFile(path.join(restored, 'admin-data/auth-state.json')));
   assert.deepEqual(saved.account, original.account); assert.deepEqual(saved.accounts, original.accounts);
   for (const field of ['sessions','devices','challenges','enrollments']) assert.deepEqual(saved[field], []);
-  assert.equal(saved.account.recovery.length, 9); assert.deepEqual(saved.account.totp, original.account.totp);
+  assert.equal(saved.account.recovery.length, 10); assert.deepEqual(saved.account.totp, original.account.totp);
   assert.equal(JSON.parse(await readFile(path.join(restored, 'admin-data/menu.json'))).revision, 8);
   assert.deepEqual(await readFile(path.join(restored, 'admin-data/uploads', PHOTO)), await readFile(path.join(app.data, 'uploads', PHOTO)));
   assert.ok(!(await readdir(restored)).some((name) => name.includes('admin-access')));

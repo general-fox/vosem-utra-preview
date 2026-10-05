@@ -1,0 +1,15 @@
+/* Included only in the isolated test deployment. */
+body { padding-bottom: 72px; }
+.floating-cart { bottom: calc(88px + env(safe-area-inset-bottom)); }
+.cart-toast { bottom: calc(154px + env(safe-area-inset-bottom)); }
+.cafe-test-banner {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 90;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid #cfc4b5;
+  background: #ede5d8;
+  color: #44392d;
+  font: 500 13px/1.5 "Lato", sans-serif;
+  text-align: center;
+}

@@ -58,6 +58,7 @@ export function validateQuote(value, draft) {
 }
 export function validateReceipt(data) {
   const order = data?.order;
+  if (order?.trackingId !== undefined && !/^[a-f0-9]{32}$/.test(order.trackingId)) throw new OrderError('Не удалось получить номер для проверки статуса.', { code: 'invalid_receipt', uncertain: true });
   if (!validTotals(order) || !['string', 'number'].includes(typeof order.number) || !String(order.number).trim() || String(order.number).length > 100 || !Number.isFinite(Date.parse(order.createdAt)) || order.status !== 'new' || !['pickup', 'delivery'].includes(order.fulfilment?.type)) throw new OrderError('Сервер не подтвердил сохранение заказа. Повторите проверку отправки.', { code: 'invalid_receipt', uncertain: true });
   return order;
 }

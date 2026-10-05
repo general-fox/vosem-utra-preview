@@ -138,6 +138,36 @@ try {
         $app = fixture(); foreach (['hidden','sold-out','missing'] as $id) { $b=draft($app);$b['items'][0]['id']=$id; $e=errorCode(fn()=>quote($app,$b),'item_unavailable',409);check($e->details===['items'=>[['id'=>$id,'available'=>false]]]); }
         $body=request($app); $catalog=menu($app);$catalog['items'][0]['availableForOrder']=false;menu($app,$catalog);errorCode(fn()=>create($app,$body),'item_unavailable',409);check(countRows(database($app),'orders')===0);
     });
+    runTest('synced fractional stock limits quantities before quoting and cannot be forged by the browser',function (): void {
+        $app=fixture();$catalog=menu($app);$catalog['items'][0]['keeperAvailability']=['remaining'=>2.5,'forbidden'=>false,'stockKey'=>str_repeat('a',64)];menu($app,$catalog);
+        $body=draft($app);$body['items'][0]['quantity']=3;$body['items'][0]['keeperAvailability']=['remaining'=>999];
+        $error=errorCode(fn()=>quote($app,$body),'item_limited',409);
+        check($error->details===['items'=>[['id'=>'breakfast','available'=>true,'maxQuantity'=>2]]]);
+        check(countRows(database($app),'quotes')===0&&countRows(database($app),'orders')===0);
+        $body['items'][0]['quantity']=2;$created=create($app,request($app,$body));check($created['order']['items'][0]['quantity']===2);
+        check(!str_contains(json_encode($created),'stockKey'),'Internal stock identities must not enter order snapshots');
+    });
+    runTest('cached stock is rechecked at create even when the menu revision stays unchanged',function (): void {
+        $app=fixture();$catalog=menu($app);$catalog['items'][0]['keeperAvailability']=['remaining'=>2.5,'forbidden'=>false];menu($app,$catalog);
+        $body=request($app);$catalog['items'][0]['keeperAvailability']['remaining']=1;menu($app,$catalog);
+        errorCode(fn()=>create($app,$body),'item_limited',409);
+        $db=database($app);check(countRows($db,'orders')===0&&$db->query('SELECT order_id FROM quotes')->fetchColumn()===null);
+        $smaller=draft($app);$smaller['items'][0]['quantity']=1;$retry=request($app,$smaller);$created=create($app,$retry);
+        $catalog['items'][0]['keeperAvailability']['remaining']=0;menu($app,$catalog);
+        check(create($app,$retry)['_replayed'],'A completed idempotent retry must not duplicate or invalidate its order');
+        check(countRows($db,'orders')===1);
+    });
+    runTest('website aliases share one stock allowance while separate cash identities remain independent',function (): void {
+        $app=fixture();$catalog=menu($app);
+        foreach([0,1] as $index)$catalog['items'][$index]['keeperAvailability']=['remaining'=>2.5,'forbidden'=>false,'stockKey'=>str_repeat('b',64)];
+        menu($app,$catalog);$error=errorCode(fn()=>quote($app),'item_limited',409);
+        check($error->details===['items'=>[['id'=>'breakfast','available'=>true,'maxQuantity'=>2],['id'=>'dessert','available'=>true,'maxQuantity'=>2]]]);
+        $body=draft($app);$body['items'][0]['quantity']=1;check(count(quote($app,$body)['items'])===2);
+        $catalog['items'][1]['keeperAvailability']['stockKey']=str_repeat('c',64);menu($app,$catalog);check(count(quote($app)['items'])===2);
+        foreach([0,1] as $index){unset($catalog['items'][$index]['keeperAvailability']['stockKey']);$catalog['items'][$index]['source']=['provider'=>'kds','organizationId'=>'same-org','externalId'=>'same-dish'];}
+        menu($app,$catalog);errorCode(fn()=>quote($app),'item_limited',409);
+        $catalog['items'][1]['source']['organizationId']='other-org';menu($app,$catalog);check(count(quote($app)['items'])===2);
+    });
     runTest('stale quote requires explicit fresh quote submission, address and timing changes conflict',function (): void {
         $app=fixture();$body=request($app);$catalog=menu($app);$catalog['revision']=2;$catalog['items'][0]['price']=500;menu($app,$catalog);
         $e=errorCode(fn()=>create($app,$body),'quote_changed',409);check($e->details['quote']['subtotalMinor']===109999);check(countRows(database($app),'orders')===0);

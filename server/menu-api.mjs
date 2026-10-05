@@ -4,13 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuthService, AuthError, equalSecret } from './auth.mjs';
 import { enrollmentQr } from './qr.mjs';
+import { normalizeMenuCategories, normalizeMenuItems, normalizeMenuSource, normalizeMenuData } from '../menu-categories.js';
 export { makePasswordRecord } from './auth.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const COOKIE = 'vosem_admin';
 const DEVICE_COOKIE = 'vosem_admin_device';
-const CATEGORIES = new Set(['signature', 'eggs', 'porridge', 'sweet']);
 const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
 class ApiError extends Error {
@@ -62,18 +62,26 @@ function textField(value, field, maximum, minimum = 0) {
   return value.trim();
 }
 
-export function validateItems(items) {
+export function validateCategories(categories) {
+  try { return normalizeMenuCategories(categories); }
+  catch { fail(400, 'Проверьте структуру групп меню.', 'invalid_categories'); }
+}
+
+export function validateItems(items, categories = undefined) {
   if (!Array.isArray(items) || items.length > 300) fail(400, 'Меню должно содержать не более 300 позиций.', 'invalid_items');
+  const tree = validateCategories(categories);
+  try { items = normalizeMenuItems(items, tree); }
+  catch { fail(400, 'Выберите группу меню.', 'invalid_category'); }
   const ids = new Set();
   return items.map((item, index) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) fail(400, `Некорректная позиция ${index + 1}.`, 'invalid_item');
     const id = textField(item.id, 'идентификатор', 100, 1);
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id) || ids.has(id)) fail(400, 'Идентификаторы позиций должны быть уникальными.', 'invalid_id');
     ids.add(id);
-    if (!CATEGORIES.has(item.category)) fail(400, 'Выберите категорию завтрака.', 'invalid_category');
     if (typeof item.price !== 'number' || !Number.isFinite(item.price) || item.price < 0 || item.price > 1000000 || Math.abs(item.price * 100 - Math.round(item.price * 100)) > 0.00001) fail(400, 'Укажите корректную цену в рублях.', 'invalid_price');
     if (typeof item.published !== 'boolean') fail(400, 'Укажите видимость позиции.', 'invalid_published');
-    const availableForOrder = Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true;
+    if (Object.hasOwn(item, 'hiddenOnSite') && typeof item.hiddenOnSite !== 'boolean') fail(400, 'Укажите видимость позиции.', 'invalid_visibility');
+    let availableForOrder = Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true;
     if (typeof availableForOrder !== 'boolean') fail(400, 'Укажите доступность позиции для заказа.', 'invalid_availability');
     if (!Number.isInteger(item.order) || item.order < 0 || item.order > 100000) fail(400, 'Укажите корректный порядок позиции.', 'invalid_order');
     let image = textField(item.image, 'фотография', 250);
@@ -81,8 +89,60 @@ export function validateItems(items) {
       if (!image.startsWith('/')) image = `/${image}`;
       if (!/^\/(menu-images|uploads)\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$/i.test(image) || image.includes('..')) fail(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
     }
-    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price: item.price, category: item.category, image, published: item.published, availableForOrder, order: item.order };
+    let source;
+    try { source = normalizeMenuSource(item.source); } catch { fail(400, 'Некорректный источник блюда.', 'invalid_source'); }
+    if (source?.testOnly || item.category === null || item.hiddenOnSite === true) availableForOrder = false;
+    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price: item.price, category: item.category, image, published: item.hiddenOnSite === true ? false : item.published, availableForOrder, order: item.order, ...(source ? { source } : {}), ...(Object.hasOwn(item, 'hiddenOnSite') ? { hiddenOnSite: item.hiddenOnSite } : {}) };
   });
+}
+
+function validateMenuData(menu, options = {}) {
+  try {
+    const data = normalizeMenuData(menu, options);
+    // Persisted website groups are flat. Public response normalizers remain separate:
+    // they must retain effective stop-list restrictions from the server.
+    const categories = data.categories.map(category => ({ ...category, parentId:null }));
+    const items = data.items.map(item => ({ ...item, published:item.category !== null && item.hiddenOnSite !== true,
+      availableForOrder:item.category !== null && item.hiddenOnSite !== true && item.source?.testOnly !== true }));
+    return { ...data, categories, items:validateItems(items, categories) };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    fail(400, 'Проверьте группы сайта и каталог кассы. Выберите для блюда группу на сайте.', 'invalid_category_mapping');
+  }
+}
+export { validateMenuData as normalizeStoredMenu };
+
+function validateCatalogEdit(body, menu) {
+  const sourceError = () => fail(400, 'Источник блюда и группы кассы изменяются только при выгрузке из кассы.', 'immutable_source');
+  const sameSource = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  if (Object.hasOwn(body, 'sourceCategories')) {
+    let submitted;
+    try { submitted = normalizeMenuCategories(body.sourceCategories); } catch { sourceError(); }
+    if (!sameSource(submitted, menu.sourceCategories)) sourceError();
+  }
+  if (Array.isArray(body.categories) && body.categories.some(group => group?.source != null)) sourceError();
+  if (Array.isArray(body.categories) && body.categories.some(group => group?.parentId != null)) {
+    fail(400, 'Группы сайта находятся на одном уровне. Вложенность сохраняется только в меню кассы.', 'flat_site_groups');
+  }
+  const existing = new Map(menu.items.map(item => [item.id, item]));
+  const submittedItems = Object.hasOwn(body, 'items') ? body.items : menu.items;
+  if (!Array.isArray(submittedItems)) fail(400, 'Меню должно содержать не более 300 позиций.', 'invalid_items');
+  const items = submittedItems.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) fail(400, 'Некорректная позиция меню.', 'invalid_item');
+    const previous = existing.get(item.id);
+    if (!previous) fail(400, 'Блюда добавляются только при выгрузке из кассы.', 'import_only');
+    if (Object.hasOwn(item, 'source')) {
+      let submitted;
+      try { submitted = normalizeMenuSource(item.source); } catch { sourceError(); }
+      if (!sameSource(submitted, previous.source)) sourceError();
+    }
+    // Legacy clients may omit source metadata. It is always owned by the importer.
+    const result = { ...item };
+    if (previous.source) result.source = previous.source;
+    else delete result.source;
+    return result;
+  });
+  return validateMenuData({ ...menu, ...body, sourceCategories:menu.sourceCategories, items }, { allowLegacyMappings:false });
 }
 
 async function atomicWrite(filename, value) {
@@ -111,10 +171,27 @@ export function createMenuMiddleware(options = {}) {
   let initialization;
   let writeQueue = Promise.resolve();
 
-  async function readSavedMenu() {
-    const saved = JSON.parse(await readFile(menuFile, 'utf8'));
-    if (!Number.isSafeInteger(saved.revision) || saved.revision < 1) throw new Error('Некорректная версия сохранённого меню.');
-    return { items: validateItems(saved.items), revision: saved.revision };
+  async function readSavedMenu({ locked = false } = {}) {
+    const read = async () => {
+      const raw = await readFile(menuFile, 'utf8');
+      const saved = JSON.parse(raw);
+      if (!Number.isSafeInteger(saved.revision) || saved.revision < 1 || saved.revision >= Number.MAX_SAFE_INTEGER) throw new Error('Некорректная версия сохранённого меню.');
+      const normalized = validateMenuData(saved);
+      const migrated = saved.categories?.some(category => category.source || category.parentId != null) || saved.categoryMappings?.length
+        || saved.items?.some((item, index) => item.published !== normalized.items[index].published
+          || (item.availableForOrder ?? true) !== normalized.items[index].availableForOrder);
+      const menu = { ...normalized, revision:saved.revision + (migrated ? 1 : 0) };
+      if (migrated) {
+        const backup = path.join(dataDir, `menu-before-flat-groups-${saved.revision}-${randomUUID()}.json`);
+        await writeFile(backup, raw, { mode:0o600, flag:'wx' });
+        await atomicWrite(menuFile, menu);
+      }
+      return menu;
+    };
+    if (locked) return read();
+    const reading = writeQueue.then(read);
+    writeQueue = reading.catch(() => {});
+    return reading;
   }
 
   function initialize() {
@@ -125,7 +202,7 @@ export function createMenuMiddleware(options = {}) {
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
         const seed = JSON.parse(await readFile(seedPath, 'utf8'));
-        await atomicWrite(menuFile, { items: validateItems(seed.items), revision: 1 });
+        await atomicWrite(menuFile, { ...validateMenuData(seed), revision: 1 });
       }
     })();
     return initialization;
@@ -185,7 +262,7 @@ export function createMenuMiddleware(options = {}) {
       if (!['GET', 'HEAD'].includes(req.method)) checkOrigin(req);
       if (['/api/menu', '/data/menu.json'].includes(pathname) && req.method === 'GET') {
         const menu = await readSavedMenu();
-        return sendJson(res, 200, { items: menu.items.filter((item) => item.published).sort((a, b) => a.order - b.order), revision: menu.revision });
+        return sendJson(res, 200, { categories: menu.categories, items: menu.items.filter((item) => item.published && item.category !== null).sort((a, b) => a.order - b.order), revision: menu.revision });
       }
       if (pathname === '/api/admin/session' && req.method === 'GET') {
         return sendJson(res, 200, await auth.status(sessionToken(req), deviceToken(req)));
@@ -231,18 +308,18 @@ export function createMenuMiddleware(options = {}) {
       if (pathname === '/api/admin/menu' && req.method === 'PUT') {
         await requireSession(req, true);
         const body = await readJson(req);
-        const items = validateItems(body.items);
         if (!Number.isSafeInteger(body.revision) || body.revision < 1) fail(400, 'Некорректная версия меню.', 'invalid_revision');
         const write = writeQueue.then(async () => {
           // Reload inside the queue to see completed edits from another server or maintenance tool.
-          const menu = await readSavedMenu();
+          const menu = await readSavedMenu({ locked:true });
           if (body.revision !== menu.revision) fail(409, 'Меню уже изменено в другой вкладке. Загрузите актуальную версию.', 'conflict');
-          const updated = { items, revision: menu.revision + 1 };
+          const data = validateCatalogEdit(body, menu);
+          const updated = { ...data, revision: menu.revision + 1 };
           // The body/queue may outlive an idle timeout or an explicit logout.
           // Recheck immediately before committing, without extending the deadline.
           await requireSession(req, true);
           await atomicWrite(menuFile, updated);
-          await auth.audit('menu.updated', peer(req), { revision: updated.revision, count: items.length });
+          await auth.audit('menu.updated', peer(req), { revision: updated.revision, count: updated.items.length });
           return updated;
         });
         writeQueue = write.catch(() => {});

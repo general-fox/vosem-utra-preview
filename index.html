@@ -119,24 +119,28 @@
     <section class="breakfast-section wrap" id="menu" aria-labelledby="breakfast-title" data-breakfast-menu>
       <div class="breakfast-panel">
         <div class="breakfast-heading">
-          <div><p class="eyebrow">МЕНЮ ЗАВТРАКОВ</p><h2 id="breakfast-title">Утро, которое<br><em>длится весь день</em></h2></div>
-          <div class="breakfast-note"><p class="breakfast-hours"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.58 4.58l2.12 2.12M17.3 17.3l2.12 2.12M4.58 19.42l2.12-2.12M17.3 6.7l2.12-2.12"/></svg>Завтраки весь день · 8:00–20:00</p><p>Сытное, сладкое или что-то лёгкое.<br>Выбирайте под настроение —<br>и оставайтесь на чашку кофе.</p></div>
+          <div><p class="eyebrow">НАШЕ МЕНЮ</p><h2 id="breakfast-title">Для доброго утра<br><em>и тёплого вечера</em></h2></div>
+          <div class="breakfast-note"><p class="breakfast-hours"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.58 4.58l2.12 2.12M17.3 17.3l2.12 2.12M4.58 19.42l2.12-2.12M17.3 6.7l2.12-2.12"/></svg>Ждём каждый день · 8:00–20:00</p><p>Любимые блюда и новые поводы<br>собраться за одним столом.<br>Выбирайте под настроение.</p></div>
         </div>
         <div class="breakfast-toolbar" data-menu-filters hidden>
-          <div class="breakfast-filters" role="group" aria-label="Категории завтраков">
-            <button type="button" data-menu-filter="all" aria-pressed="true">Все завтраки</button>
-            <button type="button" data-menu-filter="signature" aria-pressed="false">Фирменные</button>
-            <button type="button" data-menu-filter="eggs" aria-pressed="false">Яйца и тосты</button>
-            <button type="button" data-menu-filter="porridge" aria-pressed="false">Каши и гранола</button>
-            <button type="button" data-menu-filter="sweet" aria-pressed="false">Сладкое утро</button>
+          <div class="breakfast-filters" role="group" aria-label="Разделы меню" data-menu-roots>
+            <button type="button" class="menu-root-button" data-menu-filter="breakfast" aria-pressed="true" aria-controls="menu-dishes">Завтраки</button>
+            <button type="button" class="menu-root-button" data-menu-filter="dinner" aria-pressed="false" aria-controls="menu-dishes">Ужины</button>
           </div>
-          <span class="breakfast-count" data-menu-count aria-live="polite"></span>
         </div>
+        <p class="menu-test-notice" data-menu-test-notice hidden>Тестовое меню. Эти блюда добавлены для проверки и не готовятся.</p>
+        <nav class="menu-breadcrumbs" aria-label="Путь в меню" data-menu-breadcrumbs hidden></nav>
+        <div class="menu-category-heading"><h3 data-menu-category-title tabindex="-1">Завтраки и ужины</h3><span class="breakfast-count" data-menu-count aria-live="polite" aria-atomic="true"></span></div>
+        <div class="menu-subcategories" role="group" aria-label="Подразделы меню" data-menu-subcategories hidden></div>
         <p class="menu-status" role="status" data-menu-status></p>
         <button class="button button-outline menu-retry" type="button" data-menu-retry hidden>Попробовать ещё раз</button>
-        <div class="dish-grid" data-dish-grid data-reveal-group></div>
-        <div class="breakfast-extras" data-extra-section hidden><h3>Ещё к вашему утру</h3><div class="dish-extras-grid" data-dish-extras data-reveal-group></div></div>
-        <p class="menu-empty" data-menu-empty hidden>В этой категории пока нет блюд. Загляните в другие завтраки.</p>
+        <div id="menu-dishes">
+          <div class="dish-grid" data-dish-grid data-reveal-group></div>
+          <div class="breakfast-extras" data-extra-section hidden>
+            <div class="dish-extras-grid" data-dish-extras data-reveal-group></div>
+          </div>
+        </div>
+        <p class="menu-empty" data-menu-empty hidden>В этом разделе пока нет блюд. Посмотрите другие разделы меню.</p>
         <noscript><p>Чтобы увидеть карточки блюд, включите JavaScript.</p></noscript>
         <div class="breakfast-footer"><p>Готовим для вас в кофейне. О составе блюд и аллергенах расскажет наша команда.</p></div>
       </div>
@@ -149,7 +153,18 @@
     <section class="quote-section shell" aria-label="Философия кофейни" data-reveal="visual"><div class="sunrise" aria-hidden="true"></div><span class="quote-sun" aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><blockquote>В простом всегда прячется<br>самое нужное</blockquote><p>Чашка кофе. Близкие рядом. Хорошее утро.</p></section>
 
     <section class="club-section section wrap" id="club" aria-labelledby="club-title" data-reveal-group>
-      <div class="club-copy"><p class="eyebrow" data-reveal="text">КЛУБ ГОСТЕЙ «ВОСЕМЬ УТРА»</p><h2 id="club-title" data-reveal="text">Хорошие привычки<br>дарят больше</h2><p class="lead" data-reveal="text">Заходите за любимым.<br>А мы добавим немного приятного.</p><p data-reveal="text">Присоединяйтесь к клубу гостей: копите бонусы с каждого заказа и возвращайтесь за новыми маленькими радостями.</p><a class="button button-dark" href="registration.html" data-reveal="text">Стать участником <span aria-hidden="true">↗</span></a><p class="club-fineprint" data-reveal="text">Подробности программы можно уточнить<br>у команды кофейни.</p></div>
+      <div class="club-copy">
+        <p class="eyebrow" data-reveal="text">КЛУБ ГОСТЕЙ «ВОСЕМЬ УТРА»</p>
+        <h2 id="club-title" data-reveal="text">Хорошие привычки<br>дарят больше</h2>
+        <p class="lead" data-reveal="text">Заходите за любимым.<br>А мы добавим немного приятного.</p>
+        <p data-reveal="text">Присоединяйтесь к клубу гостей: копите бонусы с каждого заказа и возвращайтесь за новыми маленькими радостями.</p>
+        <aside class="club-welcome" aria-label="Приветственный бонус" data-reveal="text">
+          <p class="club-welcome-amount">500 <span>₽</span></p>
+          <div><strong>Бонусами за регистрацию</strong><p>Приветственный подарок в клубе гостей. Бонусами можно оплатить до 30% чека.</p></div>
+        </aside>
+        <a class="button button-dark" href="registration.html" data-reveal="text">Стать участником <span aria-hidden="true">↗</span></a>
+        <p class="club-fineprint" data-reveal="text">Подробности программы можно уточнить<br>у команды кофейни.</p>
+      </div>
       <div class="club-visual"><div class="loyalty-card" data-reveal="visual"><div class="loyalty-card-head"><img src="assets/logo.svg" width="435" height="75" alt="Восемь утра"><span>КАРТА ГОСТЯ</span></div><div class="loyalty-card-value"><span>5<small>%</small></span><p>возвращаем бонусами<br>с каждого заказа</p></div><div class="loyalty-card-bottom"><span>Ваш повод вернуться</span><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span></div></div><div class="bonus-note" data-reveal="visual"><strong>до 30%</strong><span>стоимости заказа<br>можно оплатить бонусами</span></div><ol class="club-steps"><li data-reveal="text"><span>1</span>Заполните короткую анкету</li><li data-reveal="text"><span>2</span>Назовите номер телефона при заказе</li><li data-reveal="text"><span>3</span>Копите бонусы и оплачивайте ими покупки</li></ol></div>
     </section>
 

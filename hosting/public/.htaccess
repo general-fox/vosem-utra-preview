@@ -9,7 +9,8 @@ RewriteCond %{HTTP:Authorization} .
 RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 RewriteRule ^\.well-known/acme-challenge/ - [L]
 RewriteRule (^|/)\. - [F,L]
-RewriteRule (^|/)(vosem-utra-private|admin-data|orders?-data|node_modules|hosting-tools|server)(/|$) - [F,L,NC]
+RewriteRule (^|/)(vosem-utra-private|admin-data|orders?-data|kds-data|node_modules|hosting-tools|server)(/|$) - [F,L,NC]
+RewriteRule (^|/)kds-config\.(json|php)$ - [F,L,NC]
 RewriteRule ^(?:site-build\.json|composer\.(?:json|lock)|package(?:-lock)?\.json)$ - [F,L,NC]
 
 # Live HTML and menu always reach the controller, even if an old static copy remains.

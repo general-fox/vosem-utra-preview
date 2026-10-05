@@ -7,6 +7,8 @@ header('X-Content-Type-Options: nosniff');
 require __DIR__.'/loyalty-core.php';
 require __DIR__.'/recaptcha.php';
 require __DIR__.'/consent-log.php';
+$loyaltyPrivateRoot = dirname(__DIR__,2).'/vosem-utra-private';
+require $loyaltyPrivateRoot.'/app/loyalty-phone.php';
 $GLOBALS['loyalty_request_id'] = bin2hex(random_bytes(8));
 header('X-Request-ID: '.$GLOBALS['loyalty_request_id']);
 loyalty_log('request_received', ['method'=>$_SERVER['REQUEST_METHOD'] ?? '']);
@@ -34,10 +36,20 @@ if (isset($_SESSION['touched']) && time() - $_SESSION['touched'] > 3600) {
 $_SESSION['touched'] = time();
 if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(32));
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
+$expectedOrigin = ($https ? 'https://' : 'http://').($_SERVER['HTTP_HOST'] ?? '');
+try { $phoneConfig = loyalty_phone_config($loyaltyPrivateRoot, $expectedOrigin); }
+catch (LoyaltyPhoneError $e) { reply(['IsSuccess'=>false,'Message'=>$e->getMessage(),'Code'=>$e->reason],$e->status); }
+catch (Throwable) { reply(['IsSuccess'=>false,'Message'=>'Подтверждение телефона временно недоступно. Свяжитесь с кофейней.'],503); }
+$phoneRequired = $phoneConfig['enabled'];
+$phoneTest = $phoneRequired && $phoneConfig['mode'] === 'test';
+$deploymentFile = $loyaltyPrivateRoot.'/app/deployment.php';
+$deployment = is_file($deploymentFile) ? require $deploymentFile : [];
+if (($deployment['staging'] ?? false) && !$phoneTest) reply(['IsSuccess'=>false,'Message'=>'На тестовом сайте доступна только проверка телефона без отправки в FlexBonus.'],503);
 if ($method === 'GET') {
     $config = captcha_config();
-    if (empty($config['site_key']) || empty($config['secret_key']) || !function_exists('curl_init')) reply(['IsSuccess'=>false,'Message'=>'Проверка временно недоступна. Свяжитесь с кофейней.'],503);
-    reply(['csrf'=>$_SESSION['csrf'],'recaptchaSiteKey'=>$config['site_key'],'recaptchaMode'=>$config['mode'],'consentVersion'=>CONSENT_VERSION]);
+    if (!$phoneTest && (empty($config['site_key']) || empty($config['secret_key']) || !function_exists('curl_init'))) reply(['IsSuccess'=>false,'Message'=>'Проверка временно недоступна. Свяжитесь с кофейней.'],503);
+    reply(['csrf'=>$_SESSION['csrf'],'recaptchaSiteKey'=>$config['site_key'],'recaptchaMode'=>$config['mode'],'consentVersion'=>CONSENT_VERSION,
+        'recaptchaRequired'=>!$phoneTest,'phoneVerificationRequired'=>$phoneRequired,'phoneTestMode'=>$phoneTest]);
 }
 if (!in_array($method,['POST','DELETE'],true)) { header('Allow: GET, POST, DELETE'); reply(['IsSuccess'=>false,'Message'=>'Метод не поддерживается.'],405); }
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -57,7 +69,34 @@ if ($raw === false || strlen($raw) > 16384) reply(['IsSuccess'=>false,'Message'=
 $input = json_decode($raw,true);
 if (!is_array($input)) reply(['IsSuccess'=>false,'Message'=>'Не удалось прочитать данные формы.'],400);
 if (($input['ConsentVersion']??null)!==CONSENT_VERSION) reply(['IsSuccess'=>false,'Message'=>'Текст согласия обновился. Обновите страницу и ознакомьтесь с ним повторно.'],409);
-if (($input['CaptchaConsent']??null)!==true) reply(['IsSuccess'=>false,'Message'=>'Для отправки пройдите проверку от спама.'],422);
+if (!$phoneTest && ($input['CaptchaConsent']??null)!==true) reply(['IsSuccess'=>false,'Message'=>'Для отправки пройдите проверку от спама.'],422);
+$phoneVerifier = null;
+if ($phoneRequired) {
+    if (($input['Consent']??null)!==true || ($input['PhoneConsent']??null)!==true) reply(['IsSuccess'=>false,'Message'=>'Подтвердите согласие на обработку данных и проверку телефона.'],422);
+    try { $phoneVerifier = new LoyaltyPhone($phoneConfig, $loyaltyPrivateRoot); }
+    catch (Throwable) { reply(['IsSuccess'=>false,'Message'=>'Подтверждение телефона временно недоступно.'],503); }
+}
+$action = $input['Action'] ?? 'register';
+if (in_array($action,['phone-start','phone-resend','phone-verify','phone-check'],true)) {
+    if (!$phoneVerifier) reply(['IsSuccess'=>false,'Message'=>'Подтверждение звонком не подключено.'],404);
+    try {
+        if ($action === 'phone-check') {
+            if (!$phoneTest) throw new LoyaltyPhoneError(404,'Проверка доступна только на тестовом сайте.','not_found');
+            reply(['IsSuccess'=>true,'connection'=>$phoneVerifier->checkConnection($_SERVER['REMOTE_ADDR'] ?? '')]);
+        }
+        if ($action !== 'phone-verify' && !$phoneTest && !captcha_verify($input['RecaptchaToken'] ?? null)) throw new LoyaltyPhoneError(422,'Пройдите проверку «Я не робот» перед звонком.');
+        $number = is_string($input['Phone']??null) ? $input['Phone'] : '';
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        $result = $action === 'phone-verify'
+            ? $phoneVerifier->verify($_SESSION,$number,is_string($input['ChallengeId']??null)?$input['ChallengeId']:'',is_string($input['Code']??null)?$input['Code']:'',$ip)
+            : $phoneVerifier->start($_SESSION,$number,$ip,$action==='phone-resend');
+        reply(['IsSuccess'=>true,'phoneVerification'=>$result]);
+    } catch (LoyaltyPhoneError $e) {
+        if ($e->retryAfter) header('Retry-After: '.$e->retryAfter);
+        reply(['IsSuccess'=>false,'Message'=>$e->getMessage(),'Code'=>$e->reason,'retryAfter'=>$e->retryAfter],$e->status);
+    } catch (Throwable) { reply(['IsSuccess'=>false,'Message'=>'Подтверждение телефона временно недоступно. Попробуйте позже.'],503); }
+}
+if ($action !== 'register') reply(['IsSuccess'=>false,'Message'=>'Неизвестное действие.'],400);
 try { $payload = loyalty_payload($input); }
 catch (InvalidArgumentException $e) { reply(['IsSuccess'=>false,'Message'=>$e->getMessage()],422); }
 
@@ -66,6 +105,16 @@ $fingerprint = hash_hmac('sha256', json_encode($payload,JSON_UNESCAPED_UNICODE),
 if (isset($_SESSION['last']) && $_SESSION['last']['hash'] === $fingerprint && $_SESSION['last']['expires'] > time()) {
     loyalty_log('cached_result', ['upstream_called'=>false,'expires'=>gmdate('c',$_SESSION['last']['expires']),'is_success'=>$_SESSION['last']['result']['IsSuccess'] ?? null]);
     reply($_SESSION['last']['result']);
+}
+if ($phoneVerifier) {
+    try { $phoneVerifier->requireVerified($_SESSION,$payload['Phone']); }
+    catch (LoyaltyPhoneError $e) { reply(['IsSuccess'=>false,'Message'=>$e->getMessage(),'Code'=>$e->reason],$e->status); }
+}
+if ($phoneTest) {
+    $phoneVerifier->consume($_SESSION,$payload['Phone']);
+    $result=['IsSuccess'=>true,'TestMode'=>true,'Message'=>'Номер подтверждён. Тест завершён: анкета не отправлена в FlexBonus, бонусы не начислялись.'];
+    $_SESSION['last']=['hash'=>$fingerprint,'expires'=>time()+300,'result'=>$result];
+    reply($result);
 }
 if (isset($_SESSION['attempt']) && time() - $_SESSION['attempt'] < 5) reply(['IsSuccess'=>false,'Message'=>'Подождите несколько секунд перед повторной отправкой.'],429);
 $apiKey = getenv('FLEXBONUS_API_KEY') ?: '';
@@ -85,6 +134,8 @@ try {
 loyalty_log('flexbonus_request_started', ['method'=>'POST']);
 try { $receipt = consent_record($payload); }
 catch (Throwable $e) { reply(['IsSuccess'=>false,'Message'=>'Не удалось сохранить согласие. Анкета не отправлена. Свяжитесь с кофейней.'],503); }
+// Consume before the network request: an uncertain FlexBonus response must never reuse this confirmation.
+if ($phoneVerifier) $phoneVerifier->consume($_SESSION,$payload['Phone']);
 try { $result = loyalty_send($payload,$apiKey); }
 catch (Throwable $e) {
     loyalty_log('handler_exception', ['class'=>get_class($e),'message'=>loyalty_redact($e->getMessage(),$payload,$apiKey)]);

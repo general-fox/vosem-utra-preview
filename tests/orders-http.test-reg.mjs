@@ -104,11 +104,11 @@ test('assembled PHP ordering: private persistence, repricing, unknown fees and s
       const conflict = await request('/api/orders', { body: { ...original, orderComment: 'Другой запрос' } }); assert.equal(conflict.status, 409); assert.equal(conflict.json.code, 'idempotency_conflict');
       assert.equal((await request('/api/orders/' + created.number)).status, 404);
     });
-    await t.test('restart keeps acknowledgement; a now-unavailable dish blocks a new quote', async () => {
+    await t.test('restart keeps acknowledgement; a dish removed from the current menu blocks a new quote', async () => {
       await stop(); await start(); const replay = await request('/api/orders', { body: original });
       assert.equal(replay.status, 200, replay.text); assert.deepEqual(replay.json.order, created);
       const savedFile = path.join(privateDir, 'admin-data/menu.json'); const saved = JSON.parse(await readFile(savedFile, 'utf8'));
-      saved.items.find(item => item.id === body.items[0].id).availableForOrder = false; saved.revision++;
+      saved.items = saved.items.filter(item => item.id !== body.items[0].id); saved.revision++;
       await writeFile(savedFile, JSON.stringify(saved));
       const unavailable = await request('/api/orders/quote', { body }); assert.equal(unavailable.status, 409); assert.equal(unavailable.json.code, 'item_unavailable');
       assert.deepEqual((await request('/api/orders', { body: original })).json.order, created);

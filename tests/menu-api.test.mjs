@@ -15,11 +15,50 @@ const seedItems = [
   { id: 'hidden', name: 'Черновик', description: '', price: 600, category: 'signature', image: '', published: false, order: 0 },
 ];
 
+test('legacy source groups migrate once; individual website assignments survive edits without automatic mapping', async t => {
+  const app = await fixture(t);
+  await app.login();
+  const current = (await app.request('/api/admin/menu')).value;
+  const organizationId = 'baa06e7a-b091-4296-97bc-275bc22d9af9';
+  const source = externalId => ({provider:'kds',organizationId,externalId,testOnly:true});
+  const categories = [...current.categories, {id:'drinks',name:'Напитки',parentId:null,order:2}, {id:'source-coffee',name:'Кофе',parentId:null,order:3,source:source('11')}];
+  const sourceCategories = [{id:'source-bar',name:'Бар',parentId:null,order:0,source:source('10')},{id:'source-coffee',name:'Кофе',parentId:'source-bar',order:0,source:source('11')}];
+  const importedCoffee = {...seedItems[0],id:'imported-coffee',category:'source-coffee',source:{...source('101'),groupExternalId:'11'},name:'Кофе для сайта'};
+  const body = { ...current, categories, sourceCategories, categoryMappings:[{provider:'kds',organizationId,externalId:'11',categoryId:'drinks'}], items:[...current.items,{...importedCoffee,id:'new-source-coffee',category:null,source:{...source('102'),groupExternalId:'11'}},importedCoffee] };
+  await writeFile(path.join(app.dataDir,'menu.json'), JSON.stringify(body));
+  const saved = await app.request('/api/admin/menu');
+  assert.equal(saved.status,200);
+  assert.equal(saved.value.items.at(-1).category,'drinks');
+  assert.equal(saved.value.items.at(-1).source.groupExternalId,'11');
+  assert.deepEqual(saved.value.sourceCategories,sourceCategories);
+  assert.deepEqual(saved.value.categoryMappings,[]);
+  assert.ok(saved.value.categories.every(category=>!category.source));
+  assert.equal(saved.value.revision,current.revision+1);
+  await app.stop(); await app.start(); await app.login();
+  const loaded = (await app.request('/api/admin/menu')).value;
+  assert.equal(loaded.items.at(-1).name,'Кофе для сайта');
+  assert.deepEqual(loaded.categoryMappings,[]);
+  assert.equal(loaded.revision,saved.value.revision);
+  loaded.items.at(-1).price=600;
+  loaded.items.at(-1).category='dinner';
+  const unassigned = loaded.items.find(item=>item.id==='new-source-coffee');
+  Object.assign(unassigned,{category:null,published:true,availableForOrder:true});
+  const updated = await app.request('/api/admin/menu',{method:'PUT',body:loaded});
+  assert.equal(updated.status,200);
+  const guest=(await app.request('/api/menu',{authenticated:false})).value;
+  assert.equal(guest.items.find(item=>item.id==='imported-coffee').category,'dinner');
+  assert.equal(guest.items.find(item=>item.id==='imported-coffee').price,600);
+  assert.equal(guest.items.some(item=>item.id==='new-source-coffee'),false);
+  assert.deepEqual(updated.value.items.find(item=>item.id==='new-source-coffee'),{...unassigned,published:false,availableForOrder:false});
+  const rejected=await app.request('/api/admin/menu',{method:'PUT',body:{...updated.value,categoryMappings:body.categoryMappings}});
+  assert.equal(rejected.status,400,'New automatic group rules are no longer accepted');
+});
+
 async function fixture(t, options = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'vosem-menu-'));
   const seedPath = options.seedPath ?? path.join(directory, 'seed.json');
   const dataDir = options.dataDir ?? path.join(directory, 'store');
-  if (!options.seedPath) await writeFile(seedPath, JSON.stringify({ items: seedItems, source: { note: 'Test seed' } }));
+  if (!options.seedPath) await writeFile(seedPath, JSON.stringify(options.seedMenu ?? { items: seedItems, source: { note: 'Test seed' } }));
   let server;
   let base;
   let auth = {};
@@ -229,13 +268,13 @@ test('logout forgetDevice flag clears both cookies and cannot be abused cross-or
   assert.equal((await app.request('/api/admin/resume', { method: 'POST', body: {}, headers })).status, 401);
 });
 
-test('public menu omits drafts; admin API requires login and secure cookie settings', async (t) => {
+test('public menu includes every assigned dish; admin API requires login and secure cookie settings', async (t) => {
   const app = await fixture(t);
   const publicMenu = await app.request('/api/menu');
   assert.equal(publicMenu.status, 200);
   assert.equal(publicMenu.value.revision, 1);
   assert.equal(publicMenu.value.items[0].availableForOrder, true);
-  assert.deepEqual(publicMenu.value.items.map((item) => item.id), ['egg-toast']);
+  assert.deepEqual(publicMenu.value.items.map((item) => item.id), ['hidden','egg-toast']);
   assert.deepEqual((await app.request('/data/menu.json')).value, publicMenu.value);
   assert.equal((await app.request('/api/admin/menu')).status, 401);
   assert.deepEqual((await app.request('/api/admin/session')).value, { authenticated: false, configured: true, mfaRequired: true, production: false, ready: false, enrollmentAvailable: true });
@@ -248,12 +287,12 @@ test('public menu omits drafts; admin API requires login and secure cookie setti
   assert.equal((await app.request('/api/admin/menu')).value.items.length, 2);
 });
 
-test('edits, additions, visibility, removal, and ordering persist across restart', async (t) => {
-  const app = await fixture(t);
+test('edits, removal, and ordering of seeded dishes persist across restart', async (t) => {
+  const porridge = { id: 'porridge', name: 'Каша', description: 'На молоке', price: 300, category: 'porridge', image: 'menu-images/porridge.webp', published: false, order: 2 };
+  const app = await fixture(t, {seedMenu:{items:[...seedItems,porridge]}});
   await app.login();
   const { value: original } = await app.request('/api/admin/menu');
   const items = original.items.map((item) => ({ ...item, published: true, price: item.price + 10 }));
-  items.push({ id: 'porridge', name: 'Каша', description: 'На молоке', price: 300, category: 'porridge', image: 'menu-images/porridge.webp', published: true, order: 2 });
   const saved = await app.request('/api/admin/menu', { method: 'PUT', body: { items, revision: original.revision } });
   assert.equal(saved.status, 200);
   assert.equal(saved.value.revision, original.revision + 1);
@@ -269,6 +308,53 @@ test('edits, additions, visibility, removal, and ordering persist across restart
   assert.equal(reduced.status, 200);
   const onDisk = JSON.parse(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8'));
   assert.deepEqual(onDisk, reduced.value);
+});
+
+test('admin saves cannot create dishes or rewrite their trusted cash-system source', async t => {
+  const source = {provider:'kds',organizationId:'test-org',externalId:'101',groupExternalId:'10',testOnly:true};
+  const sourceCategories = [{id:'cash-coffee',name:'Кофе',parentId:null,order:0,source:{provider:'kds',organizationId:'test-org',externalId:'10',testOnly:true}}];
+  const app = await fixture(t,{seedMenu:{sourceCategories,items:[...seedItems,{...seedItems[0],id:'cash-dish',category:null,source,published:false,availableForOrder:false}]}});
+  await app.login();
+  const initial=(await app.request('/api/admin/menu')).value;
+  const attempts = [
+    {code:'import_only',patch:{items:[...initial.items,{...initial.items[0],id:'manual-new'}]}},
+    {code:'import_only',patch:{items:[...initial.items,{...initial.items[2],id:'forged-import',source:{...source,externalId:'202'}}]}},
+    {code:'immutable_source',patch:{items:initial.items.map(item=>item.id==='cash-dish'?{...item,source:{...source,externalId:'202'}}:item)}},
+    {code:'immutable_source',patch:{items:initial.items.map(item=>item.id==='cash-dish'?{...item,source:null}:item)}},
+    {code:'immutable_source',patch:{items:initial.items.map(item=>item.id==='egg-toast'?{...item,source}:item)}},
+    {code:'immutable_source',patch:{sourceCategories:sourceCategories.map(group=>({...group,name:'Подменённая группа'}))}},
+    {code:'immutable_source',patch:{sourceCategories:[]}},
+    {code:'immutable_source',patch:{categories:[...initial.categories,{id:'forged-group',name:'Подменённая группа',parentId:null,order:2,source:{...source,externalId:'20'}}]}},
+  ];
+  for (const {code,patch} of attempts) {
+    const rejected=await app.request('/api/admin/menu',{method:'PUT',body:{...initial,...patch}});
+    assert.equal(rejected.status,400,code);
+    assert.equal(rejected.value.code,code);
+    assert.deepEqual((await app.request('/api/admin/menu')).value,initial,'Rejected edit must leave the catalog and revision unchanged');
+  }
+  const items=initial.items.map(({source:_source,...item})=>item.id==='cash-dish'?{...item,category:'dinner',published:true,price:620,name:'Кофе для гостей'}:item);
+  const saved=await app.request('/api/admin/menu',{method:'PUT',body:{revision:initial.revision,items}});
+  assert.equal(saved.status,200);
+  assert.deepEqual(saved.value.items.find(item=>item.id==='cash-dish').source,source,'Omitted importer metadata must be restored');
+  assert.equal(saved.value.items.find(item=>item.id==='cash-dish').availableForOrder,false,'Test imports stay unavailable for ordering');
+  assert.deepEqual(saved.value.sourceCategories,sourceCategories);
+  assert.equal((await app.request('/api/menu')).value.items.find(item=>item.id==='cash-dish').name,'Кофе для гостей');
+});
+
+test('manual website groups can be deleted atomically after moving existing dishes', async t => {
+  const app=await fixture(t);
+  await app.login();
+  const initial=(await app.request('/api/admin/menu')).value;
+  const added=await app.request('/api/admin/menu',{method:'PUT',body:{...initial,categories:[...initial.categories,{id:'drinks',name:'Напитки',parentId:null,order:2}],items:initial.items.map(item=>({...item,category:'drinks'}))}});
+  assert.equal(added.status,200);
+  const categories=added.value.categories.filter(group=>group.id!=='drinks');
+  const unsafe=await app.request('/api/admin/menu',{method:'PUT',body:{...added.value,categories}});
+  assert.equal(unsafe.status,400,'A group containing assigned dishes cannot disappear silently');
+  assert.deepEqual((await app.request('/api/admin/menu')).value,added.value);
+  const removed=await app.request('/api/admin/menu',{method:'PUT',body:{...added.value,categories,items:added.value.items.map(item=>({...item,category:'breakfast'}))}});
+  assert.equal(removed.status,200);
+  assert.equal(removed.value.items.length,initial.items.length);
+  assert.equal(removed.value.categories.some(group=>group.id==='drinks'),false);
 });
 
 test('origin and CSRF checks reject cross-site writes and unauthorized uploads', async (t) => {
@@ -305,9 +391,9 @@ test('an already initialized server reads external menu edits and rejects stale 
   assert.deepEqual((await first.request('/api/admin/menu')).value, saved.value);
   for (const route of ['/api/menu', '/data/menu.json']) {
     const visible = (await first.request(route)).value.items;
-    assert.equal(visible.length, 1);
+    assert.equal(visible.length, 2);
     assert.equal(visible[0].image, '/menu-images/current.webp');
-    assert.equal(visible[0].price, 475);
+    assert.equal(visible.find(item=>item.id==='egg-toast').price, 475);
   }
   const rejected = await first.request('/api/admin/menu', { method: 'PUT', body: original });
   assert.equal(rejected.status, 409);
@@ -324,8 +410,7 @@ test('validation rejects malformed prices, categories, IDs, and unsafe image pat
   const app = await fixture(t);
   await app.login();
   const invalid = [
-    { price: -1 }, { price: 1.111 }, { price: '400' }, { category: 'invalid' }, { published: 'true' },
-    { availableForOrder: 'false' }, { availableForOrder: null }, { availableForOrder: 0 },
+    { price: -1 }, { price: 1.111 }, { price: '400' }, { category: 'invalid' },
     { order: -1 }, { name: '' }, { name: 'x'.repeat(161) }, { description: '\u0000' }, { id: '../bad' },
     { image: 'https://evil.example/track.jpg' }, { image: '/uploads/../secret.jpg' }, { image: '/menu-images/a.svg' }, { image: 'javascript:alert(1)' },
   ];
@@ -526,32 +611,93 @@ test('private server files stay inaccessible, including encoded and Vite filesys
 });
 
 
-test('legacy availability defaults on read without rewriting data, and independent availability persists with the public revision', async (t) => {
+test('compatible legacy reads remain unchanged and admin visibility flags are derived from placement', async (t) => {
   const app = await fixture(t);
   await app.request('/api/menu');
-  const legacy = JSON.stringify({ revision: 7, items: seedItems });
+  const placed = seedItems.map(item=>({...item,published:true}));
+  const legacy = JSON.stringify({ revision: 7, items: placed });
   await writeFile(path.join(app.dataDir, 'menu.json'), legacy);
   const loaded = (await app.request('/api/menu')).value;
   assert.equal(loaded.revision, 7);
   assert.equal(loaded.items[0].availableForOrder, true);
-  assert.equal(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8'), legacy, 'Reading a legacy catalog must not rewrite production data');
+  assert.equal(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8'), legacy, 'Already compatible legacy flags need no migration');
   await app.login();
   const saved = await app.request('/api/admin/menu', { method: 'PUT', body: { revision: 7, items: [
-    { ...seedItems[0], availableForOrder: false },
-    { ...seedItems[1], availableForOrder: true },
+    { ...seedItems[0], published:false, availableForOrder: false },
+    { ...seedItems[1], published:'ignored', availableForOrder: 'ignored' },
   ] } });
   assert.equal(saved.status, 200);
   assert.equal(saved.value.revision, 8);
   assert.equal(saved.value.items[0].published, true);
-  assert.equal(saved.value.items[0].availableForOrder, false);
+  assert.equal(saved.value.items[0].availableForOrder, true);
+  assert.equal(saved.value.items[1].published, true);
   assert.equal(saved.value.items[1].availableForOrder, true);
   for (const route of ['/api/menu', '/data/menu.json']) {
     const catalog = (await app.request(route)).value;
     assert.equal(catalog.revision, saved.value.revision);
-    assert.deepEqual(catalog.items.map((item) => item.id), ['egg-toast']);
-    assert.equal(catalog.items[0].availableForOrder, false, 'Visible unavailable dishes remain in the public catalog');
+    assert.deepEqual(catalog.items.map((item) => item.id), ['hidden','egg-toast']);
+    assert.ok(catalog.items.every(item=>item.published&&item.availableForOrder), 'Assigned dishes cannot be manually hidden or marked unavailable');
   }
   await app.stop(); await app.start();
-  assert.deepEqual((await app.request('/api/menu')).value, { items: [saved.value.items[0]], revision: 8 });
+  assert.deepEqual((await app.request('/api/menu')).value, { categories: saved.value.categories, items: [...saved.value.items].sort((a,b)=>a.order-b.order), revision: 8 });
   assert.deepEqual(JSON.parse(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8')), saved.value);
+});
+
+test('old website nesting and manual flags migrate once with a raw backup while cash nesting is preserved', async t => {
+  const app=await fixture(t);await app.login();
+  const current=(await app.request('/api/admin/menu')).value;
+  const source=externalId=>({provider:'kds',organizationId:'org-test',externalId,testOnly:true});
+  const sourceCategories=[
+    {id:'cash-bar',name:'Бар',parentId:null,order:0,source:source('bar')},
+    {id:'cash-coffee',name:'Кофе',parentId:'cash-bar',order:0,source:source('coffee')},
+  ];
+  const original={revision:12,categories:[...current.categories,{id:'brunch',name:'Поздние завтраки',parentId:'breakfast',order:2}],sourceCategories,items:[
+    {...current.items[0],category:'brunch',published:false,availableForOrder:false},
+    {...current.items[1],published:false,availableForOrder:false},
+    {...current.items[0],id:'cash-only',category:null,published:true,availableForOrder:true,source:{...source('cash-dish'),groupExternalId:'coffee'}},
+    {...current.items[0],id:'cash-placed',category:'dinner',published:false,availableForOrder:true,source:{...source('cash-placed'),groupExternalId:'coffee'}},
+  ]};
+  const raw=JSON.stringify(original,null,4)+'\n';await writeFile(path.join(app.dataDir,'menu.json'),raw);
+  const migrated=(await app.request('/api/admin/menu')).value;
+  assert.equal(migrated.revision,13);
+  assert.ok(migrated.categories.every(group=>group.parentId===null));
+  assert.deepEqual(migrated.sourceCategories,sourceCategories);
+  assert.equal(migrated.items[0].category,'brunch');
+  assert.equal(migrated.items[0].name,original.items[0].name);
+  assert.deepEqual(migrated.items.map(item=>[item.published,item.availableForOrder]),[[true,true],[true,true],[false,false],[true,false]]);
+  const backups=(await readdir(app.dataDir)).filter(name=>name.startsWith('menu-before-flat-groups-'));
+  assert.equal(backups.length,1);
+  assert.equal(await readFile(path.join(app.dataDir,backups[0]),'utf8'),raw);
+  const attemptedNested={...migrated,categories:migrated.categories.map(group=>group.id==='brunch'?{...group,parentId:'breakfast'}:group)};
+  const rejected=await app.request('/api/admin/menu',{method:'PUT',body:attemptedNested});
+  assert.equal(rejected.status,400);assert.equal(rejected.value.code,'flat_site_groups');
+  assert.deepEqual((await app.request('/api/admin/menu')).value,migrated);
+  await app.stop();await app.start();await app.login();
+  assert.deepEqual((await app.request('/api/admin/menu')).value,migrated);
+  assert.deepEqual((await readdir(app.dataDir)).filter(name=>name.startsWith('menu-before-flat-groups-')),backups);
+  const withoutFlags={...migrated,items:migrated.items.map(({published,availableForOrder,...item})=>item)};
+  const saved=await app.request('/api/admin/menu',{method:'PUT',body:withoutFlags});
+  assert.equal(saved.status,200);
+  assert.deepEqual(saved.value.items,migrated.items,'Publication controls are not required in requests');
+});
+
+test('explicit hiding survives saves and restart, excludes both public feeds and can be reversed without data loss', async t => {
+  const app = await fixture(t); await app.login();
+  const original = (await app.request('/api/admin/menu')).value;
+  const item = original.items[0];
+  const saved = await app.request('/api/admin/menu', { method:'PUT', body:{ ...original, items:original.items.map(entry => entry.id === item.id ? {...entry,hiddenOnSite:true} : entry) } });
+  assert.equal(saved.status,200); const hidden = saved.value.items.find(entry=>entry.id===item.id);
+  assert.equal(hidden.published,false); assert.equal(hidden.availableForOrder,false);
+  assert.equal(hidden.category,item.category); assert.equal(hidden.name,item.name);
+  for (const route of ['/api/menu','/data/menu.json']) assert.ok(!(await app.request(route)).value.items.some(entry=>entry.id===item.id),route);
+  await app.stop(); await app.start(); await app.login();
+  const reloaded = (await app.request('/api/admin/menu')).value;
+  assert.deepEqual(reloaded.items.find(entry=>entry.id===item.id),hidden);
+  for (const hiddenOnSite of ['true', null, 1]) {
+    const invalid = await app.request('/api/admin/menu', {method:'PUT',body:{...reloaded,items:reloaded.items.map(entry=>entry.id===item.id?{...entry,hiddenOnSite}:entry)}});
+    assert.equal(invalid.status,400);
+  }
+  const shown = await app.request('/api/admin/menu', {method:'PUT',body:{...reloaded,items:reloaded.items.map(entry=>entry.id===item.id?{...entry,hiddenOnSite:false}:entry)}});
+  assert.equal(shown.status,200); assert.equal(shown.value.items.find(entry=>entry.id===item.id).published,true);
+  assert.ok((await app.request('/api/menu')).value.items.some(entry=>entry.id===item.id));
 });
