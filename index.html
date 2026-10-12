@@ -9,7 +9,7 @@
   <meta name="description" content="Кофе, горячие завтраки и маленькие паузы для себя. Кофейня «Восемь утра» в ЖК «Сердце Столицы». Ежедневно с 8:00 до 20:00.">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="preload" as="image" href="assets/hero-two-cups-1254.webp" imagesrcset="assets/hero-two-cups-720.webp 720w, assets/hero-two-cups-1254.webp 1254w" imagesizes="(max-width: 650px) calc(100vw - 64px), (max-width: 900px) calc((100vw - 136px) / 2), (max-width: 1150px) calc((100vw - 132px) / 2), (max-width: 1408px) calc((100vw - 172px) / 2.08), 595px" fetchpriority="high">
-  <link rel="preload" href="assets/Lato-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/VosemSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <script>
     (() => {
       const root = document.documentElement;
@@ -122,19 +122,23 @@
           <div><p class="eyebrow">НАШЕ МЕНЮ</p><h2 id="breakfast-title">Для доброго утра<br><em>и тёплого вечера</em></h2></div>
           <div class="breakfast-note"><p class="breakfast-hours"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.58 4.58l2.12 2.12M17.3 17.3l2.12 2.12M4.58 19.42l2.12-2.12M17.3 6.7l2.12-2.12"/></svg>Ждём каждый день · 8:00–20:00</p><p>Любимые блюда и новые поводы<br>собраться за одним столом.<br>Выбирайте под настроение.</p></div>
         </div>
+        <div class="menu-nav-shell" data-menu-nav-shell>
         <div class="breakfast-toolbar" data-menu-filters hidden>
           <div class="breakfast-filters" role="group" aria-label="Разделы меню" data-menu-roots>
             <button type="button" class="menu-root-button" data-menu-filter="breakfast" aria-pressed="true" aria-controls="menu-dishes">Завтраки</button>
             <button type="button" class="menu-root-button" data-menu-filter="dinner" aria-pressed="false" aria-controls="menu-dishes">Ужины</button>
           </div>
+          <div class="menu-drink-nav" data-menu-drink-nav hidden></div>
+        </div>
         </div>
         <p class="menu-test-notice" data-menu-test-notice hidden>Тестовое меню. Эти блюда добавлены для проверки и не готовятся.</p>
         <nav class="menu-breadcrumbs" aria-label="Путь в меню" data-menu-breadcrumbs hidden></nav>
-        <div class="menu-category-heading"><h3 data-menu-category-title tabindex="-1">Завтраки и ужины</h3><span class="breakfast-count" data-menu-count aria-live="polite" aria-atomic="true"></span></div>
+        <div class="menu-category-heading"><h3 data-menu-category-title tabindex="-1">Завтраки и ужины</h3><span class="visually-hidden" data-menu-count aria-live="polite" aria-atomic="true"></span></div>
         <div class="menu-subcategories" role="group" aria-label="Подразделы меню" data-menu-subcategories hidden></div>
         <p class="menu-status" role="status" data-menu-status></p>
         <button class="button button-outline menu-retry" type="button" data-menu-retry hidden>Попробовать ещё раз</button>
         <div id="menu-dishes">
+          <div class="drinks-menu" data-drinks-menu hidden></div>
           <div class="dish-grid" data-dish-grid data-reveal-group></div>
           <div class="breakfast-extras" data-extra-section hidden>
             <div class="dish-extras-grid" data-dish-extras data-reveal-group></div>

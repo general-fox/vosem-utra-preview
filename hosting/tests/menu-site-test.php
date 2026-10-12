@@ -164,10 +164,28 @@ try {
         check(!str_contains($saved, 'PRIVATE_TRAILER') && getimagesizefromstring($saved)['mime'] === $mime && imagecreatefromstring($saved) !== false, 'Actual decoding removes executable/trailing payload');
     }
     imagedestroy($pixel);
+    // Incompressible RGB pixels exercise both input and re-encoded output above 5 MiB.
+    $chunk = static fn(string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+    $rawPixels = '';
+    for ($row = 0; $row < 1536; $row++) $rawPixels .= "\0".random_bytes(1536 * 3);
+    $largePng = "\x89PNG\r\n\x1a\n".$chunk('IHDR', pack('NNCCCCC', 1536, 1536, 8, 2, 0, 0, 0))
+        .$chunk('IDAT', gzcompress($rawPixels, 1)).$chunk('IEND', '');
+    unset($rawPixels);
+    check(strlen($largePng) > 5 * 1024 * 1024, 'Valid test image exceeds the former 5 MiB limit');
+    $largeUrl = $imageMenu->storeImage($largePng, 'image/png');
+    unset($largePng);
+    $largeSaved = file_get_contents($imagePrivate.'/admin-data'.$largeUrl);
+    check(strlen($largeSaved) > 5 * 1024 * 1024 && getimagesizefromstring($largeSaved)[0] === 1536
+        && imagecreatefromstring($largeSaved) !== false, 'A larger photo is re-encoded, saved and decodable');
+    unset($largeSaved);
+    check(CafeMenu::MAX_IMAGE_BYTES === 100 * 1024 * 1024, 'Uploads allow 100 MiB');
+    $previousLength = $_SERVER['CONTENT_LENGTH'] ?? null;
+    $_SERVER['CONTENT_LENGTH'] = (string)(100 * 1024 * 1024 + 1);
+    rejects(static fn()=>cafe_request_body(CafeMenu::MAX_IMAGE_BYTES), 'too_large');
+    if ($previousLength === null) unset($_SERVER['CONTENT_LENGTH']); else $_SERVER['CONTENT_LENGTH'] = $previousLength;
     rejects(static fn()=>$imageMenu->storeImage('<?php bad(); ?>', 'image/png'), 'invalid_image');
-    rejects(static fn()=>$imageMenu->storeImage(str_repeat('x', 5*1024*1024+1), 'image/png'), 'too_large');
     rejects(static fn()=>$imageMenu->storeImage('<svg></svg>', 'image/svg+xml'), 'invalid_image_type');
-    $passed[] = 'GD validates and strips uploaded payloads outside the document root';
+    $passed[] = 'GD validates and strips payloads, accepts photos above 5 MiB and rejects uploads above 100 MiB';
 
     $settingsPrivate = fixture($root, 'settings');
     file_put_contents($settingsPrivate.'/admin-config.php', '<?php return '.var_export(['publicOrigin'=>'https://test.example','username'=>'owner','passwordHash'=>'synthetic-hash','encryptionKey'=>'synthetic-key','googleVerification'=>'verify'], true).';');

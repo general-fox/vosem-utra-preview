@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { createAuthService, AuthError, equalSecret } from './auth.mjs';
 import { enrollmentQr } from './qr.mjs';
 import { normalizeMenuCategories, normalizeMenuItems, normalizeMenuSource, normalizeMenuData } from '../menu-categories.js';
+import { normalizeDrink } from '../menu-drinks-model.js';
 export { makePasswordRecord } from './auth.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 100 * 1024 * 1024;
 const COOKIE = 'vosem_admin';
 const DEVICE_COOKIE = 'vosem_admin_device';
 const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
@@ -23,24 +24,25 @@ function sendJson(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
-async function readBody(req, limit) {
+async function readBody(req, limit, tooLargeMessage = 'Файл или запрос слишком большой.') {
   const length = Number(req.headers['content-length']);
-  if (Number.isFinite(length) && length > limit) { req.resume(); fail(413, 'Файл или запрос слишком большой.', 'too_large'); }
+  if (Number.isFinite(length) && length > limit) { req.resume(); fail(413, tooLargeMessage, 'too_large'); }
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     const cleanup = () => { req.off('data', onData); req.off('end', onEnd); req.off('error', onError); req.off('aborted', onAborted); };
-    const onError = (error) => { cleanup(); reject(error); };
+    const onError = (error) => { cleanup(); chunks.length = 0; reject(error); };
     const onAborted = () => onError(new ApiError(400, 'Загрузка прервана.', 'aborted'));
     const onData = (chunk) => {
       size += chunk.length;
       if (size > limit) {
         cleanup();
+        chunks.length = 0;
         req.resume();
-        reject(new ApiError(413, 'Файл или запрос слишком большой.', 'too_large'));
+        reject(new ApiError(413, tooLargeMessage, 'too_large'));
       } else chunks.push(chunk);
     };
-    const onEnd = () => { cleanup(); resolve(Buffer.concat(chunks)); };
+    const onEnd = () => { cleanup(); const body = Buffer.concat(chunks, size); chunks.length = 0; resolve(body); };
     req.on('data', onData); req.on('end', onEnd); req.on('error', onError); req.on('aborted', onAborted);
   });
 }
@@ -78,7 +80,10 @@ export function validateItems(items, categories = undefined) {
     const id = textField(item.id, 'идентификатор', 100, 1);
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id) || ids.has(id)) fail(400, 'Идентификаторы позиций должны быть уникальными.', 'invalid_id');
     ids.add(id);
-    if (typeof item.price !== 'number' || !Number.isFinite(item.price) || item.price < 0 || item.price > 1000000 || Math.abs(item.price * 100 - Math.round(item.price * 100)) > 0.00001) fail(400, 'Укажите корректную цену в рублях.', 'invalid_price');
+    let drink;
+    try { drink = normalizeDrink(item.drink); } catch { fail(400, 'Проверьте раздел, объёмы, цены и добавки напитка.', 'invalid_drink'); }
+    const price = drink ? drink.variants[0].price : item.price;
+    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0 || price > 1000000 || Math.abs(price * 100 - Math.round(price * 100)) > 0.00001) fail(400, 'Укажите корректную цену в рублях.', 'invalid_price');
     if (typeof item.published !== 'boolean') fail(400, 'Укажите видимость позиции.', 'invalid_published');
     if (Object.hasOwn(item, 'hiddenOnSite') && typeof item.hiddenOnSite !== 'boolean') fail(400, 'Укажите видимость позиции.', 'invalid_visibility');
     let availableForOrder = Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true;
@@ -91,8 +96,8 @@ export function validateItems(items, categories = undefined) {
     }
     let source;
     try { source = normalizeMenuSource(item.source); } catch { fail(400, 'Некорректный источник блюда.', 'invalid_source'); }
-    if (source?.testOnly || item.category === null || item.hiddenOnSite === true) availableForOrder = false;
-    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price: item.price, category: item.category, image, published: item.hiddenOnSite === true ? false : item.published, availableForOrder, order: item.order, ...(source ? { source } : {}), ...(Object.hasOwn(item, 'hiddenOnSite') ? { hiddenOnSite: item.hiddenOnSite } : {}) };
+    if (source?.testOnly || item.category === null || item.hiddenOnSite === true || drink) availableForOrder = false;
+    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price, category: item.category, image, published: item.hiddenOnSite === true ? false : item.published, availableForOrder, order: item.order, ...(source ? { source } : {}), ...(Object.hasOwn(item, 'hiddenOnSite') ? { hiddenOnSite: item.hiddenOnSite } : {}), ...(drink ? { drink } : {}) };
   });
 }
 
@@ -103,7 +108,7 @@ function validateMenuData(menu, options = {}) {
     // they must retain effective stop-list restrictions from the server.
     const categories = data.categories.map(category => ({ ...category, parentId:null }));
     const items = data.items.map(item => ({ ...item, published:item.category !== null && item.hiddenOnSite !== true,
-      availableForOrder:item.category !== null && item.hiddenOnSite !== true && item.source?.testOnly !== true }));
+      availableForOrder:item.category !== null && item.hiddenOnSite !== true && item.source?.testOnly !== true && item.drink == null }));
     return { ...data, categories, items:validateItems(items, categories) };
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -329,7 +334,7 @@ export function createMenuMiddleware(options = {}) {
         await requireSession(req, true);
         const mime = req.headers['content-type']?.split(';')[0].trim();
         if (!MIME_EXT[mime]) fail(415, 'Поддерживаются JPG, PNG и WebP.', 'invalid_image_type');
-        const buffer = await readBody(req, MAX_IMAGE_BYTES);
+        const buffer = await readBody(req, MAX_IMAGE_BYTES, 'Фотография должна быть не больше 100 МБ.');
         if (detectedImage(buffer) !== mime) fail(400, 'Файл не соответствует выбранному формату фотографии.', 'invalid_image');
         await requireSession(req, true);
         await mkdir(uploadsDir, { recursive: true });

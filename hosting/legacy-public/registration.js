@@ -1,6 +1,5 @@
 'use strict';
 import { cookieConsent } from './cookies.js?v=20260921-reg3';
-import { PhoneVerification } from './phone-verification.js?v=20261002-1';
 const form = document.getElementById('registration-form');
 const submit = document.getElementById('submit-button');
 const message = document.getElementById('form-message');
@@ -15,7 +14,9 @@ let captchaAllowed = false, captchaPromise = null, captchaPending = null, uncert
 let googleStarted = false, stopping = false, permissionWithdrawn = false, postedOnce = false, confirmed = false;
 let recaptchaRequired = form.dataset.phoneTest !== 'true';
 function sessionError(text) { const error = new Error(text); error.userMessage = true; return error; }
-const phoneCheck = new PhoneVerification({ document, request: async payload => {
+// The optional module is shipped only in the phone-verification build.
+const phoneEnabled = form.dataset.phoneVerification === 'true';
+const phoneCheck = phoneEnabled ? new (await import('./phone-verification.js?v=20261002-1')).PhoneVerification({ document, request: async payload => {
   const response = await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload)});
   const data = await response.json();
   if (!response.ok || data.IsSuccess !== true) {
@@ -25,7 +26,14 @@ const phoneCheck = new PhoneVerification({ document, request: async payload => {
     throw error;
   }
   return data;
-} });
+} }) : {
+  required: false, test: false, number: '',
+  configure(required, test) {
+    if (required || test) throw sessionError('Настройки формы изменились. Обновите страницу и повторите попытку.');
+  },
+  async confirm() { return true; },
+  reset() {}, dispose() {}
+};
 phoneCheck.configure(form.dataset.phoneVerification === 'true',form.dataset.phoneTest === 'true');
 document.getElementById('captcha-privacy').hidden = !recaptchaRequired;
 document.getElementById('captcha-notice').hidden = !recaptchaRequired;
@@ -215,10 +223,10 @@ async function verificationPayload() {
   await getToken();
   const token = recaptchaRequired ? await requestCaptchaToken() : '';
   if (recaptchaRequired && !token) throw Error('captcha_failed');
-  return {Phone:normalizedPhone(phone.value),Consent:form.elements.namedItem('Consent').checked,PhoneConsent:document.getElementById('phone-consent').checked,
+  return {Phone:normalizedPhone(phone.value),Consent:form.elements.namedItem('Consent').checked,PhoneConsent:document.getElementById('phone-consent')?.checked === true,
     ConsentVersion:consentVersion,CaptchaConsent:captchaAllowed,RecaptchaToken:token};
 }
-document.getElementById('phone-check').addEventListener('click',async()=>{
+document.getElementById('phone-check')?.addEventListener('click',async()=>{
   if (sending) return;
   const button=document.getElementById('phone-check'), result=document.getElementById('phone-check-result');
   button.disabled=true; sending=true; submit.disabled=true; result.hidden=false; result.textContent='Проверяем соединение без звонка…';
@@ -233,7 +241,7 @@ document.getElementById('phone-check').addEventListener('click',async()=>{
   } catch(error) { result.textContent=error.userMessage ? error.message : 'Не удалось получить результат проверки соединения.'; }
   finally { button.disabled=false; sending=false; submit.disabled=uncertain; }
 });
-document.getElementById('phone-resend').addEventListener('click',async()=>{
+document.getElementById('phone-resend')?.addEventListener('click',async()=>{
   if (sending || uncertain || !form.reportValidity()) return;
   sending = true; submit.disabled = true;
   try {

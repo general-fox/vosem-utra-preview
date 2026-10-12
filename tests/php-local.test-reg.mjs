@@ -153,6 +153,25 @@ test('Vite PHP transport protects login, cookies and CSRF; menu changes survive 
   const verified = await request('/api/admin/login', { body: { username: 'owner@example.test', password: PASSWORD } });
   assert.equal(verified.json.authMode, 'password'); assert.equal(verified.json.deviceToken, undefined);
   assert.equal(verified.status, 200, verified.text); csrf = verified.json.csrfToken;
+  const png = php(['-r', '$i=imagecreatetruecolor(2,2); ob_start(); imagepng($i); echo base64_encode(ob_get_clean());']);
+  assert.equal(png.status, 0, png.stderr);
+  const largePhoto = Buffer.concat([Buffer.from(png.stdout, 'base64'), Buffer.alloc(7 * 1024 * 1024)]);
+  const uploaded = await fetch(origin + '/api/admin/upload', { method: 'POST', headers: {
+    Origin: origin, Cookie: [...cookies].map(([k,v]) => `${k}=${v}`).join('; '),
+    'X-CSRF-Token': csrf, 'Content-Type': 'image/png',
+  }, body: largePhoto });
+  assert.equal(uploaded.status, 201, 'The local bridge and PHP both accept a photo payload above the former 5/6 MiB limits');
+  const imageUrl = (await uploaded.json()).url;
+  const cleanedImage = await fetch(origin + imageUrl);
+  assert.equal(cleanedImage.status, 200);
+  assert.ok((await cleanedImage.arrayBuffer()).byteLength < largePhoto.byteLength, 'PHP still strips the trailing payload');
+  const oversizedPhoto = await new Promise((resolve, reject) => {
+    const req = http.request(origin + '/api/admin/upload', { method: 'POST', headers: { 'Content-Length': 100 * 1024 * 1024 + 1 } }, res => {
+      res.resume(); res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', reject); req.end();
+  });
+  assert.equal(oversizedPhoto, 413);
   assert.equal((await request('/api/admin/verify', { body: { code: totp(SECRET) } })).status,404);
   assert.match(verified.headers.get('set-cookie'), /HttpOnly/i);
   const current = (await request('/api/admin/menu')).json; current.items[0].price += 1;

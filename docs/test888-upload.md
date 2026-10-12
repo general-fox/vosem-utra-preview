@@ -10,7 +10,9 @@
 ## 1. Подготовить хостинг
 
 В ispmanager откройте «Сайты» → test888.ru и посмотрите «Корневой каталог».
-Нужен PHP 8.3 или новее с cURL, OpenSSL, GD, PDO SQLite и fileinfo; memory_limit 256 МБ.
+Нужен PHP 8.3 или новее с cURL, OpenSSL, GD, PDO SQLite и fileinfo; memory_limit 512 МБ.
+Для фото до 100 МБ загрузите `.user.ini` в корень сайта: upload_max_filesize 100M,
+post_max_size 110M. Если эти настройки не применяются, задайте их в панели PHP.
 Домен должен быть привязан к хостингу, SSL выпущен, а HTTPS открываться без ошибки.
 Включите перенаправление HTTP → HTTPS в настройках сайта в панели REG.RU.
 Используйте адрес без www: https://test888.ru. Перенаправление www при необходимости

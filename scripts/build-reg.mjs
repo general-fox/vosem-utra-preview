@@ -30,14 +30,16 @@ const built = path.join(root, staging ? 'dist-hosting-test' : 'dist-hosting');
 const manifest = JSON.parse(await readFile(path.join(built, 'site-build.json'), 'utf8'));
 if (manifest.production !== !staging || manifest.delivery !== delivery || manifest.siteUrl !== 'https://vosem-utra.ru/') throw new Error('Build mode does not match the requested REG.RU package');
 await cp(built, site, { recursive: true });
-await cp(path.join(root, 'hosting/legacy-public'), site, { recursive: true });
+await cp(path.join(root, 'hosting/legacy-public'), site, { recursive: true,
+  filter: source => ucaller || path.basename(source) !== 'phone-verification.js' });
 await cp(path.join(root, 'hosting/legacy-private'), privateRoot, { recursive: true });
 await cp(path.join(root, 'hosting/php'), app, { recursive: true, filter: source => {
   const name = path.basename(source);
+  if (!ucaller && name === 'loyalty-phone.php') return false;
   if (!delivery && /^(?:orders\.php|staff-|telegram|kds-|import-menu\.php|menu-import\.php)/.test(name)) return false;
   return !staging || !/^(?:staff-|telegram)/.test(name);
 } });
-await writeFile(path.join(app, 'features.php'), `<?php\n// Build-owned module switches: private settings cannot re-enable excluded modules.\nreturn ['delivery_enabled'=>${delivery ? 'true' : 'false'}, 'keeper_enabled'=>${delivery ? 'true' : 'false'}, 'manual_menu_enabled'=>${delivery ? 'false' : 'true'}, 'telegram_enabled'=>${delivery && !staging ? 'true' : 'false'}];\n`);
+await writeFile(path.join(app, 'features.php'), `<?php\n// Build-owned module switches: private settings cannot re-enable excluded modules.\nreturn ['delivery_enabled'=>${delivery ? 'true' : 'false'}, 'keeper_enabled'=>${delivery ? 'true' : 'false'}, 'manual_menu_enabled'=>${delivery ? 'false' : 'true'}, 'telegram_enabled'=>${delivery && !staging ? 'true' : 'false'}, 'phone_verification_enabled'=>${ucaller ? 'true' : 'false'}];\n`);
 // Always overwrite an old staging deployment profile when promoting to production.
 if (!staging) await writeFile(path.join(app, 'deployment.php'), "<?php\nreturn ['publicOrigin'=>'https://vosem-utra.ru','public_origin'=>'https://vosem-utra.ru','indexing'=>true,'staging'=>false];\n");
 await cp(path.join(root, 'hosting/public'), site, { recursive: true });
@@ -45,8 +47,8 @@ await cp(path.join(root, 'hosting/public'), site, { recursive: true });
 // Copy only their dependencies, not font sources or unused photo originals.
 await mkdir(path.join(site, 'assets'), { recursive: true });
 for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg',
-  'Lato-Regular.woff2', 'Lato-Medium.woff2', 'Lato-Italic.woff2',
-  'Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+  'VosemSans-Regular.woff2', 'VosemSans-Medium.woff2', 'VosemSans-Italic.woff2',
+  'Lato-OFL.txt', 'VosemSans-WOFF2.txt']) {
   await cp(path.join(root, 'assets', name), path.join(site, 'assets', name));
 }
 await cp(path.join(root, 'style.css'), path.join(site, 'style.css'));
@@ -62,7 +64,7 @@ for (const pattern of [/<aside\b[^>]*class="brand-panel"[^>]*>[\s\S]*?<\/aside>/
   if (!current || !pattern.test(registrationHosted)) throw new Error('Registration content slot is missing');
   registrationHosted = registrationHosted.replace(pattern, () => current);
 }
-for (const name of ['style.css', 'registration.css', 'registration.js', 'phone-verification.js']) {
+for (const name of ['style.css', 'registration.css', 'registration.js', ...(ucaller ? ['phone-verification.js'] : [])]) {
   const version = createHash('sha256').update(await readFile(path.join(site, name))).digest('hex').slice(0, 12);
   const attribute = name.endsWith('.js') ? 'src' : 'href';
   registrationHosted = registrationHosted.replace(new RegExp(`${attribute}="${name.replace('.', '\\.')}[^\"]*"`), `${attribute}="${name}?v=${version}"`);
@@ -75,9 +77,16 @@ for (const name of ['style.css', 'registration.css', 'registration.js', 'phone-v
   }
 }
 if (ucaller) registrationHosted = registrationHosted.replace('<form id="registration-form"','<form data-phone-verification="true" data-phone-test="true" id="registration-form"');
+else {
+  const phoneMarkup = /<!-- phone-verification:start -->[\s\S]*?<!-- phone-verification:end -->/;
+  if (!phoneMarkup.test(registrationHosted)) throw new Error('Phone verification content slot is missing');
+  registrationHosted = registrationHosted.replace(phoneMarkup, '');
+}
 await writeFile(registrationPath, registrationHosted);
 await mkdir(path.join(app, 'seed'), { recursive: true });
 await cp(path.join(root, 'public/data/menu.json'), path.join(app, 'seed/menu.json'));
+await cp(path.join(root, 'public/data/drinks.json'), path.join(app, 'seed/drinks.json'));
+await cp(path.join(root, 'scripts/import-drinks.php'), path.join(app, 'import-drinks.php'));
 for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', ...(delivery ? ['checkout', 'order-terms', ...(staging ? [] : ['staff', 'staff-demo'])] : [])]) {
   let html = await readFile(path.join(site, `${page}.html`), 'utf8');
   if (!delivery) html = profileHtml(html, false);
@@ -117,6 +126,7 @@ await cp(path.join(root, 'hosting/admin-config.example.php'), path.join(privateR
 await cp(path.join(root, 'hosting/password-reset-mail.example.json'), path.join(privateRoot, 'password-reset-mail.example.json'));
 await cp(path.join(root, 'hosting/auth-mail-worker.php'), path.join(privateRoot, 'auth-mail-worker.php'));
 await cp(path.join(root, 'docs/password-recovery.md'), path.join(output, 'PASSWORD-RECOVERY.md'));
+if (!staging && !delivery) await cp(path.join(root, 'docs/reg-production-migration.md'), path.join(output, 'PRODUCTION-MIGRATION.md'));
 if (delivery) {
 await cp(path.join(root, 'hosting/orders-config.example.php'), path.join(privateRoot, 'orders-config.example.php'));
 await cp(path.join(root, 'hosting/kds-config.example.json'), path.join(privateRoot, 'kds-config.example.json'));

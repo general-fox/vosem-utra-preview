@@ -21,6 +21,10 @@ test('catalog packages exclude delivery assets and keep a versioned privacy arch
     assert.ok(!files.some(name => /^(?:orders\.php|kds-|staff-|telegram)/.test(name)));
     assert.deepEqual((await readdir(path.join(app,'templates'))).sort(), ['admin.html','consent.html','index.html','privacy.html','registration.html']);
     const assets = await readdir(path.join(dir,'site/assets'));
+    const uploadIni = await readFile(path.join(dir,'site/.user.ini'),'utf8');
+    assert.match(uploadIni, /^upload_max_filesize\s*=\s*100M$/m);
+    assert.match(uploadIni, /^post_max_size\s*=\s*110M$/m);
+    assert.match(uploadIni, /^memory_limit\s*=\s*512M$/m);
     assert.ok(!assets.some(name => /^(?:cart|checkout|staff|kds-status|order-client)[-.]/.test(name)));
     const home = await readFile(path.join(app,'templates/index.html'),'utf8');
     assert.doesNotMatch(home,/data-cart-|dish-cart-actions|В корзину|checkout\.html/);
@@ -38,6 +42,9 @@ test('catalog packages exclude delivery assets and keep a versioned privacy arch
     assert.match(privacy,/vosem_admin/);
     const consent = await readFile(path.join(dir,'site/api/consent-log.php'),'utf8');
     const phoneBuild = /data-phone-verification="true"/.test(registration);
+    assert.equal(files.includes('loyalty-phone.php'), phoneBuild);
+    assert.equal((await readdir(path.join(dir,'site'))).includes('phone-verification.js'), phoneBuild);
+    if (!phoneBuild) assert.doesNotMatch(registration, /uCaller|id="phone-(?:code|verification|consent|test-note)"/);
     const version = phoneBuild ? '2026-10-02-reg7' : '2026-10-01-reg6';
     assert.ok(consent.includes(version));
     for (const page of ['privacy','consent']) {

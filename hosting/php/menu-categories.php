@@ -118,7 +118,7 @@ function cafe_derive_website_item_flags(mixed $items): mixed {
         $assigned = ($item['category'] ?? null) !== null && ($item['hiddenOnSite'] ?? false) !== true;
         $source = is_array($item['source'] ?? null) ? $item['source'] : [];
         $item['published'] = $assigned;
-        $item['availableForOrder'] = $assigned && ($source['testOnly'] ?? false) !== true;
+        $item['availableForOrder'] = $assigned && ($source['testOnly'] ?? false) !== true && ($item['drink'] ?? null) === null;
     }
     unset($item);
     return $items;

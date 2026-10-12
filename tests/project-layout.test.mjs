@@ -35,7 +35,7 @@ test('all stable image and font references resolve after cleanup', async () => {
 });
 
 test('assets contains used web resources, reproducible font sources and license notices only', async () => {
-  const fontSources = new Set(['Lato-Regular.ttf', 'Lato-Medium.ttf', 'Lato-Italic.ttf', 'Lato-OFL.txt', 'Lato-WOFF2.txt']);
+  const fontSources = new Set(['Lato-Regular.ttf', 'Lato-Medium.ttf', 'Lato-Italic.ttf', 'Lato-Regular.woff2', 'Lato-Medium.woff2', 'Lato-Italic.woff2', 'Lato-OFL.txt', 'Lato-WOFF2.txt', 'VosemSans-WOFF2.txt']);
   for (const name of await readdir(path.join(root, 'assets'))) {
     assert.ok(fontSources.has(name) || sources.includes(name), `Unused asset: ${name}`);
   }

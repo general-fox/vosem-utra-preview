@@ -14,7 +14,7 @@ const slot = (html, name) => html.match(new RegExp(`<!-- SEO:${name}:START -->([
 const renderedNames = (html) => [...slot(html, 'DISH-GRID').matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map((match) => match[1]);
 
 test('preview stays noindex while rendering real breakfast cards without JavaScript', () => {
-  const html = transformPage(home, { items: seed.items });
+  const html = transformPage(home, { items: seed.items, categories: seed.categories });
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
   assert.doesNotMatch(html, /rel="canonical"|property="og:|application\/ld\+json|site-verification|yandex-verification/);
   assert.ok(html.includes(`<title>${SEO_TITLE}</title>`));

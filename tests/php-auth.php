@@ -60,6 +60,25 @@ function removeFixture(string $directory): void {
 }
 
 try {
+    runTest('explicit local admin accepts a short password only on loopback and cannot carry a session to hosting', function () {
+        $app = fixture(['auth_mode'=>'password', 'allow_http_dev'=>true, 'public_origin'=>'http://127.0.0.1:5175']);
+        $account = ['version'=>1, 'username'=>'admin', 'passwordHash'=>password_hash('1', PASSWORD_BCRYPT, ['cost'=>12]),
+            'credentialVersion'=>bin2hex(random_bytes(32)), 'totp'=>null, 'recovery'=>[], 'localDevelopmentOnly'=>true];
+        $app['auth']->installAdditionalAccount($account);
+        expectError(fn()=>$app['auth']->login(['username'=>'admin','password'=>'wrong'],'peer'),'invalid_credentials');
+        $login=$app['auth']->login(['username'=>'admin','password'=>'1'],'peer');
+        check(($login['authenticated']??false) && !isset($login['passwordChangeRequired']));
+        check($app['auth']->session($login['token'])['username']==='admin');
+        foreach ([['allow_http_dev'=>false,'public_origin'=>'https://test888.ru'], ['allow_http_dev'=>true,'public_origin'=>'https://test888.ru'], ['allow_http_dev'=>false,'public_origin'=>'http://127.0.0.1:5175']] as $override) {
+            $remote=new CafeAuth($app['directory'],array_replace($app['config'],$override));
+            expectError(fn()=>$remote->login(['username'=>'admin','password'=>'1'],'peer'),'production_setup_required');
+            check($remote->session($login['token'])===null);
+        }
+        $ordinary=$account; $ordinary['username']='local-owner'; unset($ordinary['localDevelopmentOnly']);
+        $app['auth']->installAdditionalAccount($ordinary);
+        check($app['auth']->login(['username'=>'local-owner','password'=>'1'],'peer')['passwordChangeRequired']===true);
+        expectError(fn()=>CafeAuth::hashPassword('1'),'invalid_password');
+    });
     runTest('RFC 6238 SHA1/SHA256/SHA512 vectors and base32', function () {
         $vectors = [[59, '94287082', '46119246', '90693936'], [1111111109, '07081804', '68084774', '25091201'], [1111111111, '14050471', '67062674', '99943326'], [1234567890, '89005924', '91819424', '93441116'], [2000000000, '69279037', '90698825', '38618901'], [20000000000, '65353130', '77737706', '47863826']];
         $secrets = ['12345678901234567890', '12345678901234567890123456789012', str_repeat('1234567890', 6) . '1234'];

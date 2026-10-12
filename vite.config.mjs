@@ -65,7 +65,7 @@ return {
   }, {
     name: 'include-font-license',
     generateBundle() {
-      for (const name of ['Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+      for (const name of ['Lato-OFL.txt', 'VosemSans-WOFF2.txt']) {
         this.emitFile({ type: 'asset', fileName: `assets/${name}`, source: readFileSync(new URL(`./assets/${name}`, import.meta.url), 'utf8') });
       }
     },

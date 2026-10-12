@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as menuCategories from '../menu-categories.js';
+import { orderedDrinkSections } from '../menu-drinks-model.js';
 
-const script = readFileSync(new URL('../menu.js', import.meta.url), 'utf8').replace(/^import .*?;\r?\n/, '');
+const script = readFileSync(new URL('../menu.js', import.meta.url), 'utf8').replace(/^import .*?;\r?\n/gm, '');
 
 // Execute the complete browser entry point. This small DOM implements only native
 // element/event operations; menu filtering, URLs and rendering remain real code.
@@ -18,11 +19,27 @@ class Element {
     this.attributes = new Map();
     this.listeners = new Map();
     this.text = '';
+    this.style = { setProperty(name, value) { this[name] = String(value); }, removeProperty(name) { delete this[name]; } };
   }
   get textContent() { return this.text + this.children.map((child) => child.textContent).join(''); }
-  set textContent(value) { this.text = String(value); this.children = []; }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.text = ''; this.children = children; }
+  set textContent(value) { this.replaceChildren(); this.text = String(value); }
+  append(...children) {
+    for (const child of children) {
+      child.remove();
+      child.parentElement = this;
+      this.children.push(child);
+    }
+  }
+  replaceChildren(...children) {
+    this.text = '';
+    for (const child of [...this.children]) child.remove();
+    this.append(...children);
+  }
+  remove() {
+    if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+    this.parentElement = null;
+  }
+  contains(node) { return node === this || this.children.some(child => child.contains(node)); }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   addEventListener(type, listener, options = {}) {
@@ -30,10 +47,11 @@ class Element {
     listeners.push({ listener, once: options.once });
     this.listeners.set(type, listeners);
   }
-  async dispatch(type) {
+  focus(options) { this.focused = true; this.focusOptions = options; }
+  async dispatch(type, event = {}) {
     const listeners = [...(this.listeners.get(type) ?? [])];
     this.listeners.set(type, listeners.filter((entry) => !entry.once));
-    await Promise.all(listeners.map(({ listener }) => listener({ target: this })));
+    await Promise.all(listeners.map(({ listener }) => listener({ target: this, ...event })));
   }
 }
 
@@ -60,14 +78,17 @@ const dish = (patch = {}) => ({
   order: 1, published: true, ...patch,
 });
 
-async function browser(replies, href = 'https://cafe.example/index.html') {
+async function browser(replies, href = 'https://cafe.example/index.html', device = null) {
   const root = new Element('section');
   const parts = Object.fromEntries([
     'dish-grid', 'dish-extras', 'extra-section', 'menu-empty', 'menu-count', 'menu-roots', 'menu-subcategories',
     'menu-breadcrumbs', 'menu-category-title', 'menu-test-notice',
-    'menu-status', 'menu-retry', 'menu-filters',
+    'menu-status', 'menu-retry', 'menu-filters', 'menu-nav-shell', 'menu-drink-nav', 'drinks-menu',
   ].map((name) => [name, new Element()]));
-  for (const name of ['menu-empty', 'menu-retry', 'menu-filters', 'menu-breadcrumbs', 'menu-subcategories', 'menu-test-notice']) parts[name].hidden = true;
+  for (const name of ['menu-empty', 'menu-retry', 'menu-filters', 'menu-breadcrumbs', 'menu-subcategories', 'menu-test-notice', 'menu-drink-nav']) parts[name].hidden = true;
+  parts['menu-filters'].append(parts['menu-roots'], parts['menu-subcategories'], parts['menu-drink-nav']);
+  parts['menu-nav-shell'].append(parts['menu-filters']);
+  root.append(parts['menu-nav-shell'], parts['drinks-menu']);
   const filters = () => [...parts['menu-roots'].children, ...parts['menu-subcategories'].children];
   root.querySelector = (selector) => {
     const name = selector.match(/^\[data-(.+)\]$/)?.[1];
@@ -79,13 +100,27 @@ async function browser(replies, href = 'https://cafe.example/index.html') {
     return filters();
   };
   const window = new Element();
+  const media = new Element();
+  const intersections = [];
+  if (device) {
+    media.matches = device.mobile;
+    window.matchMedia = query => {
+      assert.match(query, /max-width:\s*650px/);
+      return media;
+    };
+    if (device.intersection !== false) window.IntersectionObserver = class {
+      constructor(callback, options) { this.callback = callback; this.options = options; intersections.push(this); }
+      observe(target) { this.target = target; }
+      emit(isIntersecting) { this.callback([{ target:this.target, isIntersecting }]); }
+    };
+  }
   const requests = [];
-  const document = {
-    querySelector: (selector) => selector === '[data-breakfast-menu]' ? root : null,
-    createElement: (tag) => new Element(tag),
-  };
+  const document = new Element('document');
+  document.querySelector = (selector) => selector === '[data-breakfast-menu]' ? root : null;
+  document.createElement = (tag) => new Element(tag);
+  document.append(root);
   const context = vm.createContext({
-    document, window, location: new URL(href), URL, Intl, AbortSignal, ...menuCategories,
+    document, window, location: new URL(href), URL, Intl, AbortSignal, ...menuCategories, orderedDrinkSections,
     fetch: async (url, options) => {
       requests.push({ url: String(url), options });
       const reply = replies.shift();
@@ -101,7 +136,7 @@ async function browser(replies, href = 'https://cafe.example/index.html') {
   assert.equal(root.getAttribute('aria-busy'), 'false', 'Initial menu request settles');
   const cards = () => [...parts['dish-grid'].children, ...parts['dish-extras'].children];
   return {
-    root, parts, get filters() { return filters(); }, requests, window, cards,
+    root, parts, get filters() { return filters(); }, requests, window, document, cards, media, intersections,
     names: () => cards().flatMap((card) => byTag(card, 'h3').map((heading) => heading.textContent)),
     filter: async (name) => {
       const button = filters().find((entry) => entry.dataset.menuFilter === name);
@@ -187,6 +222,9 @@ test('groups show photo cards followed by a compact list and announce an empty d
   assert.equal(app.parts['dish-extras'].children.length, 1);
   assert.equal(app.parts['extra-section'].hidden, false);
   assert.deepEqual(app.filters.map(button => button.dataset.menuFilter), ['breakfast', 'dinner']);
+  assert.deepEqual(app.filters.map(button => button.textContent), ['Завтраки', 'Ужины']);
+  assert.deepEqual(app.filters.map(button => button.getAttribute('aria-label')), ['Завтраки', 'Ужины']);
+  assert.ok(app.filters.every(button => byClass(button, 'menu-category-count').length === 0));
   assert.equal(app.parts['menu-subcategories'].hidden, true);
   assert.equal(app.parts['menu-breadcrumbs'].hidden, true);
   assert.equal(app.parts['menu-category-title'].textContent, 'Завтраки');
@@ -424,4 +462,303 @@ test('a removed selected category falls back safely while surviving cards retain
   assert.equal(app.parts['menu-category-title'].textContent, 'Завтраки');
   assert.equal(app.cards().length, 1);
   assert.equal(app.parts['menu-retry'].hidden, true);
+});
+
+const drinkDish = (patch = {}) => dish({ id:'cappuccino', name:'Капучино', category:'drinks', image:'', price:230,
+  availableForOrder:false, description:'', drink:{section:'С молоком', variants:[{volumeMl:230,price:230},{volumeMl:370,price:370}], addons:[{name:'Альтернативное молоко',price:160}]}, ...patch });
+const withDrinks = items => ({ categories:[...menuCategories.DEFAULT_MENU_CATEGORIES, {id:'drinks',name:'Напитки',parentId:null,order:2}], items });
+
+test('drinks keep one row per drink and update price from volume and optional additions', async () => {
+  const app = await browser([response(200, withDrinks([drinkDish()]))]);
+  await app.filter('drinks');
+  const panel = app.parts['drinks-menu'];
+  assert.equal(panel.hidden, false);
+  assert.equal(app.cards().length, 0, 'Drinks do not duplicate into ordinary dish cards');
+  assert.equal(byClass(panel, 'drink-card').length, 1);
+  const price = byClass(panel, 'drink-price')[0];
+  assert.equal(normalizedText(price), '230 ₽');
+  const volumes = byClass(panel, 'drink-volume');
+  await volumes[1].dispatch('click');
+  assert.equal(normalizedText(price), '370 ₽');
+  assert.equal(volumes[1].getAttribute('aria-pressed'), 'true');
+  assert.equal(volumes[0].getAttribute('aria-pressed'), 'false');
+  const extra = byClass(panel, 'drink-addon-check')[0];
+  extra.checked = true;
+  await extra.dispatch('change');
+  assert.equal(normalizedText(price), '530 ₽');
+  await volumes[0].dispatch('click');
+  assert.equal(normalizedText(price), '390 ₽');
+  extra.checked = false;
+  await extra.dispatch('change');
+  assert.equal(normalizedText(price), '230 ₽');
+  assert.equal(byClass(panel, 'dish-order-button').length, 0);
+});
+
+test('drink subgroup filtering preserves selection across refresh without hiding other menu categories', async () => {
+  const payload = withDrinks([dish(), drinkDish(), drinkDish({id:'tea',name:'Чай',drink:{section:'Чай',variants:[{volumeMl:350,price:210}],addons:[]}})]);
+  const app = await browser([response(200,payload), response(200,payload)]);
+  await app.filter('drinks');
+  const panel = app.parts['drinks-menu'];
+  const row = byClass(panel,'drink-card')[0];
+  await byClass(panel,'drink-volume')[1].dispatch('click');
+  await byClass(panel,'drinks-filter').find(button=>button.dataset.drinkSection==='С молоком').dispatch('click');
+  assert.deepEqual(byClass(panel,'drink-section').map(section=>section.hidden), [false,true]);
+  assert.equal(app.parts['menu-count'].textContent,'1 напиток');
+  await app.window.dispatch('focus');
+  assert.equal(app.parts['menu-count'].textContent,'1 напиток');
+  assert.equal(byClass(panel,'drink-card')[0],row);
+  assert.equal(normalizedText(byClass(row,'drink-price')[0]),'370 ₽');
+  await app.filter('breakfast');
+  assert.equal(panel.hidden,true);
+  assert.equal(app.cards().length,1);
+  await app.filter('drinks');
+  assert.equal(panel.hidden,false);
+  assert.equal(app.parts['menu-count'].textContent,'1 напиток');
+});
+
+test('hidden drinks stay private; single-volume tea and zero-cost water render as plain safe text', async () => {
+  const tea = drinkDish({id:'tea',name:'<script>Чай</script>',drink:{section:'<b>Чай</b>',variants:[{volumeMl:600,price:350.5}],addons:[{name:'Вода',price:0}]}});
+  const app = await browser([response(200,withDrinks([tea,drinkDish({hiddenOnSite:true})]))]);
+  await app.filter('drinks');
+  const panel=app.parts['drinks-menu'];
+  assert.equal(byClass(panel,'drink-card').length,1);
+  assert.equal(byClass(panel,'drink-volume').length,0);
+  assert.equal(byClass(panel,'drink-volume-single')[0].textContent,'600 мл');
+  assert.equal(byTag(panel,'script').length,0);
+  assert.equal(byClass(panel,'drink-addon-price')[0].textContent,'Бесплатно');
+  const water=byClass(panel,'drink-addon-check')[0]; water.checked=true; await water.dispatch('change');
+  assert.equal(normalizedText(byClass(panel,'drink-price')[0]),'350,5 ₽');
+});
+
+test('desktop and compact drink navigation stay in sync and compact choices close with focus restored', async () => {
+  const payload = withDrinks([drinkDish(), drinkDish({id:'tea',name:'Чай',drink:{section:'Чай',variants:[{volumeMl:600,price:350}],addons:[]}})]);
+  const app = await browser([response(200,payload), response(200,{...payload,items:[drinkDish()]})]);
+  await app.filter('drinks');
+  const panel=app.parts['drinks-menu'];
+  const navigation=app.parts['menu-drink-nav'];
+  const picker=byClass(navigation,'drinks-picker')[0];
+  const summary=byClass(navigation,'drinks-picker-summary')[0];
+  const compact=byClass(navigation,'drinks-picker-options')[0];
+  const sections=byClass(panel,'drinks-sections')[0];
+  const scrolled=[];
+  sections.getBoundingClientRect=()=>({top:210});
+  sections.scrollIntoView=options=>scrolled.push(options.block);
+  app.parts['menu-filters'].getBoundingClientRect=()=>({bottom:230});
+  picker.getBoundingClientRect=()=>({bottom:230});
+  assert.equal(navigation.hidden,false);
+  assert.equal(app.parts['menu-filters'].contains(picker),true,'The compact picker shares the main menu navigation');
+  assert.equal(byClass(panel,'drinks-picker').length,0,'The compact picker does not leave a separate bar in the drink content');
+  picker.open=true;
+  await byClass(compact,'drinks-filter').find(button=>button.dataset.drinkSection==='Чай').dispatch('click');
+  assert.equal(picker.open,false);
+  assert.equal(summary.focused,true);
+  assert.equal(summary.focusOptions.preventScroll,true);
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'Чай');
+  assert.deepEqual(byClass(panel,'drink-section').map(section=>section.hidden),[true,false]);
+  assert.deepEqual([...byClass(panel,'drinks-filter'),...byClass(navigation,'drinks-filter')].filter(button=>button.getAttribute('aria-pressed')==='true').map(button=>button.dataset.drinkSection),['Чай','Чай']);
+  assert.deepEqual(scrolled,['start'],'The selected section clears the sticky compact picker');
+  picker.open=true; let prevented=false;
+  await picker.dispatch('keydown',{key:'Escape',preventDefault:()=>{prevented=true;}});
+  assert.equal(picker.open,false); assert.equal(prevented,true);
+  await app.window.dispatch('focus');
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'С молоком','A removed section falls back to the first remaining section');
+  assert.deepEqual(byClass(panel,'drink-section').map(section=>section.hidden),[false]);
+});
+
+test('drink navigation starts with coffee and exposes names without counters or an all-drinks choice', async () => {
+  const payload=withDrinks([
+    dish(),
+    drinkDish({id:'tea',name:'Чай',drink:{section:'Чай',variants:[{volumeMl:600,price:350}],addons:[]}}),
+    drinkDish(),
+    drinkDish({id:'espresso',name:'Эспрессо',drink:{section:'Кофе',variants:[{volumeMl:40,price:170}],addons:[]}}),
+  ]);
+  const app=await browser([response(200,payload),response(200,payload)]);
+  await app.filter('drinks');
+  const panel=app.parts['drinks-menu'];
+  const navigation=app.parts['menu-drink-nav'];
+  const desktop=byClass(panel,'drinks-filters')[0];
+  const compact=byClass(navigation,'drinks-picker-options')[0];
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'Кофе');
+  assert.deepEqual(byClass(panel,'drink-section').filter(section=>!section.hidden).map(section=>byTag(section,'h4')[0].textContent),['Кофе']);
+  for(const list of [desktop,compact]) {
+    const buttons=byClass(list,'drinks-filter');
+    assert.equal(buttons[0].textContent,'Кофе','Coffee is first even when another section precedes it in the payload');
+    assert.deepEqual(buttons.map(button=>button.textContent).sort(),['Кофе','С молоком','Чай']);
+    assert.ok(buttons.every(button=>button.dataset.drinkSection && button.textContent===button.getAttribute('aria-label')));
+    assert.equal(byClass(list,'drinks-filter-count').length,0);
+    assert.equal(buttons.some(button=>button.textContent==='Все напитки'),false);
+  }
+  assert.doesNotMatch(navigation.textContent,/Подгруппа/i);
+  assert.match(byClass(navigation,'drinks-picker-summary')[0].textContent,/Выбрать/);
+  await byClass(desktop,'drinks-filter').find(button=>button.dataset.drinkSection==='Чай').dispatch('click');
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'Чай');
+  await app.window.dispatch('focus');
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'Чай','Refreshing preserves the guest’s section instead of resetting to coffee');
+  await app.filter('breakfast');
+  assert.equal(navigation.hidden,true);
+  await app.filter('drinks');
+  assert.equal(navigation.hidden,false);
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'Чай');
+});
+
+test('saved drink section order and renames refresh both navigation layouts while keeping card choices', async () => {
+  const coffee = drinkDish({id:'espresso',name:'Эспрессо',drink:{section:'Кофе',sectionOrder:2,variants:[{volumeMl:40,price:170}],addons:[]}});
+  const milk = drinkDish();
+  milk.drink.sectionOrder = 0;
+  const tea = drinkDish({id:'tea',name:'Чай',drink:{section:'Чай',sectionOrder:1,variants:[{volumeMl:600,price:350}],addons:[]}});
+  const initial = withDrinks([coffee,milk,tea]);
+  const reordered = withDrinks([
+    {...coffee,drink:{...coffee.drink,sectionOrder:1}},
+    {...milk,drink:{...milk.drink,sectionOrder:2}},
+    {...tea,drink:{...tea.drink,sectionOrder:0}},
+  ]);
+  const renamed = {...reordered,items:reordered.items.map(item=>item.id===milk.id
+    ? {...item,drink:{...item.drink,section:'Молочные напитки'}} : item)};
+  const app = await browser([response(200,initial),response(200,reordered),response(200,renamed)]);
+  await app.filter('drinks');
+  const panel = app.parts['drinks-menu'];
+  const navigation = app.parts['menu-drink-nav'];
+  const sectionNames = () => byClass(panel,'drink-section').map(section=>byTag(section,'h4')[0].textContent);
+  const assertNavigation = expected => {
+    assert.deepEqual(sectionNames(),expected);
+    for (const target of [panel,navigation]) assert.deepEqual(byClass(target,'drinks-filter').map(button=>button.textContent),expected);
+  };
+  assertNavigation(['С молоком','Чай','Кофе']);
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'С молоком','The saved first section takes precedence over the legacy coffee default');
+  const card = byClass(panel,'drink-card').find(card=>card.dataset.drinkId===milk.id);
+  await byClass(card,'drink-volume')[1].dispatch('click');
+  const addon = byClass(card,'drink-addon-check')[0];
+  addon.checked = true;
+  await addon.dispatch('change');
+  assert.equal(normalizedText(byClass(card,'drink-price')[0]),'530 ₽');
+
+  await app.window.dispatch('focus');
+  assertNavigation(['Чай','Кофе','С молоком']);
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'С молоком','A reorder preserves the guest’s current section');
+  assert.equal(byClass(panel,'drink-card').find(node=>node.dataset.drinkId===milk.id),card);
+  assert.equal(normalizedText(byClass(card,'drink-price')[0]),'530 ₽');
+
+  await app.window.dispatch('focus');
+  assertNavigation(['Чай','Кофе','Молочные напитки']);
+  assert.equal(byClass(navigation,'drinks-picker-value')[0].textContent,'Чай','A removed section name falls back to the new saved first section');
+  await byClass(navigation,'drinks-filter').find(button=>button.dataset.drinkSection==='Молочные напитки').dispatch('click');
+  assert.deepEqual(byClass(panel,'drink-section').filter(section=>!section.hidden).map(section=>byTag(section,'h4')[0].textContent),['Молочные напитки']);
+  assert.equal(byClass(panel,'drink-card').find(node=>node.dataset.drinkId===milk.id),card);
+  assert.equal(normalizedText(byClass(card,'drink-price')[0]),'530 ₽','Renaming only its section also preserves the drink selection');
+  await byClass(card,'drink-volume')[0].dispatch('click');
+  assert.equal(normalizedText(byClass(card,'drink-price')[0]),'390 ₽');
+  addon.checked = false;
+  await addon.dispatch('change');
+  assert.equal(normalizedText(byClass(card,'drink-price')[0]),'230 ₽');
+});
+
+test('the compact drink picker closes on an outside pointer interaction, outside focus, and another main group', async () => {
+  const app=await browser([response(200,withDrinks([dish(),drinkDish()]))]);
+  await app.filter('drinks');
+  const navigation=app.parts['menu-drink-nav'];
+  const picker=byClass(navigation,'drinks-picker')[0];
+  const summary=byClass(picker,'drinks-picker-summary')[0];
+  picker.open=true;
+  await app.document.dispatch('pointerdown',{target:summary});
+  assert.equal(picker.open,true,'Clicks inside the picker are handled by its native controls');
+  await app.document.dispatch('pointerdown',{target:app.parts['drinks-menu']});
+  assert.equal(picker.open,false);
+  picker.open=true;
+  await app.document.dispatch('focusin',{target:app.parts['menu-roots']});
+  assert.equal(picker.open,false,'Keyboard navigation out of the picker closes its choices');
+  picker.open=true;
+  await app.filter('breakfast');
+  assert.equal(navigation.hidden,true);
+  assert.equal(picker.open,false,'Returning to drinks must not reopen a stale popover');
+});
+
+test('bottom navigation is active only while the menu is visible on a phone and selected sections return into view', async () => {
+  const payload=withDrinks([dish(),drinkDish(),drinkDish({id:'coffee',name:'Эспрессо',drink:{section:'Кофе',variants:[{volumeMl:40,price:170}],addons:[]}})]);
+  const app=await browser([response(200,payload)],undefined,{mobile:true});
+  assert.equal(app.root.dataset.mobileMenuReady,'true');
+  assert.equal(app.intersections.length,1);
+  const observer=app.intersections[0];
+  assert.equal(observer.target,app.root,'Bottom controls follow the menu section, not the whole document');
+  observer.emit(false);
+  assert.equal(app.root.dataset.menuDocked,'false');
+  observer.emit(true);
+  assert.equal(app.root.dataset.menuDocked,'true');
+  const heading=app.parts['menu-category-title'];
+  const scrolled=[];
+  heading.getBoundingClientRect=()=>({top:400});
+  heading.scrollIntoView=options=>scrolled.push({target:'heading',block:options.block});
+  app.parts['menu-filters'].getBoundingClientRect=()=>({bottom:300});
+  await app.filter('drinks');
+  assert.deepEqual(scrolled,[{target:'heading',block:'start'}],'A bottom-menu selection returns to the selected content even when its heading was below the top toolbar');
+  const panel=app.parts['drinks-menu'];
+  const picker=byClass(app.parts['menu-drink-nav'],'drinks-picker')[0];
+  const sections=byClass(panel,'drinks-sections')[0];
+  sections.getBoundingClientRect=()=>({top:600});
+  sections.scrollIntoView=options=>scrolled.push({target:'drinks',block:options.block});
+  await byClass(picker,'drinks-filter').find(button=>button.dataset.drinkSection==='С молоком').dispatch('click');
+  assert.deepEqual(scrolled[1],{target:'drinks',block:'start'});
+  picker.open=true;
+  observer.emit(false);
+  assert.equal(app.root.dataset.menuDocked,'false');
+  assert.equal(picker.open,false,'Leaving the menu removes an open drink picker with its bottom controls');
+  observer.emit(true);
+  picker.open=true;
+  app.media.matches=false;
+  await app.media.dispatch('change');
+  assert.equal(app.root.dataset.menuDocked,'false','A wide viewport uses normal navigation even when the menu is visible');
+  assert.equal(picker.open,false,'Changing the responsive layout closes its old popup');
+  await app.filter('breakfast');
+  assert.equal(scrolled.length,2,'Desktop filtering does not unexpectedly scroll a visible result heading');
+});
+
+test('a phone without intersection observation keeps working navigation without enabling a permanent bottom bar', async () => {
+  const app=await browser([response(200,withDrinks([drinkDish()]))],undefined,{mobile:true,intersection:false});
+  assert.notEqual(app.root.dataset.mobileMenuReady,'true');
+  assert.notEqual(app.root.dataset.menuDocked,'true');
+  await app.filter('drinks');
+  assert.equal(app.parts['menu-drink-nav'].hidden,false);
+  assert.equal(byClass(app.parts['drinks-menu'],'drink-card').length,1);
+});
+
+test('drinks with optional photos and descriptions precede text rows without placeholders or duplicate cards', async () => {
+  const description='<script>описание</script> с молоком';
+  const pictured=drinkDish({id:'latte',name:'Латте',image:'/uploads/latte.webp',description});
+  const plain=drinkDish();
+  const noDescription=drinkDish({id:'flat-white',name:'Флэт уайт',image:'/menu-images/flat-white.webp'});
+  const app=await browser([
+    response(200,withDrinks([plain,pictured,noDescription])),
+    response(200,withDrinks([plain,{...pictured,image:''},noDescription])),
+  ]);
+  await app.filter('drinks');
+  const panel=app.parts['drinks-menu'];
+  const photos=byClass(panel,'drink-photo-list')[0];
+  const list=byClass(panel,'drink-list')[0];
+  assert.deepEqual(photos.children.map(card=>card.dataset.drinkId),['latte','flat-white']);
+  assert.deepEqual(list.children.map(card=>card.dataset.drinkId),['cappuccino']);
+  assert.equal(byClass(panel,'drink-card').length,3);
+  assert.equal(byClass(photos.children[0],'drink-description')[0].textContent,description);
+  assert.equal(byTag(panel,'script').length,0);
+  assert.equal(byClass(photos.children[1],'drink-description').length,0);
+  assert.equal(byClass(list,'drink-visual').length,0,'Text drinks reserve no image space');
+  const photo=byTag(photos,'img')[0];
+  assert.equal(photo.src,'https://cafe.example/uploads/latte.webp');
+  assert.equal(photo.alt,'Латте'); assert.equal(photo.loading,'lazy');
+  await byClass(photos.children[0],'drink-volume')[1].dispatch('click');
+  assert.equal(normalizedText(byClass(photos.children[0],'drink-price')[0]),'370 ₽');
+  await photo.dispatch('error');
+  assert.equal(byClass(photos.children[0],'drink-visual')[0].hidden,true,'Failed photos leave no blank image area');
+  const plainCard=list.children[0];
+  await byClass(plainCard,'drink-volume')[1].dispatch('click');
+  await app.window.dispatch('focus');
+  assert.deepEqual(byClass(panel,'drink-photo-list')[0].children.map(card=>card.dataset.drinkId),['flat-white']);
+  assert.deepEqual(byClass(panel,'drink-list')[0].children.map(card=>card.dataset.drinkId),['cappuccino','latte']);
+  assert.equal(byClass(panel,'drink-card').length,3);
+  assert.equal(normalizedText(byClass(plainCard,'drink-price')[0]),'370 ₽','Photo edits preserve another drink’s selected size');
+});
+
+test('static preview resolves drink photos inside the hosted repository directory', async () => {
+  const app=await browser([response(404),response(200,withDrinks([drinkDish({image:'/menu-images/coffee.webp'})]))], 'https://general-fox.github.io/vosem-utra-preview/');
+  await app.filter('drinks');
+  assert.equal(byTag(app.parts['drinks-menu'],'img')[0].src,'https://general-fox.github.io/vosem-utra-preview/menu-images/coffee.webp');
+  assert.equal(byClass(app.parts['drinks-menu'],'drink-list')[0].hidden,true);
 });

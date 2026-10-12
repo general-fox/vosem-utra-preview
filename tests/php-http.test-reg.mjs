@@ -17,8 +17,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 test('REG.RU stable assets are complete without archived images or font source files', async () => {
   const site = path.join(root, 'dist-reg/site');
   const names = await readdir(path.join(site, 'assets'));
-  for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg', 'Lato-Regular.woff2',
-    'Lato-Medium.woff2', 'Lato-Italic.woff2', 'Lato-OFL.txt', 'Lato-WOFF2.txt']) {
+  for (const name of ['logo.svg', 'favicon.svg', 'cookie-sun.svg', 'VosemSans-Regular.woff2',
+    'VosemSans-Medium.woff2', 'VosemSans-Italic.woff2', 'Lato-OFL.txt', 'VosemSans-WOFF2.txt']) {
     assert.ok(names.includes(name), name);
   }
   assert.ok(!names.some(name => /\.(?:ttf|png|jpe?g)$/i.test(name)), 'No unused originals in deployment assets');
@@ -77,6 +77,8 @@ test('offline PHP access preparation preserves an enrolled phone and refuses ove
 });
 
 test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', { timeout: 90000 }, async (t) => {
+  const seed = JSON.parse(await readFile(path.join(root, 'public/data/menu.json'), 'utf8'));
+  const seedIds = seed.items.map(({ id }) => id).sort();
   const temp = await mkdtemp(path.join(os.tmpdir(), 'vosem-php-http-'));
   const site = path.join(temp, 'site');
   const privateDir = path.join(temp, 'vosem-utra-private');
@@ -131,7 +133,8 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.equal((await request('/index.html')).response.headers.get('Location'), '/');
       assert.equal((await request('/', { method: 'HEAD' })).text, '');
       assert.doesNotMatch((await request('/sitemap.xml')).text, /admin|<loc>/);
-      const menu = await request('/api/menu'); assert.equal(menu.status, 200); assert.equal(menu.json.items.length, 19);
+      const menu = await request('/api/menu'); assert.equal(menu.status, 200);
+      assert.deepEqual(menu.json.items.map(({ id }) => id).sort(), seedIds, 'The full initial menu includes drinks');
       for (const item of menu.json.items.filter((item) => item.image)) assert.equal((await request(item.image)).status, 200);
     });
     await t.test('password login creates a protected session and retired MFA routes cannot authenticate', async () => {
@@ -174,7 +177,7 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.equal((await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: menu })).status, 409);
       const home = await request('/'); assert.match(home.text, /Тест &lt;script&gt;/); assert.doesNotMatch(home.text, /<script>alert\(1\)<\/script>/); assert.match(home.text, /777/);
       assert.ok(home.text.includes(menu.items[1].name), 'Group assignment controls visibility; obsolete manual flags are ignored');
-      assert.equal((await request('/data/menu.json')).json.items.length, 19);
+      assert.deepEqual((await request('/data/menu.json')).json.items.map(({ id }) => id).sort(), seedIds);
     });
     await t.test('cash availability refresh requires session, CSRF and same origin and fails safely without KDS config', async () => {
       assert.equal((await request('/api/admin/sync-availability', { method: 'POST', auth: true, body: {} })).status, 403);
@@ -203,7 +206,7 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.equal(imported.status, 0, imported.stderr);
       assert.equal(JSON.parse(imported.stdout).imported, true);
       const snapshot = (await request('/api/admin/menu', { auth: true })).json;
-      assert.deepEqual(snapshot.categories.map(({ id }) => id), ['breakfast', 'dinner']);
+      assert.deepEqual(snapshot.categories, initial.categories, 'Import cannot add or change website groups');
       const sourceDish = snapshot.items.find(item => item.source?.externalId === 'latte');
       assert.ok(sourceDish, 'Only trusted import adds a new dish');
       const sourceDishId = sourceDish.id;
@@ -217,14 +220,14 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
         body: { ...snapshot, sourceCategories: snapshot.sourceCategories.map(group => ({ ...group, name: 'Подмена группы' })) } });
       assert.equal(groupChanged.status, 400, groupChanged.text); assert.equal(groupChanged.json.code, 'immutable_source');
       const changes = { ...snapshot,
-        categories: [...snapshot.categories, { id: 'drinks', name: 'Напитки', parentId: null, order: 2 }],
+        categories: [...snapshot.categories, { id: 'fixture-drinks', name: 'Тестовые напитки', parentId: null, order: snapshot.categories.length }],
         categoryMappings: [],
       };
       const nested = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
-        body: { ...changes, categories: changes.categories.map(group => group.id === 'drinks' ? { ...group, parentId: 'breakfast' } : group) } });
+        body: { ...changes, categories: changes.categories.map(group => group.id === 'fixture-drinks' ? { ...group, parentId: 'breakfast' } : group) } });
       assert.equal(nested.status, 400, nested.text); assert.equal(nested.json.code, 'flat_site_groups');
       const rejected = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true,
-        body: { ...changes, categoryMappings: [{ provider: 'kds', organizationId: 'fixture-org', externalId: 'coffee', categoryId: 'drinks' }] } });
+        body: { ...changes, categoryMappings: [{ provider: 'kds', organizationId: 'fixture-org', externalId: 'coffee', categoryId: 'fixture-drinks' }] } });
       assert.equal(rejected.status, 400, rejected.text);
       assert.equal((await request('/api/admin/menu', { auth: true })).json.revision, snapshot.revision);
       const saved = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: changes });
@@ -234,16 +237,16 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.equal(saved.json.items.find(({ id }) => id === sourceDishId).published, false);
       assert.ok(!(await request('/api/menu')).json.items.some(({ id }) => id === sourceDishId));
       assert.doesNotMatch((await request('/')).text, /Латте из источника/);
-      const placed = { ...saved.json, items: saved.json.items.map(item => item.id === sourceDishId ? { ...item, category: 'drinks', published: false, availableForOrder: true } : item) };
+      const placed = { ...saved.json, items: saved.json.items.map(item => item.id === sourceDishId ? { ...item, category: 'fixture-drinks', published: false, availableForOrder: true } : item) };
       const assigned = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: placed });
       assert.equal(assigned.status, 200, assigned.text);
       const publicMenu = (await request('/api/menu')).json;
       const latte = publicMenu.items.find(({ id }) => id === sourceDishId);
-      assert.equal(latte.category, 'drinks'); assert.equal(latte.published, true); assert.equal(latte.availableForOrder, false);
-      assert.ok(publicMenu.categories.some(({ name }) => name === 'Напитки'));
+      assert.equal(latte.category, 'fixture-drinks'); assert.equal(latte.published, true); assert.equal(latte.availableForOrder, false);
+      assert.ok(publicMenu.categories.some(({ name }) => name === 'Тестовые напитки'));
       assert.equal(publicMenu.sourceCategories, undefined, 'Import configuration is only in the authenticated editor');
       const home = await request('/');
-      assert.match(home.text, /data-menu-category="drinks"/); assert.match(home.text, /Латте из источника/);
+      assert.match(home.text, /data-menu-category="fixture-drinks"/); assert.match(home.text, /Латте из источника/);
       const changed = await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: { ...assigned.json,
         items: assigned.json.items.map(item => item.id === sourceDishId ? { ...item, category: 'dinner' } : item) } });
       assert.equal(changed.status, 200, changed.text);
@@ -255,7 +258,7 @@ test('assembled REG.RU PHP package: HTTP auth, menu, photos, SSR and restart', {
       assert.ok(!(await request('/api/menu')).json.items.some(({ id }) => id === sourceDishId));
       assert.ok(!removed.json.categories.some(group => group.id === 'dinner'), 'Group removal saves atomically with cash-only dish');
       assert.equal(removed.json.items.find(item => item.id === sourceDishId).source.externalId, 'latte');
-      const invalidTree = removed.json.categories.map(category => category.id === 'drinks' ? { ...category, parentId: 'drinks' } : category);
+      const invalidTree = removed.json.categories.map(category => category.id === 'fixture-drinks' ? { ...category, parentId: 'fixture-drinks' } : category);
       assert.equal((await request('/api/admin/menu', { method: 'PUT', auth: true, token: true, body: { ...removed.json, categories: invalidTree } })).status, 400);
       assert.equal((await request('/api/admin/menu', { auth: true })).json.revision, removed.json.revision);
     });

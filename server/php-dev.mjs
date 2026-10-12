@@ -25,7 +25,7 @@ export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary, de
       const reservation = net.createServer().listen(0, '127.0.0.1');
       await once(reservation, 'listening'); port = reservation.address().port;
       await new Promise((resolve) => reservation.close(resolve));
-      child = spawn(php, ['-S', `127.0.0.1:${port}`, '-t', path.join(projectRoot, 'public'), router], {
+      child = spawn(php, ['-d', 'upload_max_filesize=100M', '-d', 'post_max_size=110M', '-d', 'memory_limit=512M', '-S', `127.0.0.1:${port}`, '-t', path.join(projectRoot, 'public'), router], {
         cwd: projectRoot, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore'],
         env: { ...phpEnvironment, CAFE_ENV: 'development', CAFE_DEV_BRIDGE: secret, CAFE_DEV_PROJECT: projectRoot, CAFE_SITE_PROFILE: deliveryEnabled ? 'delivery' : 'catalog' },
       });
@@ -54,7 +54,8 @@ export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary, de
     if (!loopbackHost.test(req.headers.host || '') || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) {
       return error(res, 403, 'Локальный сервер доступен только на этом компьютере.');
     }
-    const maxSize = 6 * 1024 * 1024;
+    const upload = (req.url || '').split('?')[0] === '/api/admin/upload' && req.method === 'POST';
+    const maxSize = (upload ? 100 : 6) * 1024 * 1024;
     if (Number(req.headers['content-length'] || 0) > maxSize) return error(res, 413, 'Слишком большой запрос.');
     try {
       await start();
@@ -69,7 +70,7 @@ export function createPhpDevMiddleware({ projectRoot = root, php = phpBinary, de
         if (!res.headersSent && !res.destroyed) { res.writeHead(response.statusCode, forwarded); response.pipe(res); }
         else response.destroy();
       });
-      upstream.setTimeout((req.url || '').split('?')[0] === '/api/admin/sync-availability' ? 95000 : 20000, () => upstream.destroy(new Error('PHP timeout')));
+      upstream.setTimeout(upload ? 120000 : (req.url || '').split('?')[0] === '/api/admin/sync-availability' ? 95000 : 20000, () => upstream.destroy(new Error('PHP timeout')));
       upstream.on('error', () => error(res, 503, 'Не удалось получить ответ локального сервера. Повторите попытку.'));
       let size = 0;
       req.on('data', (chunk) => { size += chunk.length; if (size > maxSize) { error(res, 413, 'Слишком большой запрос.'); upstream.destroy(); } });

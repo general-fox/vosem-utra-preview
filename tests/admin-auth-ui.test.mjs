@@ -6,6 +6,8 @@ import QRCode from 'qrcode';
 import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
 import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from '../menu-categories.js';
+import { orderedDrinkSections } from '../menu-drinks-model.js';
+import { createDrinkSectionManager, drinkSectionOrderForItem } from '../admin-drink-sections.js';
 
 const source = await readFile(new URL('../admin.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../admin.html', import.meta.url), 'utf8');
@@ -70,6 +72,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
   nodes.get('site-profile').setAttribute('content', profile);
   const context = vm.createContext({
     document, Intl, URL, AbortController, normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories,
+    orderedDrinkSections, createDrinkSectionManager, drinkSectionOrderForItem,
     crypto: { randomUUID: () => 'new-dish-test-id' },
     Date: class extends Date { static now() { return now; } },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) },
@@ -94,8 +97,8 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       return { ok: status >= 200 && status < 300, status, headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json' : response.headers?.[name.toLowerCase()] ?? null }, json: async () => body };
     },
   });
-  const runtimeSource = source.replace(/^import .* from '\.\/menu-categories\.js';\r?\n/, '').replace("await import('qrcode')", 'await __loadLocalQr()');
-  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, categoryDraft, idle, sessionExpired, validUsername, validateMenu, openEditor, openCategoryManager, openCashGroup, setMenuMode, itemCard, render, loadMenu, lockSession, checkSession };\n})()`, { filename: 'admin.js' }).runInContext(context);
+  const runtimeSource = source.replace(/^import .* from '\.\/(?:menu-categories|menu-drinks-model|admin-drink-sections)\.js';\r?\n/gm, '').replace("await import('qrcode')", 'await __loadLocalQr()');
+  const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, categoryDraft, drinkSectionManager, idle, sessionExpired, validUsername, validateMenu, openEditor, openCategoryManager, openCashGroup, setMenuMode, itemCard, render, loadMenu, lockSession, checkSession };\n})()`, { filename: 'admin.js' }).runInContext(context);
   async function settle() { for (let index = 0; index < 20; index += 1) await Promise.resolve(); }
   return {
     ...runtime, calls, responses, timers, qrCalls, broadcasts, document, storage, tabStorage,
@@ -1227,6 +1230,44 @@ test('idle locking closes the category manager while preserving its unsaved draf
   assert.equal(app.categoryDraft.dirty, true);
   assert.ok(app.categoryDraft.categories.some((entry) => entry.name === 'Напитки'));
   assert.match(app.node('session-lock-note').textContent, /Черновик сохранён/);
+});
+
+for (const menuChanged of [false, true]) test(`idle lock preserves subgroup edits and authentication restores ${menuChanged ? 'a protected stale draft' : 'the editable draft'}`, async () => {
+  const app = await signedIn({ profile: 'catalog' });
+  const data = categoryFixture();
+  data.items[0].drink = { section: 'Кофе', sectionOrder: 0, variants: [{ volumeMl: 200, price: 200 }], addons: [] };
+  app.validateMenu(data); app.state.siteCategory = 'breakfast'; app.render();
+  await app.trigger('manage-drink-sections');
+  const input = app.node('drink-sections-list').children[0].children[1].children[0];
+  assert.equal(input.dataset.sectionName, 'Кофе');
+  input.value = 'Кофейные напитки'; await input.handlers.get('input')({});
+  assert.equal(app.drinkSectionManager.unsaved, true);
+  app.responses.push({ body: { authenticated: false, trustedUsername: 'ira@example.test' } });
+  await app.advance(900000);
+  assert.equal(app.node('drink-sections-dialog').open, false);
+  assert.equal(app.node('dashboard').hidden, true);
+  assert.equal(app.drinkSectionManager.pending, true);
+  assert.equal(app.drinkSectionManager.unsaved, true);
+  assert.match(app.node('session-lock-note').textContent, /Черновик сохранён/);
+  assert.equal(app.state.items[0].drink.section, 'Кофе', 'Locking does not apply the unsaved rename');
+
+  app.node('verification-code').value = '001234';
+  app.responses.push({ status: 202, body: { mfaRequired: true, challengeToken: 'restored-challenge' } });
+  app.responses.push({ body: { authenticated: true, csrfToken: 'restored-csrf' } });
+  app.responses.push({ body: { ...data, revision: menuChanged ? 7 : data.revision } });
+  await app.trigger('verify-form', 'submit');
+  assert.equal(app.node('dashboard').hidden, false);
+  assert.equal(app.node('drink-sections-dialog').open, true);
+  assert.equal(app.drinkSectionManager.pending, false);
+  assert.equal(app.drinkSectionManager.unsaved, true);
+  assert.equal(input.value, 'Кофейные напитки');
+  assert.equal(app.node('save-drink-sections').disabled, menuChanged);
+  assert.equal(app.calls.filter(call => call.method === 'PUT').length, 0, 'Authentication never saves the draft automatically');
+  if (menuChanged) {
+    const count = app.calls.length; await app.trigger('drink-sections-form', 'submit');
+    assert.equal(app.calls.length, count);
+    assert.match(app.node('drink-sections-error').textContent, /Меню.*изменилось/);
+  }
 });
 
 test('15 minutes without real activity automatically hides dashboard and dialogs, retaining draft and captured logout CSRF', async () => {

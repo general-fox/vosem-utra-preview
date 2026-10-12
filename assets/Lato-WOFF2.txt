@@ -14,7 +14,8 @@ and updates the container checksum and WOFF2 compression flag.
 Generation: scripts/compress-fonts.py using FontTools 4.65.0 and Brotli 1.2.0.
 The script compares all retained table bytes (normalizing only the checksum
 and compression flag), character maps and advance metrics with the originals.
-To reproduce: install fonttools[woff], then run python scripts/compress-fonts.py.
+To reproduce: install fonttools[woff], then run python scripts/compress-fonts.py --originals.
+The website now uses renamed, unhinted Vosem Sans derivatives; see VosemSans-WOFF2.txt.
 
 Sizes in bytes:
                     Original TTF     WOFF2

@@ -24,6 +24,68 @@ function cafe_text_field(mixed $value, string $field, int $maximum, int $minimum
 require_once __DIR__.'/menu-categories.php';
 require_once __DIR__.'/menu-availability.php';
 
+function cafe_drink_text(mixed $value): string {
+    if (!is_string($value) || preg_match('//u', $value) !== 1 || cafe_text_length($value) > 80 || cafe_trim($value) === ''
+        || preg_match('/[\x00-\x1f\x7f-\x{009f}\x{2028}\x{2029}]/u', $value)) {
+        throw new CafeMenuException(400, 'Проверьте раздел и названия добавок напитка.', 'invalid_drink');
+    }
+    return cafe_trim($value);
+}
+
+function cafe_drink_price(mixed $value): int|float {
+    if ((!is_int($value) && !is_float($value)) || !is_finite((float)$value) || $value < 0 || $value > 1000000) {
+        throw new CafeMenuException(400, 'Проверьте цены напитка и добавок.', 'invalid_drink');
+    }
+    $cents = $value * 100;
+    if (abs($cents - round($cents)) > PHP_FLOAT_EPSILON * max(1, abs($cents)) * 4) {
+        throw new CafeMenuException(400, 'Проверьте цены напитка и добавок.', 'invalid_drink');
+    }
+    return round($cents) / 100;
+}
+
+/** Mirrors normalizeDrink in menu-drinks-model.js; unknown metadata is discarded. */
+function cafe_normalize_drink(mixed $value): ?array {
+    if ($value === null) return null;
+    if (!is_array($value) || array_is_list($value) || !is_array($value['variants'] ?? null) || !array_is_list($value['variants'])
+        || count($value['variants']) < 1 || count($value['variants']) > 10) {
+        throw new CafeMenuException(400, 'Проверьте объёмы напитка.', 'invalid_drink');
+    }
+    $section = cafe_drink_text($value['section'] ?? null);
+    $volumes = []; $variants = [];
+    foreach ($value['variants'] as $variant) {
+        if (!is_array($variant) || array_is_list($variant) || !is_int($variant['volumeMl'] ?? null) || $variant['volumeMl'] < 1
+            || $variant['volumeMl'] > 5000 || in_array($variant['volumeMl'], $volumes, true)) {
+            throw new CafeMenuException(400, 'Проверьте объёмы напитка.', 'invalid_drink');
+        }
+        $volumes[] = $variant['volumeMl'];
+        $variants[] = ['volumeMl'=>$variant['volumeMl'], 'price'=>cafe_drink_price($variant['price'] ?? null)];
+    }
+    $rawAddons = array_key_exists('addons', $value) ? $value['addons'] : [];
+    if (!is_array($rawAddons) || !array_is_list($rawAddons) || count($rawAddons) > 12) {
+        throw new CafeMenuException(400, 'Проверьте добавки напитка.', 'invalid_drink');
+    }
+    $names = []; $addons = [];
+    foreach ($rawAddons as $addon) {
+        if (!is_array($addon) || array_is_list($addon)) throw new CafeMenuException(400, 'Проверьте добавки напитка.', 'invalid_drink');
+        $name = cafe_drink_text($addon['name'] ?? null);
+        if (in_array($name, $names, true)) throw new CafeMenuException(400, 'Названия добавок не должны повторяться.', 'invalid_drink');
+        $names[] = $name;
+        $addons[] = ['name'=>$name, 'price'=>cafe_drink_price($addon['price'] ?? null)];
+    }
+    $drink = ['section'=>$section, 'variants'=>$variants, 'addons'=>$addons];
+    if (array_key_exists('childFriendly', $value)) {
+        if (!is_bool($value['childFriendly'])) throw new CafeMenuException(400, 'Проверьте отметку детского напитка.', 'invalid_drink');
+        $drink['childFriendly'] = $value['childFriendly'];
+    }
+    if (array_key_exists('sectionOrder', $value)) {
+        if (!is_int($value['sectionOrder']) || $value['sectionOrder'] < 0 || $value['sectionOrder'] > 10000) {
+            throw new CafeMenuException(400, 'Проверьте порядок подгруппы напитков.', 'invalid_drink');
+        }
+        $drink['sectionOrder'] = $value['sectionOrder'];
+    }
+    return $drink;
+}
+
 /** Keep the JSON contract shared with the menu editor and public menu client. */
 function cafe_validate_items(mixed $items, ?array $categories = null, bool $migrateLegacy = false): array {
     if ($categories === null) { $categories = cafe_default_categories(); $migrateLegacy = true; }
@@ -39,7 +101,8 @@ function cafe_validate_items(mixed $items, ?array $categories = null, bool $migr
         $category = $item['category'] ?? null;
         if ($migrateLegacy && in_array($category, ['signature', 'eggs', 'porridge', 'sweet'], true)) $category = 'breakfast';
         if (!(($category === null && $source !== null) || (is_string($category) && in_array($category, $categoryIds, true)))) throw new CafeMenuException(400, 'Выберите группу меню.', 'invalid_category');
-        $price = $item['price'] ?? null;
+        $drink = cafe_normalize_drink($item['drink'] ?? null);
+        $price = $drink !== null ? $drink['variants'][0]['price'] : ($item['price'] ?? null);
         if ((!is_int($price) && !is_float($price)) || !is_finite((float)$price) || $price < 0 || $price > 1000000 || abs($price * 100 - round($price * 100)) > 0.00001) throw new CafeMenuException(400, 'Укажите корректную цену в рублях.', 'invalid_price');
         if (!is_bool($item['published'] ?? null)) throw new CafeMenuException(400, 'Укажите видимость позиции.', 'invalid_published');
         if (array_key_exists('hiddenOnSite', $item) && !is_bool($item['hiddenOnSite'])) throw new CafeMenuException(400, 'Укажите видимость позиции.', 'invalid_visibility');
@@ -52,6 +115,7 @@ function cafe_validate_items(mixed $items, ?array $categories = null, bool $migr
             if (!preg_match('~^/(menu-images|uploads)/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$~iD', $image) || str_contains($image, '..')) throw new CafeMenuException(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
         }
         $entry = ['id'=>$id, 'name'=>cafe_text_field($item['name'] ?? null, 'название', 160, 1), 'description'=>cafe_text_field($item['description'] ?? null, 'описание', 2000), 'price'=>$price, 'category'=>$category, 'image'=>$image, 'published'=>$item['published'], 'availableForOrder'=>$availableForOrder, 'order'=>$item['order']];
+        if ($drink !== null) { $entry['drink'] = $drink; $entry['availableForOrder'] = false; }
         if (array_key_exists('hiddenOnSite', $item)) $entry['hiddenOnSite'] = $item['hiddenOnSite'];
         if (($item['hiddenOnSite'] ?? false) === true) { $entry['published'] = false; $entry['availableForOrder'] = false; }
         if ($source !== null) {
@@ -66,12 +130,12 @@ function cafe_validate_items(mixed $items, ?array $categories = null, bool $migr
     return $validated;
 }
 
-function cafe_request_body(int $limit): string {
+function cafe_request_body(int $limit, string $tooLargeMessage = 'Файл или запрос слишком большой.'): string {
     $length = $_SERVER['CONTENT_LENGTH'] ?? '';
-    if (is_numeric($length) && (float)$length > $limit) throw new CafeMenuException(413, 'Файл или запрос слишком большой.', 'too_large');
+    if (is_numeric($length) && (float)$length > $limit) throw new CafeMenuException(413, $tooLargeMessage, 'too_large');
     $body = file_get_contents('php://input', false, null, 0, $limit + 1);
     if ($body === false) throw new CafeMenuException(400, 'Загрузка прервана.', 'aborted');
-    if (strlen($body) > $limit) throw new CafeMenuException(413, 'Файл или запрос слишком большой.', 'too_large');
+    if (strlen($body) > $limit) throw new CafeMenuException(413, $tooLargeMessage, 'too_large');
     return $body;
 }
 function cafe_json_body(bool $allowEmpty = false): array {
@@ -97,6 +161,7 @@ function cafe_json_response(array $value, int $status = 200): void {
 }
 
 final class CafeMenu {
+    public const MAX_IMAGE_BYTES = 100 * 1024 * 1024;
     public readonly CafeAuth $auth;
     private string $dataDir;
     private string $menuFile;
@@ -133,10 +198,10 @@ final class CafeMenu {
         } catch (Throwable) { throw new CafeMenuException(503, 'Сохранённое меню временно недоступно.', 'menu_unavailable'); }
     }
     /** Called only while holding menu.lock; retain exact pre-migration bytes for recovery. */
-    private function backupBeforeMigration(int $revision): void {
+    private function backupBeforeChange(int $revision, string $kind): void {
         $bytes = file_get_contents($this->menuFile);
         if ($bytes === false) throw new RuntimeException('Cannot read menu migration backup.');
-        $path = $this->dataDir.'/menu-before-editor-rules-'.gmdate('Ymd-His').'-'.$revision.'-'.bin2hex(random_bytes(6)).'.json';
+        $path = $this->dataDir.'/menu-before-'.$kind.'-'.gmdate('Ymd-His').'-'.$revision.'-'.bin2hex(random_bytes(6)).'.json';
         $stream = @fopen($path, 'xb');
         if (!$stream) throw new RuntimeException('Cannot create menu migration backup.');
         @chmod($path, 0600); $complete = false;
@@ -163,7 +228,7 @@ final class CafeMenu {
                 $this->menuLock(function (): void {
                     $current = $this->readSaved();
                     if (!cafe_catalog_needs_editor_migration(CafeStorage::readJson($this->menuFile))) return;
-                    $this->backupBeforeMigration($current['revision']);
+                    $this->backupBeforeChange($current['revision'], 'editor-rules');
                     $current['revision']++;
                     CafeStorage::atomicJson($this->menuFile, $current);
                 });
@@ -258,6 +323,28 @@ final class CafeMenu {
             return $updated;
         });
     }
+    /** Add the packaged beverage menu without replacing existing editor changes. */
+    public function importDrinks(mixed $revision, bool $dryRun = false): array {
+        if (($this->config['manual_menu_enabled'] ?? false) !== true) throw new CafeMenuException(403, 'Ручное меню отключено.', 'manual_menu_disabled');
+        if (!is_int($revision) || $revision < 1 || $revision >= 9007199254740991) throw new CafeMenuException(400, 'Некорректная версия меню.', 'invalid_revision');
+        require_once __DIR__.'/drinks-import.php';
+        if (!is_file($this->menuFile)) throw new CafeMenuException(503, 'Сначала загрузите сохранённое меню.', 'menu_unavailable');
+        return $this->menuLock(function () use ($revision, $dryRun): array {
+            $current = CafeStorage::readJson($this->menuFile);
+            if (!is_array($current) || !is_int($current['revision'] ?? null)) throw new CafeMenuException(503, 'Сохранённое меню временно недоступно.', 'menu_unavailable');
+            if ($revision !== $current['revision']) throw new CafeMenuException(409, 'Меню уже изменено в другой вкладке. Загрузите актуальную версию.', 'conflict');
+            $seedFile = dirname($this->seedPath).'/drinks.json';
+            if (!is_file($seedFile) || is_link($seedFile) || filesize($seedFile) > 1048576) throw new CafeMenuException(503, 'Шаблон напитков временно недоступен.', 'drinks_seed_unavailable');
+            $updated = cafe_merge_drinks_catalog($current, CafeStorage::readJson($seedFile));
+            if ($updated === $current) return $current;
+            $updated['revision'] = $current['revision'] + 1;
+            if (!$dryRun) {
+                $this->backupBeforeChange($current['revision'], 'drinks-import');
+                CafeStorage::atomicJson($this->menuFile, $updated);
+            }
+            return $updated;
+        });
+    }
     /** CLI imports share the editor lock and never touch credentials or order state. */
     public function importKdsGroup(array $sourceMenu, string $organizationId, string $externalId): array {
         if (PHP_SAPI !== 'cli') throw new CafeMenuException(403, 'Импорт доступен только оператору сервера.', 'offline_only');
@@ -292,7 +379,7 @@ final class CafeMenu {
     public function storeImage(string $bytes, string $mime): string {
         $extensions = ['image/jpeg'=>'jpg', 'image/png'=>'png', 'image/webp'=>'webp'];
         if (!isset($extensions[$mime])) throw new CafeMenuException(415, 'Поддерживаются JPG, PNG и WebP.', 'invalid_image_type');
-        if (strlen($bytes) > 5 * 1024 * 1024) throw new CafeMenuException(413, 'Файл или запрос слишком большой.', 'too_large');
+        if (strlen($bytes) > self::MAX_IMAGE_BYTES) throw new CafeMenuException(413, 'Фотография должна быть не больше 100 МБ.', 'too_large');
         if (!function_exists('imagecreatefromstring') || !function_exists('imagewebp')) throw new CafeMenuException(503, 'Загрузка фотографий требует настройки сервера.', 'image_setup_required');
         $info = @getimagesizefromstring($bytes);
         if (!$info || ($info['mime'] ?? '') !== $mime || $info[0] < 1 || $info[1] < 1 || $info[0] > 6000 || $info[1] > 6000 || $info[0] * $info[1] > 12000000) throw new CafeMenuException(400, 'Загрузите корректную фотографию до 12 мегапикселей.', 'invalid_image');
@@ -309,7 +396,7 @@ final class CafeMenu {
         try {
             imagealphablending($image, false); imagesavealpha($image, true);
             $written = match ($mime) { 'image/jpeg'=>imagejpeg($image, $stream, 90), 'image/png'=>imagepng($image, $stream, 6), 'image/webp'=>imagewebp($image, $stream, 90) };
-            if (!$written || !fflush($stream) || fstat($stream)['size'] > 5 * 1024 * 1024) throw new CafeMenuException(400, 'После обработки фотография слишком большая.', 'invalid_image');
+            if (!$written || !fflush($stream) || fstat($stream)['size'] > self::MAX_IMAGE_BYTES) throw new CafeMenuException(400, 'После обработки фотография превышает 100 МБ.', 'invalid_image');
         } catch (Throwable $error) { fclose($stream); imagedestroy($image); @unlink($file); throw $error; }
         fclose($stream); imagedestroy($image);
         return '/uploads/'.$name;
@@ -393,6 +480,12 @@ final class CafeMenu {
                 $this->auth->audit('menu.availability-synced', $this->peer());
                 cafe_json_response($this->availability->decorate($this->read())); return true;
             }
+            if ($pathname === '/api/admin/menu/drinks-import' && $method === 'POST') {
+                $this->requireSession(true); $body = cafe_json_body();
+                $updated = $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, fn() => $this->importDrinks($body['revision'] ?? null));
+                $this->auth->audit('menu.drinks-imported', $this->peer(), ['revision'=>$updated['revision'], 'count'=>count($updated['items'])]);
+                cafe_json_response($this->availability->decorate($updated)); return true;
+            }
             if ($pathname === '/api/admin/menu' && $method === 'PUT') {
                 $this->requireSession(true); $body = cafe_json_body();
                 if (!is_array($body['items'] ?? null)) throw new CafeMenuException(400, 'Проверьте список блюд.', 'invalid_items');
@@ -404,7 +497,7 @@ final class CafeMenu {
             }
             if ($pathname === '/api/admin/upload' && $method === 'POST') {
                 $this->requireSession(true);
-                $bytes = cafe_request_body(5 * 1024 * 1024);
+                $bytes = cafe_request_body(self::MAX_IMAGE_BYTES, 'Фотография должна быть не больше 100 МБ.');
                 $mime = trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]);
                 $url = $this->auth->authorizedOperation($this->token(), $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null, fn() => $this->storeImage($bytes, $mime));
                 $this->auth->audit('image.uploaded', $this->peer()); cafe_json_response(['url'=>$url], 201); return true;

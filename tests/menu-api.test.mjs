@@ -4,6 +4,8 @@ import http from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { PNG } from 'pngjs';
 import { createMenuMiddleware, makePasswordRecord } from '../server/menu-api.mjs';
 import { makeEnrolledAccount } from '../server/auth.mjs';
 import { encodeBase32, totp } from '../server/totp.mjs';
@@ -14,6 +16,41 @@ const seedItems = [
   { id: 'egg-toast', name: 'Тост с яйцом', description: 'Хлеб, яйцо и зелень', price: 450, category: 'eggs', image: '/menu-images/toast.jpg', published: true, order: 1 },
   { id: 'hidden', name: 'Черновик', description: '', price: 600, category: 'signature', image: '', published: false, order: 0 },
 ];
+
+test('beverage edits survive save, public JSON and restart while invalid choices leave storage untouched', async t => {
+  const app = await fixture(t);
+  await app.login();
+  const current = (await app.request('/api/admin/menu')).value;
+  const drink = { section: 'Кофе', variants: [{ volumeMl: 250, price: 180 }, { volumeMl: 350, price: 230 }], addons: [{ name: 'Сироп', price: 40 }], childFriendly: false, sectionOrder: 2 };
+  current.items[0].drink = drink;
+  current.items[0].price = 999;
+  const saved = await app.request('/api/admin/menu', { method: 'PUT', body: current });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.value.items[0].drink, drink);
+  assert.equal(saved.value.items[0].price, 180);
+  assert.equal(saved.value.items[0].availableForOrder, false);
+  for (const route of ['/api/menu', '/data/menu.json']) {
+    const guest = (await app.request(route, { authenticated: false })).value.items.find(item => item.id === current.items[0].id);
+    assert.deepEqual(guest.drink, drink);
+    assert.equal(guest.availableForOrder, false);
+  }
+  const stored = await readFile(path.join(app.dataDir, 'menu.json'), 'utf8');
+  const invalid = structuredClone(saved.value);
+  invalid.items[0].drink.variants[1].volumeMl = 250;
+  const rejected = await app.request('/api/admin/menu', { method: 'PUT', body: invalid });
+  assert.equal(rejected.status, 400);
+  assert.equal(rejected.value.code, 'invalid_drink');
+  const invalidRank = structuredClone(saved.value);
+  invalidRank.items[0].drink.sectionOrder = 10001;
+  const rejectedRank = await app.request('/api/admin/menu', { method: 'PUT', body: invalidRank });
+  assert.equal(rejectedRank.status, 400);
+  assert.equal(rejectedRank.value.code, 'invalid_drink');
+  assert.equal(await readFile(path.join(app.dataDir, 'menu.json'), 'utf8'), stored);
+  await app.stop(); await app.start(); await app.login();
+  const restored = (await app.request('/api/admin/menu')).value;
+  assert.deepEqual(restored, saved.value);
+  assert.equal(Object.hasOwn(restored.items[1], 'drink'), false);
+});
 
 test('legacy source groups migrate once; individual website assignments survive edits without automatic mapping', async t => {
   const app = await fixture(t);
@@ -161,7 +198,20 @@ async function fixture(t, options = {}) {
     } finally { clearTimeout(timer); }
     return { finish: () => { req.end(buffer); return response; } };
   }
-  return { request, login, overlappingLogins, slowRequest, stop, start, dataDir, seedPath };
+  async function announcedUpload(contentLength) {
+    return new Promise((resolve, reject) => {
+      const req = http.request(`${base}/api/admin/upload`, { method: 'POST', headers: { ...auth, Origin: base, 'Content-Type': 'image/png', 'Content-Length': contentLength } }, res => {
+        const chunks = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => { resolve({ status: res.statusCode, value: JSON.parse(Buffer.concat(chunks).toString()) }); req.destroy(); });
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.setTimeout(3000, () => req.destroy(new Error('Oversized upload was not rejected from its headers')));
+      req.end();
+    });
+  }
+  return { request, login, overlappingLogins, slowRequest, announcedUpload, stop, start, dataDir, seedPath };
 }
 
 test('HTTP device trust survives normal logout; explicit forget revokes the active session and device', async (t) => {
@@ -435,7 +485,15 @@ test('upload verifies magic bytes, rejects oversized files, and serves only gene
   assert.deepEqual(downloaded.value, png);
   assert.equal((await app.request('/api/admin/upload', { method: 'POST', raw: png, headers: { 'Content-Type': 'image/jpeg' } })).status, 400);
   assert.equal((await app.request('/api/admin/upload', { method: 'POST', raw: '<svg/>', headers: { 'Content-Type': 'image/svg+xml' } })).status, 415);
-  assert.equal((await app.request('/api/admin/upload', { method: 'POST', raw: Buffer.alloc(5 * 1024 * 1024 + 1), headers: { 'Content-Type': 'image/png' } })).status, 413);
+  const largePng = PNG.sync.write({ width: 1536, height: 1536, data: randomBytes(1536 * 1536 * 4) });
+  assert.ok(largePng.length > 5 * 1024 * 1024, 'The valid image exceeds the previous 5 MiB limit');
+  const largeUpload = await app.request('/api/admin/upload', { method: 'POST', raw: largePng, headers: { 'Content-Type': 'image/png' } });
+  assert.equal(largeUpload.status, 201);
+  assert.deepEqual((await app.request(largeUpload.value.url, { authenticated: false })).value, largePng);
+  const oversized = await app.announcedUpload(100 * 1024 * 1024 + 1);
+  assert.equal(oversized.status, 413);
+  assert.equal(oversized.value.code, 'too_large');
+  assert.match(oversized.value.error, /100 МБ/);
   assert.equal((await app.request('/uploads/admin-password.json')).status, 404);
   assert.equal((await app.request('/uploads/%2e%2e%2fadmin-password.json')).status, 404);
 });

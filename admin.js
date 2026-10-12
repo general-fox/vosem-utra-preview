@@ -1,4 +1,6 @@
 import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from './menu-categories.js';
+import { orderedDrinkSections } from './menu-drinks-model.js';
+import { createDrinkSectionManager, drinkSectionOrderForItem } from './admin-drink-sections.js';
 
 const $ = (id) => document.getElementById(id);
 const manualMenu = $('site-profile').getAttribute('content') === 'catalog';
@@ -10,11 +12,13 @@ const auth = { challengeToken: '', recovery: false, busy: false, setupRequired: 
   enrollmentAvailable: false, enrollmentToken: '', enrollmentPhase: '', enrollmentTimer: null, generation: 0,
   requiresNewPassword: false, recoveryPending: false, trustedUsername: '', logoutPending: false };
 const draft = { id: null, image: '', file: null, previewUrl: '', dirty: false, resume: false };
+const drinkEditor = { variants: [], addons: [], nextRow: 0 };
 const passwordReset = { token: '', passwordToken: '', email: '', retryAt: 0, verifyAt: 0, completeAt: 0, expiresAt: 0, resumeUntil: 0, timer: null, generation: 0 };
 const RESET_STORAGE_KEY = 'vosem-utra-password-reset';
 const categoryDraft = { categories: [], items: [], selectedId: null, revision: null, dirty: false, resume: false };
 const categoryControls = { selects: [], rows: [] };
 let categoryDrag = null;
+const drinkSectionManager = createDrinkSectionManager({ document, state, persist, notice, setBusy, confirm: text => window.confirm(text) });
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 30 * 1000;
 const idle = { active: false, generation: 0, deadline: 0, absoluteDeadline: 0, timeoutMs: IDLE_TIMEOUT_MS,
@@ -198,6 +202,7 @@ async function lockSession({ reason = 'idle', forgetDevice = false, remote = fal
   clearCategoryDrag();
   categoryDraft.resume = categoryDraft.resume || $('categories-dialog').open;
   $('categories-dialog').close();
+  drinkSectionManager.suspend();
   deleteId = null;
   showLogin();
   if (persist) rememberLocked(forgetDevice, !remote);
@@ -208,7 +213,7 @@ async function lockSession({ reason = 'idle', forgetDevice = false, remote = fal
   }
   setBusy(false);
   setAuthBusy(false);
-  const draftNote = draft.resume || categoryDraft.resume ? ' Черновик сохранён в этой вкладке.' : '';
+  const draftNote = draft.resume || categoryDraft.resume || drinkSectionManager.pending ? ' Черновик сохранён в этой вкладке.' : '';
   const note = reason === 'idle'
     ? `Панель закрыта после 15 минут без действий.${draftNote}`
     : reason === 'expired' ? `Сессия завершилась.${draftNote}` : `Вы вышли из панели.${draftNote}`;
@@ -288,7 +293,7 @@ async function api(path, { method = 'GET', body, raw = false, csrfToken = state.
   const generation = idle.generation;
   const protectedRequest = Boolean(csrfToken) && !allowAfterLock;
   if (protectedRequest) idle.requests.add(controller);
-  const timeout = setTimeout(() => controller.abort(), path === 'sync-availability' ? 90000 : 20000);
+  const timeout = setTimeout(() => controller.abort(), path === 'upload' ? 120000 : path === 'sync-availability' ? 90000 : 20000);
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = raw ? body.type : 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
@@ -346,6 +351,9 @@ function setBusy(busy) {
   $('save-item').disabled = busy || state.conflict || !state.loaded;
   $('empty-browse-cash').disabled = busy || state.conflict || !state.loaded;
   $('manage-categories').disabled = busy || !state.loaded;
+  $('import-drinks').disabled = busy || state.conflict || !state.loaded;
+  $('manage-drink-sections').disabled = busy || state.conflict || !state.loaded;
+  drinkSectionManager.busy(busy);
   $('save-item').textContent = busy ? 'Сохраняем…' : 'Сохранить блюдо';
   renderKeeperSync();
   document.querySelectorAll('[data-item-action]').forEach((button) => { button.disabled = busy || state.conflict || !state.loaded; });
@@ -957,7 +965,11 @@ function itemCard(item) {
   body.append(category);
   const title = element('div', 'item-title-row');
   title.append(element('h2', '', item.name), element('p', 'item-price', currency.format(item.price)));
-  body.append(title, element('p', 'item-description', item.description || 'Описание пока не добавлено'));
+  body.append(title);
+  if (item.drink) body.append(element('p', 'item-drink-info', [item.drink.section,
+    `${item.drink.variants.map(variant => variant.volumeMl).join(' / ')} мл`,
+    item.drink.childFriendly ? 'Подходит детям' : ''].filter(Boolean).join(' · ')));
+  body.append(element('p', 'item-description', item.description || 'Описание пока не добавлено'));
   const testOnly = item.source?.testOnly === true;
   const keeperBlocked = item.keeperAvailability?.forbidden === true || (typeof item.keeperAvailability?.remaining === 'number' && item.keeperAvailability.remaining < 1);
   const available = !testOnly && item.availableForOrder !== false && !keeperBlocked;
@@ -1055,6 +1067,8 @@ function renderCashBreadcrumbs() {
 
 function render() {
   const cashMode = !manualMenu && state.mode === 'cash';
+  $('import-drinks').hidden = !manualMenu || state.items.some(item => item.drink);
+  $('import-drinks').disabled = state.busy || !state.loaded || state.conflict;
   $('add-dish').hidden = !manualMenu;
   $('add-dish').disabled = state.busy || !state.loaded || state.conflict;
   const query = $('search').value.trim().toLocaleLowerCase('ru');
@@ -1072,13 +1086,15 @@ function render() {
       return group && (query ? cashIds.has(group.id) : group.id === state.cashGroupId);
     });
   } else filtered = state.items.filter((item) => categoryIds.has(item.category));
-  filtered = filtered.filter((item) => `${item.name} ${item.description}`.toLocaleLowerCase('ru').includes(query))
+  filtered = filtered.filter((item) => `${item.name} ${item.description} ${item.drink?.section || ''}`.toLocaleLowerCase('ru').includes(query))
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'ru'));
   $('mode-site').setAttribute('aria-pressed', String(!cashMode));
   $('mode-cash').setAttribute('aria-pressed', String(cashMode));
   $('category-tabs').hidden = cashMode;
   $('cash-navigation').hidden = !cashMode;
   $('manage-categories').hidden = cashMode;
+  $('manage-drink-sections').hidden = cashMode || !state.items.some(item => item.category === state.siteCategory && item.drink);
+  $('manage-drink-sections').disabled = state.busy || state.conflict || !state.loaded;
   $('menu-toolbar').classList.toggle('is-cash', cashMode);
   $('search').placeholder = cashMode ? 'Найти в меню кассы' : 'Найти блюдо';
   for (const button of $('category-tabs').children) button.setAttribute('aria-pressed', String(button.dataset.categoryId === state.siteCategory));
@@ -1147,7 +1163,7 @@ async function enterDashboard() {
     categoryDraft.resume = false;
     $('categories-dialog').showModal();
     if (categoryDraft.revision !== state.revision) showCategoryReopenNotice();
-  }
+  } else if (drinkSectionManager.pending && state.csrfToken) drinkSectionManager.restore();
 }
 
 function markConflict(text) {
@@ -1182,6 +1198,118 @@ function updatePreview() {
   $('remove-photo').hidden = !src;
 }
 
+function syncDrinkPrice() {
+  if ($('item-kind').value === 'drink' && drinkEditor.variants.length) $('price').value = drinkEditor.variants[0].price.value;
+}
+
+function updateDrinkRows(kind) {
+  const rows = drinkEditor[kind];
+  $(`drink-${kind}`).replaceChildren(...rows.map(row => row.root));
+  rows.forEach((row, index) => {
+    row.remove.disabled = kind === 'variants' && rows.length === 1;
+    row.remove.setAttribute('aria-label', `${kind === 'variants' ? 'Удалить объём' : 'Удалить добавку'} ${index + 1}`);
+  });
+  $(kind === 'variants' ? 'add-drink-variant' : 'add-drink-addon').disabled = rows.length >= (kind === 'variants' ? 10 : 12);
+  syncDrinkPrice();
+}
+
+function addDrinkRow(kind, value = {}, { focus = false } = {}) {
+  if (drinkEditor[kind].length >= (kind === 'variants' ? 10 : 12)) return;
+  const row = { root: element('div', 'drink-editor-row') };
+  const id = `drink-row-${++drinkEditor.nextRow}`;
+  const field = (key, label, attributes) => {
+    const wrapper = element('div', 'admin-field');
+    const labelNode = element('label', '', label);
+    labelNode.setAttribute('for', `${id}-${key}`);
+    const input = element('input');
+    input.id = `${id}-${key}`;
+    for (const [name, attribute] of Object.entries(attributes)) input.setAttribute(name, attribute);
+    input.required = true;
+    input.value = value[key] ?? '';
+    input.addEventListener('input', () => { draft.dirty = true; syncDrinkPrice(); });
+    if (kind === 'addons') input.addEventListener('invalid', () => { $('drink-addons-details').open = true; });
+    wrapper.append(labelNode, input);
+    row.root.append(wrapper);
+    row[key] = input;
+  };
+  if (kind === 'variants') field('volumeMl', 'Объём, мл', { type: 'number', min: '1', max: '5000', step: '1', inputmode: 'numeric', placeholder: '250' });
+  else field('name', 'Название добавки', { type: 'text', maxlength: '80', placeholder: 'Сироп' });
+  field('price', 'Цена, ₽', { type: 'number', min: '0', max: '1000000', step: '0.01', inputmode: 'decimal', placeholder: kind === 'variants' ? '250' : '50' });
+  row.remove = element('button', 'drink-remove-row', '×');
+  row.remove.type = 'button';
+  row.remove.addEventListener('click', () => {
+    if (state.busy || (kind === 'variants' && drinkEditor[kind].length === 1)) return;
+    const index = drinkEditor[kind].indexOf(row);
+    drinkEditor[kind].splice(index, 1);
+    draft.dirty = true;
+    updateDrinkRows(kind);
+    const next = drinkEditor[kind][Math.min(index, drinkEditor[kind].length - 1)];
+    (next?.[kind === 'variants' ? 'volumeMl' : 'name'] || $(kind === 'variants' ? 'add-drink-variant' : 'add-drink-addon')).focus();
+  });
+  row.root.append(row.remove);
+  drinkEditor[kind].push(row);
+  updateDrinkRows(kind);
+  if (focus) row[kind === 'variants' ? 'volumeMl' : 'name'].focus();
+}
+
+function updateDrinkEditor() {
+  const enabled = $('item-kind').value === 'drink';
+  $('drink-fields').hidden = !enabled;
+  $('drink-fields').disabled = !enabled;
+  $('dish-price-field').hidden = enabled;
+  $('price').disabled = enabled;
+  if (enabled && !drinkEditor.variants.length) addDrinkRow('variants', { price: $('price').value });
+  syncDrinkPrice();
+}
+
+function resetDrinkEditor(item) {
+  drinkEditor.variants = [];
+  drinkEditor.addons = [];
+  $('item-kind').value = item.drink ? 'drink' : 'dish';
+  $('drink-section').value = item.drink?.section || '';
+  $('drink-child-friendly').checked = item.drink?.childFriendly === true;
+  $('drink-addons-details').open = !!item.drink?.addons?.length;
+  const sections = orderedDrinkSections(state.items.filter(entry => entry.category === item.category).sort((a, b) => a.order - b.order)).map(section => section.name);
+  $('drink-sections').replaceChildren(...sections.map(section => { const option = element('option'); option.value = section; return option; }));
+  for (const variant of item.drink?.variants || []) addDrinkRow('variants', variant);
+  for (const addon of item.drink?.addons || []) addDrinkRow('addons', addon);
+  updateDrinkRows('variants');
+  updateDrinkRows('addons');
+  updateDrinkEditor();
+}
+
+function readDrinkEditor() {
+  if ($('item-kind').value !== 'drink') return undefined;
+  const invalid = (input, text) => { input.focus(); throw new Error(text); };
+  const text = (input, label) => {
+    const value = input.value.trim();
+    if (!value || value.length > 80 || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(value)) invalid(input, `${label}: укажите от 1 до 80 символов.`);
+    return value;
+  };
+  const price = input => {
+    const value = Number(input.value);
+    if (input.value.trim() === '' || !Number.isFinite(value) || value < 0 || value > 1000000 || Math.abs(value * 100 - Math.round(value * 100)) > 0.000001) invalid(input, 'Укажите цену от 0 до 1 000 000 ₽ с точностью до копеек.');
+    return value;
+  };
+  const section = text($('drink-section'), 'Подгруппа напитков');
+  const volumes = new Set();
+  const variants = drinkEditor.variants.map(row => {
+    const volumeMl = Number(row.volumeMl.value);
+    if (!Number.isInteger(volumeMl) || volumeMl < 1 || volumeMl > 5000) invalid(row.volumeMl, 'Укажите целый объём от 1 до 5 000 мл.');
+    if (volumes.has(volumeMl)) invalid(row.volumeMl, 'Объёмы напитка не должны повторяться.');
+    volumes.add(volumeMl);
+    return { volumeMl, price: price(row.price) };
+  });
+  const addonNames = new Set();
+  const addons = drinkEditor.addons.map(row => {
+    const name = text(row.name, 'Название добавки');
+    if (addonNames.has(name)) invalid(row.name, 'Названия добавок не должны повторяться.');
+    addonNames.add(name);
+    return { name, price: price(row.price) };
+  });
+  return { section, variants, ...(addons.length ? { addons } : {}), childFriendly: $('drink-child-friendly').checked };
+}
+
 function openEditor(item) {
   if (state.busy || !state.loaded || state.conflict || (!item && !manualMenu) || (item && !state.items.some((entry) => entry.id === item.id))) return;
   const isNew = !item;
@@ -1198,6 +1326,7 @@ function openEditor(item) {
   $('item-name').value = item?.name || '';
   $('description').value = item?.description || '';
   $('price').value = item.price ?? '';
+  resetDrinkEditor(item);
   const groupOptions = categoryOptions(state.categories, { placeholder: 'Не размещать на сайте' });
   $('category').replaceChildren(...(item.source ? groupOptions : groupOptions.slice(1)));
   $('category').value = item.category || '';
@@ -1697,7 +1826,7 @@ $('recovery-logout').addEventListener('click', () => logout());
 
 $('empty-browse-cash').addEventListener('click', () => setMenuMode('cash'));
 $('manage-categories').addEventListener('click', async () => {
-  if (state.busy || !state.loaded || $('categories-dialog').open) return;
+  if (state.busy || !state.loaded || $('categories-dialog').open || $('drink-sections-dialog').open) return;
   if (await loadMenu()) openCategoryManager();
 });
 $('close-categories').addEventListener('click', closeCategoryManager);
@@ -1808,6 +1937,20 @@ $('category-tabs').addEventListener('click', (event) => {
   render();
 });
 $('add-dish').addEventListener('click', () => openEditor());
+$('import-drinks').addEventListener('click', async () => {
+  if (!manualMenu || state.busy || !state.loaded || state.conflict || state.items.some(item => item.drink)) return;
+  if (!window.confirm('Добавить 36 напитков из меню в группу «Напитки»? Существующие блюда, фотографии и группы сохранятся.')) return;
+  setBusy(true);
+  try {
+    validateMenu(await api('menu/drinks-import', { method: 'POST', body: { revision: state.revision } }));
+    state.siteCategory = state.items.find(item => item.drink)?.category || state.siteCategory;
+    render();
+    notice('Напитки добавлены. Проверьте объёмы, цены и добавки в карточках.');
+  } catch (error) {
+    if (error.status === 409 || error.status === 0) markConflict('Обновите меню, чтобы проверить, были ли добавлены напитки, перед повторной попыткой.');
+    else if (!sessionExpired(error)) notice(error.message, { error: true });
+  } finally { setBusy(false); }
+});
 $('sync-availability').addEventListener('click', async () => {
   if (manualMenu) return;
   if (state.busy || !state.loaded || state.conflict || !state.keeperSync.configured) return;
@@ -1839,12 +1982,16 @@ $('close-editor').addEventListener('click', closeEditor);
 $('cancel-editor').addEventListener('click', closeEditor);
 $('editor-dialog').addEventListener('cancel', (event) => { event.preventDefault(); closeEditor(); });
 $('item-form').addEventListener('input', () => { draft.dirty = true; });
+$('item-kind').addEventListener('change', () => { draft.dirty = true; updateDrinkEditor(); });
+$('add-drink-variant').addEventListener('click', () => { if (!state.busy) { draft.dirty = true; addDrinkRow('variants', {}, { focus: true }); } });
+$('add-drink-addon').addEventListener('click', () => { if (!state.busy) { draft.dirty = true; addDrinkRow('addons', {}, { focus: true }); } });
 
 $('photo').addEventListener('change', () => {
+  if (state.busy) return;
   const file = $('photo').files[0];
   if (!file) return;
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024 || file.size === 0) {
-    message($('editor-error'), 'Выберите изображение JPG, PNG или WebP размером до 5 МБ.');
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 100 * 1024 * 1024 || file.size === 0) {
+    message($('editor-error'), 'Выберите изображение JPG, PNG или WebP размером до 100 МБ.');
     $('photo').value = '';
     return;
   }
@@ -1860,6 +2007,7 @@ $('preview-image').addEventListener('error', () => {
   $('photo-placeholder').hidden = false;
 });
 $('remove-photo').addEventListener('click', () => {
+  if (state.busy) return;
   clearPreviewUrl();
   draft.file = null;
   draft.image = '';
@@ -1889,18 +2037,31 @@ $('item-form').addEventListener('submit', async (event) => {
     $('category').focus();
     return;
   }
+  let drink;
+  try { drink = readDrinkEditor(); } catch (error) { message($('editor-error'), error.message); return; }
   setBusy(true);
   message($('editor-error'), '');
+  const saveGeneration = idle.generation;
   try {
+    if (drink) {
+      const { normalizeDrink } = await import('./menu-drinks-model.js');
+      drink = normalizeDrink(drink);
+      const sectionOrder = drinkSectionOrderForItem(state.items, selectedCategory || null, drink.section);
+      if (sectionOrder !== undefined) drink.sectionOrder = sectionOrder;
+    }
     if (draft.file) {
-      const upload = await api('upload', { method: 'POST', body: draft.file, raw: true });
+      const { prepareAdminPhoto } = await import('./admin-photo.js');
+      const preparedPhoto = await prepareAdminPhoto(draft.file);
+      if (saveGeneration !== idle.generation) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
+      const upload = await api('upload', { method: 'POST', body: preparedPhoto, raw: true });
       if (!upload.url || !imageUrl(upload.url)) throw new ApiError('Сервер не вернул адрес фотографии. Попробуйте загрузить её ещё раз.');
       draft.image = upload.url;
       draft.file = null;
     }
     const item = {
       ...(existingItem?.source ? { source: existingItem.source } : {}),
-      id: draft.id, name, description: $('description').value.trim(), price: Number($('price').value),
+      id: draft.id, name, description: $('description').value.trim(), price: drink ? drink.variants[0].price : Number($('price').value),
+      ...(drink ? { drink } : {}),
       category: selectedCategory || null, image: draft.image, hiddenOnSite: !$('show-on-site').checked, published: !!selectedCategory && $('show-on-site').checked,
       availableForOrder: !!selectedCategory && $('show-on-site').checked && existingItem?.source?.testOnly !== true, order: existingItem?.order ?? Math.max(0, ...state.items.map(entry => entry.order)) + 1,
     };
@@ -1979,7 +2140,7 @@ $('confirm-delete').addEventListener('click', async () => {
 
 window.addEventListener('beforeunload', (event) => {
   if (auth.recoveryPending || auth.enrollmentToken || (draft.dirty && ($('editor-dialog').open || draft.resume))
-    || (categoryDraft.dirty && ($('categories-dialog').open || categoryDraft.resume))) {
+    || (categoryDraft.dirty && ($('categories-dialog').open || categoryDraft.resume)) || drinkSectionManager.unsaved) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -2012,6 +2173,7 @@ function suspendProtectedUi() {
   clearCategoryDrag();
   categoryDraft.resume = categoryDraft.resume || $('categories-dialog').open;
   $('categories-dialog').close();
+  drinkSectionManager.suspend();
   clearTimeout(idle.timer);
 }
 
@@ -2041,6 +2203,7 @@ async function checkVisibleSession() {
         $('dashboard').hidden = false;
         if (draft.resume && state.loaded) { draft.resume = false; $('editor-dialog').showModal(); }
         else if (categoryDraft.resume && state.loaded) { categoryDraft.resume = false; $('categories-dialog').showModal(); }
+        else if (drinkSectionManager.pending && state.loaded) drinkSectionManager.restore();
       }
     }
   } catch (error) {

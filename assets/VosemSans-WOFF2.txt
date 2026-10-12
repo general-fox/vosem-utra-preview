@@ -1,0 +1,46 @@
+Vosem Sans webfont derivative
+
+Vosem Sans is an unhinted derivative of the Lato 3.100 font files retained
+in this repository. Original author: Lukasz Dziedzic. The original copyright
+and SIL Open Font License 1.1 are in the accompanying Lato-OFL.txt and remain
+embedded in the fonts. These derivatives are distributed under that same OFL.
+Lato is a Reserved Font Name; the modified fonts use Vosem Sans / VosemSans
+as their family, full, PostScript and unique names. This modification is not
+an official Lato release and does not imply endorsement by the original author.
+
+Reason for modification:
+The original TrueType hints produce thin horizontal breaks in Cyrillic glyphs
+(including "a", U+0430) at small browser text sizes. Removing those instructions
+retains the original letter shapes while letting the browser rasterize their
+continuous outlines. The Regular, Medium and Italic styles are treated equally.
+
+Changes:
+- Removed glyph-level hint instructions and font-wide TrueType hint tables.
+- Updated hint-related maxp/head settings and requested smooth, unhinted
+  rendering at all sizes in gasp.
+- Renamed the derived font family and version; retained original attribution.
+- Removed the now-invalid digital-signature placeholder.
+- Packaged as WOFF2 without glyph/table transforms or subsetting.
+
+Preserved and verified by scripts/compress-fonts.py:
+- Every glyph outline and composite transformation, checked using RecordingPen.
+- The full glyph order and character map, including Cyrillic.
+- Exact advance widths, side bearings, vertical metrics and font styling.
+- Byte-identical cmap, hmtx, hhea, OS/2, GDEF, GPOS, GSUB and post tables.
+- Original copyright, author, trademark, attribution and license records.
+
+Original Lato TTF and historical WOFF2 files are retained unchanged.
+
+Reproduce with Python 3 and fonttools[woff]:
+  python scripts/compress-fonts.py
+Historical unmodified WOFF2 packaging remains available with --originals.
+
+Generated with Python 3.12.14, FontTools 4.65.0 and Brotli 1.2.0.
+Current output sizes:
+  VosemSans-Regular.woff2  183984 bytes
+  VosemSans-Medium.woff2   182320 bytes
+  VosemSans-Italic.woff2   149268 bytes
+
+node tests/fonts.test.cjs independently checks the shipped binaries for
+removed hint programs, retained metrics/coverage/shaping, renamed family,
+matching stylesheet/preload sources and the accompanying license.

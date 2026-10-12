@@ -9,6 +9,18 @@ import { phpBinary, phpEnvironment, localRuntimeSettings } from './php-runtime.m
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const optional = (file) => readFile(file).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
+async function updateDrinksTemplate(projectRoot, runtime) {
+  const bytes = await optional(path.join(projectRoot, 'public/data/drinks.json'));
+  if (!bytes) return;
+  const directory = path.join(runtime, 'app/seed');
+  await mkdir(directory, { recursive:true, mode:0o700 });
+  const target = path.join(directory, 'drinks.json');
+  const previous = await optional(target);
+  if (previous?.equals(bytes)) return;
+  const temporary = path.join(directory, `drinks-${randomUUID()}.tmp`);
+  await writeFile(temporary, bytes, { flag:'wx', mode:0o600 });
+  await rename(temporary, target);
+}
 async function safeCopy(source, target) {
   const info = await lstat(source);
   if (info.isSymbolicLink()) throw new Error('Symbolic links are not supported in private migration.');
@@ -25,6 +37,8 @@ export async function prepareLocalPhp({ projectRoot = root, passwordProvider, ph
   try {
     await lstat(destination);
     if (!await optional(path.join(destination, 'admin-config.php'))) throw new Error('PHP-хранилище неполное. Сохраните его для проверки; автоматическая замена запрещена.');
+    // Refresh only the public import template; never replace accounts or saved menu.
+    await updateDrinksTemplate(projectRoot, destination);
     return { existing: true, destination };
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const check = spawnSync(php, ['-r', 'exit(extension_loaded("openssl") && extension_loaded("gd") && in_array("sqlite", PDO::getAvailableDrivers(), true) ? 0 : 1);'], { env: phpEnvironment, encoding: 'utf8', windowsHide: true });
@@ -94,6 +108,7 @@ export async function prepareLocalPhp({ projectRoot = root, passwordProvider, ph
     await writeFile(path.join(staging, 'admin-data/menu.json'), JSON.stringify(parsed), { flag: 'wx', mode: 0o600 });
     await mkdir(path.join(staging, 'app/seed'), { recursive: true, mode: 0o700 });
     await cp(path.join(projectRoot, 'public/data/menu.json'), path.join(staging, 'app/seed/menu.json'));
+    await updateDrinksTemplate(projectRoot, staging);
     await writeFile(path.join(staging, '.local-development'), 'Local test data; do not publish test orders.\n', { flag: 'wx', mode: 0o600 });
     try { await lstat(path.join(dataDir, 'uploads')); await safeCopy(path.join(dataDir, 'uploads'), path.join(staging, 'admin-data/uploads')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -106,7 +121,7 @@ export async function prepareLocalPhp({ projectRoot = root, passwordProvider, ph
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const result = await prepareLocalPhp();
-    console.log(result.existing ? 'Локальное PHP-хранилище уже подготовлено; ничего не заменено.' : `Перенесено аккаунтов: ${result.accounts}; блюд: ${result.items}. Пароли и подключённые аутентификаторы сохранены.`);
+    console.log(result.existing ? 'Локальное PHP-хранилище уже подготовлено; рабочие данные сохранены.' : `Перенесено аккаунтов: ${result.accounts}; блюд: ${result.items}. Пароли и подключённые аутентификаторы сохранены.`);
     console.log(`Приватное хранилище: ${result.destination}`);
     if (result.backup) console.log(`Резервная копия прежних данных: ${result.backup}`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }

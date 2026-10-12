@@ -22,6 +22,9 @@ test('PHP call verification gates registration, survives reload and cannot submi
     await cp(path.join(root,'dist-reg-test'),temp,{recursive:true});
     // Exercise the opt-in handler even when the default staging build still disables registration.
     await cp(path.join(root,'hosting/legacy-public/api/register.php'),path.join(site,'api/register.php'));
+    await cp(path.join(root,'hosting/php/loyalty-phone.php'),path.join(privateDir,'app/loyalty-phone.php'));
+    const featuresFile=path.join(privateDir,'app/features.php');
+    await writeFile(featuresFile,(await readFile(featuresFile,'utf8')).replace(/'phone_verification_enabled'=>false/,"'phone_verification_enabled'=>true"));
     await writeFile(path.join(privateDir,'loyalty-phone-policy.php'),"<?php return ['required'=>true,'testOnly'=>true,'publicOrigin'=>'https://test888.ru'];");
     const config={serviceId:'123',secretKey:'isolated-http-fixture-not-real',trustedPhone:'79990000001',publicOrigin:'https://test888.ru',mode:'test',dailyCallLimit:10};
     await writeFile(path.join(privateDir,'ucaller-config.json'),JSON.stringify(config));

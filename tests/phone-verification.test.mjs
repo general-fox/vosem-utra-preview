@@ -46,7 +46,10 @@ test('changing phone invalidates old proof; resend limit never blocks entering t
 });
 
 test('the full test form preserves fields with necessary-only cookies and sends registration only after verification',async()=>{
-  const source=(await readFile(new URL('../hosting/legacy-public/registration.js',import.meta.url),'utf8')).replace(/^import .*;\r?\n/gm,'');
+  // The browser lazily imports this module only in the phone-enabled build.
+  // Keep that asynchronous boundary while injecting the real controller with inert timers.
+  const source=(await readFile(new URL('../hosting/legacy-public/registration.js',import.meta.url),'utf8'))
+    .replace(/^import .*;\r?\n/gm,'').replace(/\bimport\(/g,'loadModule(');
   const nodes=new Map(),calls=[],responses=[];let resets=0,reloads=0;
   const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,hidden:false,dataset:{},handlers:{},textContent:'',addEventListener(event,fn){this.handlers[event]=fn;},focus(){},setAttribute(){},removeAttribute(){},setCustomValidity(){},setSelectionRange(){},querySelector:selector=>node(id+selector),classList:{toggle(){}},reportValidity:()=>true});return nodes.get(id);};
   const form=node('registration-form');form.dataset={phoneVerification:'true',phoneTest:'true'};
@@ -59,7 +62,14 @@ test('the full test form preserves fields with necessary-only cookies and sends 
     cookieConsent:{allowed:()=>false,subscribe(){},request(){throw Error('Test must not request Google consent');}},
     FormData:class {get(name){return name==='Consent'?'on':node(name).value;}},Date,URL,AbortController,setTimeout,clearTimeout,
     location:{href:'http://localhost/registration.html',replace(){reloads++;}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});assert.ok(responses.length,'Unexpected request');const data=responses.shift();return {ok:data.IsSuccess!==false,status:data.IsSuccess===false?503:200,json:async()=>data};},window:{}};
-  vm.runInNewContext(source,context);
+  const imports=[];
+  context.loadModule=async specifier=>{
+    assert.match(specifier,/^\.\/phone-verification\.js(?:\?v=[\w-]+)?$/);
+    imports.push(specifier);
+    return {PhoneVerification:context.PhoneVerification};
+  };
+  await vm.runInNewContext(`(async()=>{${source}\n})()`,context);
+  assert.equal(imports.length,1,'The enabled form loads the phone controller once');
   assert.equal(node('captcha-privacy').hidden,true,'Test mode never advertises Google verification');
   await form.handlers.submit({preventDefault(){}});
   assert.match(node('form-message').textContent,/ucaller-config\.json/,'Server configuration error is shown instead of a generic failure');

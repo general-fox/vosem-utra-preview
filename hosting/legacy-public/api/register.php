@@ -8,7 +8,11 @@ require __DIR__.'/loyalty-core.php';
 require __DIR__.'/recaptcha.php';
 require __DIR__.'/consent-log.php';
 $loyaltyPrivateRoot = dirname(__DIR__,2).'/vosem-utra-private';
-require $loyaltyPrivateRoot.'/app/loyalty-phone.php';
+$featuresFile = $loyaltyPrivateRoot.'/app/features.php';
+$features = is_file($featuresFile) ? require $featuresFile : [];
+// A production package cannot be switched to the staging phone flow by copied credentials.
+$phoneModuleEnabled = ($features['phone_verification_enabled'] ?? true) === true;
+if ($phoneModuleEnabled) require $loyaltyPrivateRoot.'/app/loyalty-phone.php';
 $GLOBALS['loyalty_request_id'] = bin2hex(random_bytes(8));
 header('X-Request-ID: '.$GLOBALS['loyalty_request_id']);
 loyalty_log('request_received', ['method'=>$_SERVER['REQUEST_METHOD'] ?? '']);
@@ -37,7 +41,7 @@ $_SESSION['touched'] = time();
 if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(32));
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 $expectedOrigin = ($https ? 'https://' : 'http://').($_SERVER['HTTP_HOST'] ?? '');
-try { $phoneConfig = loyalty_phone_config($loyaltyPrivateRoot, $expectedOrigin); }
+try { $phoneConfig = $phoneModuleEnabled ? loyalty_phone_config($loyaltyPrivateRoot, $expectedOrigin) : ['enabled'=>false]; }
 catch (LoyaltyPhoneError $e) { reply(['IsSuccess'=>false,'Message'=>$e->getMessage(),'Code'=>$e->reason],$e->status); }
 catch (Throwable) { reply(['IsSuccess'=>false,'Message'=>'Подтверждение телефона временно недоступно. Свяжитесь с кофейней.'],503); }
 $phoneRequired = $phoneConfig['enabled'];

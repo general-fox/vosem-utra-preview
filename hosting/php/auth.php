@@ -34,6 +34,12 @@ final class CafeAuth
 
     private function now(): int { return ($this->clock)(); }
     private function passwordOnly(): bool { return ($this->config['auth_mode'] ?? '') === 'password'; }
+    private function localTestAccount(array $account): bool
+    {
+        return ($account['localDevelopmentOnly'] ?? false) === true && ($account['username'] ?? '') === 'admin'
+            && ($this->config['allow_http_dev'] ?? false) === true
+            && preg_match('~\Ahttp://(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?\z~D', $this->config['public_origin'] ?? '') === 1;
+    }
     private function requireMfaMode(): void
     {
         if ($this->passwordOnly()) throw new CafeAuthException(410, 'Войдите с почтой и паролем.', 'auth_method_disabled');
@@ -229,6 +235,8 @@ final class CafeAuth
             $account = $this->account($state, $username);
             if ($account === null) return ['current' => null, 'ready' => false, 'enrollmentAvailable' => false];
             if (!$this->originReady()) return ['current' => $account, 'ready' => false, 'enrollmentAvailable' => false];
+            // An explicitly provisioned local test account must never authenticate on hosting.
+            if (($account['localDevelopmentOnly'] ?? false) === true && !$this->localTestAccount($account)) return ['current'=>$account, 'ready'=>false, 'enrollmentAvailable'=>false];
             $this->encryptionKey();
             if ($this->passwordOnly()) return ['current'=>$account, 'ready'=>true, 'enrollmentAvailable'=>false];
             if ($account['totp'] !== null) {
@@ -595,7 +603,7 @@ final class CafeAuth
                 // Persist a verified bootstrap before allowing password changes/recovery.
                 if (self::passwordLength($password) >= 8 && password_needs_rehash($account['passwordHash'], self::passwordAlgorithm(), self::passwordOptions(self::passwordAlgorithm()))) $account['passwordHash'] = self::hashPassword($password);
                 $this->saveAccount($state, $account);
-                if (($account['temporaryPassword'] ?? false) || self::passwordLength($password) < 8) {
+                if (($account['temporaryPassword'] ?? false) || (self::passwordLength($password) < 8 && !$this->localTestAccount($account))) {
                     $grant = self::token();
                     $this->boundedAdd($state['passwordResets'], $grant, ['username'=>$account['username'], 'credentialVersion'=>$account['credentialVersion'], 'phase'=>'password', 'expiresAt'=>$this->now()+300000]);
                     return ['passwordChangeRequired'=>true, 'passwordToken'=>$grant, 'username'=>$account['username'], 'expiresIn'=>300, 'authMode'=>'password'];

@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#F9F7F1">
   <title>Управление меню — Восемь утра</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="preload" href="assets/Lato-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/VosemSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="admin.css">
   <script type="module" src="admin.js"></script>
@@ -103,13 +103,13 @@
       </div>
     </section>
     <section id="dashboard" aria-labelledby="dashboard-title" hidden>
-      <div class="dashboard-intro"><div><p class="eyebrow">ВОСЕМЬ УТРА · УПРАВЛЕНИЕ МЕНЮ</p><h1 id="dashboard-title">Наше меню</h1><p class="muted">Меняйте меню здесь — гости увидят обновления на сайте.</p></div></div>
+      <div class="dashboard-intro"><div><p class="eyebrow">ВОСЕМЬ УТРА · УПРАВЛЕНИЕ МЕНЮ</p><h1 id="dashboard-title">Наше меню</h1><p class="muted">Меняйте меню здесь — гости увидят обновления на сайте.</p></div><button type="button" class="button button-outline button-small" id="import-drinks" hidden>Добавить напитки из меню <span aria-hidden="true">+</span></button></div>
       <div class="dashboard-controls" data-keeper><div class="menu-mode-switch" role="group" aria-label="Где находятся блюда"><button type="button" id="mode-site" aria-pressed="true" aria-controls="menu-content"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>На сайте</button><button type="button" id="mode-cash" aria-pressed="false" aria-controls="menu-content"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10h14l2 10H3l2-10Z"/><rect x="6" y="3" width="12" height="7" rx="1.5"/><path d="M7 16h10m-9-3h1m3 0h1m3 0h1"/></svg>На кассе</button></div><div class="keeper-sync"><button type="button" class="button button-outline button-small" id="sync-availability"><span aria-hidden="true">↻</span><span id="sync-availability-label">Синхронизировать стоп-лист и остатки</span></button><p class="field-help" id="keeper-sync-status" role="status"></p></div></div>
       <div class="admin-notice" id="dashboard-notice" hidden><p id="dashboard-message" role="status"></p><button type="button" class="text-link" id="retry-load" hidden>Обновить меню ↻</button></div>
       <nav class="admin-category-tabs" id="category-tabs" aria-label="Основные группы меню"></nav>
       <div class="menu-toolbar" id="menu-toolbar"><div class="admin-search"><label class="visually-hidden" for="search">Найти блюдо по названию или описанию</label><svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="m15.3 15.3 5.2 5.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="search" placeholder="Найти блюдо" autocomplete="off"></div><button type="button" class="button button-dark button-small" id="add-dish" hidden>Добавить блюдо <span aria-hidden="true">+</span></button><button type="button" class="button button-outline button-small" id="manage-categories">Редактировать группы <span aria-hidden="true">↗</span></button><button type="button" class="refresh-button" id="refresh" aria-label="Обновить меню с сервера" title="Обновить меню с сервера">↻</button></div>
       <div id="menu-content"><div class="cash-navigation" id="cash-navigation" hidden><button type="button" class="text-link cash-back" id="cash-back">← Назад</button><nav class="cash-breadcrumbs" id="cash-breadcrumbs" aria-label="Путь в меню кассы"></nav></div>
-      <div class="admin-category-heading"><h2 id="category-heading">Завтраки</h2><p id="category-context">Размещайте блюда из кассы и редактируйте их для сайта.</p></div>
+      <div class="admin-category-heading"><h2 id="category-heading">Завтраки</h2><p id="category-context">Размещайте блюда из кассы и редактируйте их для сайта.</p><button type="button" class="button button-outline button-small" id="manage-drink-sections" hidden>Редактировать подгруппы <span aria-hidden="true">↗</span></button></div>
       <p id="results-count" class="results-count" role="status"></p><div class="menu-dish-grid" id="menu-dish-grid"><div class="cash-groups" id="cash-groups" hidden></div>
       <div class="admin-items" id="items"></div></div></div>
       <div class="empty-state" id="empty-state" hidden><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><h2 id="empty-title">В этой группе пока нет блюд</h2><p id="empty-description">Выберите блюдо во вкладке «На кассе» и укажите группу сайта.</p><button type="button" class="button button-outline button-small" id="empty-browse-cash">Открыть меню кассы <span aria-hidden="true">↗</span></button></div>
@@ -124,8 +124,22 @@
       <p class="editor-keeper-status" id="editor-keeper-status" hidden></p>
       <fieldset id="editor-fields">
         <div class="editor-layout">
-          <div class="photo-column"><div class="photo-preview" id="photo-preview"><div class="photo-placeholder" id="photo-placeholder"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><p>Здесь будет<br>фотография блюда</p></div><img id="preview-image" alt="Предпросмотр фотографии блюда" hidden></div><div class="admin-field photo-field"><label for="photo">Фотография <small>необязательно</small></label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help"><p class="field-help" id="photo-help">JPG, PNG или WebP, до 5 МБ. Лучше всего подойдёт квадратное фото.</p></div><button type="button" class="text-link remove-photo" id="remove-photo" hidden>Убрать фотографию</button></div>
-          <div class="editor-inputs"><div class="admin-field"><label for="item-name">Название <span aria-hidden="true">*</span></label><input id="item-name" name="name" maxlength="160" placeholder="Как называется ваше блюдо" required></div><div class="admin-field"><label for="description">Описание</label><textarea id="description" name="description" rows="4" maxlength="2000" placeholder="Ингредиенты и всё, что делает блюдо особенным"></textarea></div><div class="field-pair"><div class="admin-field"><label for="price">Цена, ₽ <span aria-hidden="true">*</span></label><input id="price" name="price" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" placeholder="650" required></div></div><div class="admin-field"><label for="category">Группа на сайте <span aria-hidden="true">*</span></label><select id="category" name="category" aria-describedby="category-help"><option value="">Не размещать на сайте</option></select><p class="field-help" id="category-help">Выберите группу, в которой гости будут видеть блюдо.</p></div><label class="dish-visibility" for="show-on-site"><input id="show-on-site" type="checkbox" role="switch" aria-describedby="visibility-help" checked><span class="visibility-switch" aria-hidden="true"></span><span><strong>Показывать на сайте</strong><small id="visibility-help">Если выключить, блюдо останется в этой группе в админке.</small></span></label></div>
+          <div class="photo-column"><div class="photo-preview" id="photo-preview"><div class="photo-placeholder" id="photo-placeholder"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span><p>Здесь будет<br>фотография блюда</p></div><img id="preview-image" alt="Предпросмотр фотографии блюда" hidden></div><div class="admin-field photo-field"><label for="photo">Фотография <small>необязательно</small></label><input id="photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help"><p class="field-help" id="photo-help">JPG, PNG или WebP, до 100 МБ. Большие фото автоматически подготовим для сайта.</p></div><button type="button" class="text-link remove-photo" id="remove-photo" hidden>Убрать фотографию</button></div>
+          <div class="editor-inputs">
+            <div class="admin-field"><label for="item-name">Название <span aria-hidden="true">*</span></label><input id="item-name" name="name" maxlength="160" placeholder="Как называется ваше блюдо" required></div>
+            <div class="admin-field"><label for="description">Описание</label><textarea id="description" name="description" rows="4" maxlength="2000" placeholder="Ингредиенты и всё, что делает блюдо особенным"></textarea></div>
+            <div class="admin-field"><label for="item-kind">Тип позиции</label><select id="item-kind"><option value="dish">Блюдо</option><option value="drink">Напиток</option></select></div>
+            <div class="admin-field" id="dish-price-field"><label for="price">Цена, ₽ <span aria-hidden="true">*</span></label><input id="price" name="price" type="number" min="0" max="1000000" step="0.01" inputmode="decimal" placeholder="650" required></div>
+            <fieldset id="drink-fields" class="drink-editor" hidden disabled>
+              <legend class="visually-hidden">Параметры напитка</legend>
+              <div class="admin-field"><label for="drink-section">Подгруппа напитков <span aria-hidden="true">*</span></label><input id="drink-section" maxlength="80" list="drink-sections" placeholder="Например, кофе или чай" aria-describedby="drink-section-help" required><datalist id="drink-sections"></datalist><p class="field-help" id="drink-section-help">Выберите существующую подгруппу или введите новую. Группа на сайте выбирается ниже.</p></div>
+              <div class="drink-editor-section" role="group" aria-labelledby="drink-variants-label"><h3 id="drink-variants-label">Объёмы и цены</h3><p class="field-help" id="drink-variants-help">Цена первого объёма — основная цена напитка. До 10 объёмов.</p><div class="drink-editor-rows" id="drink-variants"></div><button type="button" class="button button-outline button-small drink-add-row" id="add-drink-variant">Добавить объём <span aria-hidden="true">+</span></button></div>
+              <details class="drink-editor-section drink-addons-details" id="drink-addons-details"><summary>Добавки <span class="field-help">необязательно</span></summary><p class="field-help">Например, сироп или альтернативное молоко. До 12 добавок.</p><div class="drink-editor-rows" id="drink-addons"></div><button type="button" class="button button-outline button-small drink-add-row" id="add-drink-addon">Добавить добавку <span aria-hidden="true">+</span></button></details>
+              <label class="drink-child-control" for="drink-child-friendly"><input id="drink-child-friendly" type="checkbox"><span>Подходит детям</span></label>
+            </fieldset>
+            <div class="admin-field"><label for="category">Группа на сайте <span aria-hidden="true">*</span></label><select id="category" name="category" aria-describedby="category-help"><option value="">Не размещать на сайте</option></select><p class="field-help" id="category-help">Выберите группу, в которой гости будут видеть блюдо.</p></div>
+            <label class="dish-visibility" for="show-on-site"><input id="show-on-site" type="checkbox" role="switch" aria-describedby="visibility-help" checked><span class="visibility-switch" aria-hidden="true"></span><span><strong>Показывать на сайте</strong><small id="visibility-help">Если выключить, блюдо останется в этой группе в админке.</small></span></label>
+          </div>
         </div>
       </fieldset>
       <p class="admin-message error" id="editor-error" role="alert" hidden></p>
@@ -158,6 +172,19 @@
       </fieldset>
       <p class="admin-message error" id="categories-error" role="alert" hidden></p>
       <div class="editor-footer"><p>Группы сайта не меняют структуру меню кассы.</p><div><button type="button" class="button button-outline button-small" id="cancel-categories">Отмена</button><button type="submit" class="button button-dark button-small" id="save-categories">Сохранить группы</button></div></div>
+    </form>
+  </dialog>
+  <dialog class="categories-dialog drink-sections-dialog" id="drink-sections-dialog" aria-labelledby="drink-sections-title">
+    <form id="drink-sections-form">
+      <div class="editor-heading"><div><p class="eyebrow">ПОРЯДОК В МЕНЮ</p><h2 id="drink-sections-title" tabindex="-1">Подгруппы напитков</h2></div><button type="button" class="close-button" id="close-drink-sections" aria-label="Закрыть подгруппы"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+      <fieldset id="drink-sections-fields">
+        <p class="category-manager-intro" id="drink-sections-context"></p>
+        <p class="field-help group-sort-help" id="drink-sections-help">Меняйте названия прямо в списке. Перетащите подгруппу за точки или используйте стрелки. Сверху — первая подгруппа на сайте.</p>
+        <ol class="category-sort-list" id="drink-sections-list" aria-label="Подгруппы напитков в порядке показа" aria-describedby="drink-sections-help"></ol>
+        <p class="visually-hidden" id="drink-sections-announcement" role="status" aria-live="polite"></p>
+      </fieldset>
+      <p class="admin-message error" id="drink-sections-error" role="alert" hidden></p>
+      <div class="editor-footer"><p>Изменения появятся на сайте после сохранения.</p><div><button type="button" class="button button-outline button-small" id="cancel-drink-sections">Отмена</button><button type="submit" class="button button-dark button-small" id="save-drink-sections">Сохранить</button></div></div>
     </form>
   </dialog>
 </body>
