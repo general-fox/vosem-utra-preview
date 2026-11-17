@@ -1,10 +1,18 @@
 export const deliveryPages = ['checkout', 'order-terms', 'staff', 'staff-demo'];
 
+// Raw HTML is a catalog too: GitHub Pages publishes it without running Vite.
+const deliveryAssets = `<link rel="stylesheet" href="cart.css">
+  <script type="module" src="cart.js"></script>`;
+const deliveryCart = `<button type="button" class="header-cart" data-cart-open aria-label="Открыть корзину, порций: 0" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true" focusable="false"><path d="m8 9 4-6 4 6M3 9h18l-1.8 10a2 2 0 0 1-2 1.6H6.8a2 2 0 0 1-2-1.6L3 9Zm5 4 .5 4M12 13v4m4-4-.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-cart-count aria-hidden="true">0</span></button>`;
+
 // Applied before Vite resolves entries, so delivery assets never enter the catalog build.
 export function profileHtml(html, delivery) {
   const profile = delivery ? 'delivery' : 'catalog';
   html = html.replace(/<meta\b[^>]*name="cafe-profile"[^>]*>/g, '');
   html = html.replace('</head>', `<meta id="site-profile" name="cafe-profile" content="${profile}"></head>`);
+  html = html
+    .replace('<!-- delivery:assets -->', delivery ? deliveryAssets : '')
+    .replace('<!-- delivery:cart -->', delivery ? deliveryCart : '');
   if (delivery) return html;
   return html
     .replaceAll('2026-09-29-reg5', '2026-10-01-reg6')

@@ -5,7 +5,7 @@ import { createDrinkAddonsDialog } from './drink-addons-dialog.js';
 import { setupMenuHeader } from './menu-header.js';
 
 const root = document.querySelector('[data-breakfast-menu]');
-const deliveryEnabled = document.querySelector('meta[name="cafe-profile"]')?.content !== 'catalog';
+const deliveryEnabled = document.querySelector('meta[name="cafe-profile"]')?.content === 'delivery';
 let categories = normalizeMenuCategories();
 const money = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const pageBase = new URL('./', location.href);
