@@ -127,15 +127,21 @@ try {
     check(str_contains($html, '2 блюда') && str_contains($html, '123,45') && str_contains($html, '120,5'), 'Count and decimal money rendered');
     preg_match('~<!-- SEO:DISH-GRID:START -->(.*?)<!-- SEO:DISH-GRID:END -->~s', $html, $gridSlot);
     preg_match('~<!-- SEO:DISH-EXTRAS:START -->(.*?)<!-- SEO:DISH-EXTRAS:END -->~s', $html, $listSlot);
-    check(substr_count($gridSlot[1], '<article ') === 1 && !str_contains($gridSlot[1], 'Каша'), 'Only photographed dishes appear in the card grid');
-    check(substr_count($listSlot[1], '<article ') === 1 && str_contains($listSlot[1], 'Каша') && !str_contains($listSlot[1], '<img '), 'Dishes without photos appear once in the list below');
-    check(str_contains($html, 'data-extra-section>'), 'List is visible before JavaScript loads');
+    check(substr_count($gridSlot[1], '<article ') === 2 && strpos($gridSlot[1], 'Каша') < strpos($gridSlot[1], '&lt;кофе&gt;'), 'Photographed and unphotographed dishes share the grid in menu order');
+    check(trim($listSlot[1]) === '' && str_contains($html, 'data-extra-section hidden>'), 'The obsolete separate list stays empty and hidden');
+    check(substr_count($gridSlot[1], 'class="dish-card"') === 2 && !str_contains($gridSlot[1], 'dish-card-text'), 'All food cards share the same dimensions class');
+    check(str_contains($gridSlot[1], 'class="dish-visual dish-placeholder" aria-hidden="true"') && str_contains($gridSlot[1], '<span class="dish-placeholder-mark" aria-hidden="true"></span>'), 'Placeholder occupies the photo visual and its shared brand mark is decorative');
+    check(!str_contains($gridSlot[1], 'Без фотографии'), 'Placeholder has no redundant label');
     check(str_contains($html, 'href="https://vosem-utra.ru/"') && str_contains($html, 'https://vosem-utra.ru/social-cover.webp'), 'Stable canonical and social photo');
     preg_match('~<script type="application/ld\+json" id="cafe-structured-data">(.*?)</script>~s', $html, $schemaMatch);
     $schema = json_decode($schemaMatch[1], true, 512, JSON_THROW_ON_ERROR);
     check($schema['telephone'] === '+79851308106' && $schema['@type'] === 'CafeOrCoffeeShop', 'Factual cafe schema');
     $schemaNames = [];
-    foreach ($schema['hasMenu']['hasMenuSection'] as $section) foreach ($section['hasMenuItem'] as $dish) $schemaNames[] = $dish['name'];
+    foreach ($schema['hasMenu']['hasMenuSection'] as $section) foreach ($section['hasMenuItem'] as $dish) {
+        $schemaNames[] = $dish['name'];
+        if ($dish['name'] === 'Каша') check(!array_key_exists('image', $dish), 'A decorative placeholder never becomes a structured-data photo');
+        if ($dish['name'] === item()['name']) check($dish['image'] === CAFE_SITE_URL.'menu-images/toast.jpg', 'A real photo remains unchanged in structured data');
+    }
     check(in_array(item()['name'], $schemaNames, true), 'Escaped JSON roundtrips original dish name');
     $again = cafe_transform_page($html, 'index', true, [array_replace(item(), ['name'=>'Changed after build'])]);
     check(substr_count($again, 'id="cafe-structured-data"') === 1 && !str_contains($again, 'Каша') && str_contains($again, 'Changed after build'), 'Live transform replaces old menu and schema');
@@ -150,8 +156,17 @@ try {
     check(count($nonces[1]) === 2 && count(array_unique($nonces[1])) === 1 && !str_contains($nonceOne, 'nonce="stale"') && $nonceOne !== $nonceTwo, 'Unique per-response nonce applied to every script');
     $availableCard = cafe_dish_html(item());
     $unavailableCard = cafe_dish_html(array_replace(item('unavailable'), ['availableForOrder'=>false, 'image'=>'']));
+    $drinkCard = cafe_dish_html(array_replace(item('coffee'), ['image'=>'', 'drink'=>['section'=>'Кофе', 'variants'=>[['volumeMl'=>200, 'price'=>123.45]], 'addons'=>[]]]));
+    check(str_contains($drinkCard, 'class="dish-card"') && str_contains($drinkCard, 'dish-placeholder-mark') && !str_contains($drinkCard, 'dish-card-text'), 'Drinks without photos share the full card and decorative placeholder');
+    $drinkPage = cafe_transform_page(template(), 'index', true, [array_replace(item('coffee'), ['image'=>'', 'drink'=>['section'=>'Кофе', 'variants'=>[['volumeMl'=>200, 'price'=>123.45]], 'addons'=>[]]])]);
+    preg_match('~<!-- SEO:DISH-EXTRAS:START -->(.*?)<!-- SEO:DISH-EXTRAS:END -->~s', $drinkPage, $drinkSlot);
+    preg_match('~<!-- SEO:DISH-GRID:START -->(.*?)<!-- SEO:DISH-GRID:END -->~s', $drinkPage, $drinkGrid);
+    check(trim($drinkSlot[1]) === '' && str_contains($drinkPage, 'data-extra-section hidden>') && str_contains($drinkGrid[1], 'data-reveal-key="dish:coffee"'), 'Drinks without photos are in the main grid, never a separate list');
+    preg_match('~<script type="application/ld\+json" id="cafe-structured-data">(.*?)</script>~s', $drinkPage, $drinkSchema);
+    $drinkStructured = json_decode($drinkSchema[1], true, 512, JSON_THROW_ON_ERROR)['hasMenu']['hasMenuSection'][0]['hasMenuItem'][0];
+    check($drinkStructured['name'] === item()['name'] && !array_key_exists('image', $drinkStructured), 'Drink remains in structured data without inventing a photograph');
     check(str_contains($availableCard, 'data-cart-add="toast"') && str_contains($availableCard, 'aria-label="В корзину: ') && !str_contains($availableCard, ' disabled'), 'Legacy photo card has accessible enabled cart control');
-    check(str_contains($unavailableCard, 'data-cart-add="unavailable"') && str_contains($unavailableCard, 'aria-label="Временно недоступно: ') && str_contains($unavailableCard, ' disabled>Временно недоступно</button>'), 'Unavailable text card has a disabled cart control');
+    check(str_contains($unavailableCard, 'data-cart-add="unavailable"') && str_contains($unavailableCard, 'aria-label="Временно недоступно: ') && str_contains($unavailableCard, ' disabled>Временно недоступно</button>'), 'Unavailable placeholder card retains its disabled cart control');
     $passed[] = 'live initial HTML, escaped JSON-LD, metadata, preview and nonce transforms';
 
     $imagePrivate = fixture($root, 'images'); $imageMenu = new CafeMenu($imagePrivate, $config);

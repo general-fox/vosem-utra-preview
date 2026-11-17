@@ -18,11 +18,12 @@ test('preview stays noindex while rendering real breakfast cards without JavaScr
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
   assert.doesNotMatch(html, /rel="canonical"|property="og:|application\/ld\+json|site-verification|yandex-verification/);
   assert.ok(html.includes(`<title>${SEO_TITLE}</title>`));
-  assert.equal((slot(html, 'DISH-GRID').match(/<article /g) || []).length, seed.items.filter(item => item.published && item.image).length);
-  assert.equal((slot(html, 'DISH-EXTRAS').match(/<article /g) || []).length, seed.items.filter(item => item.published && !item.image).length);
+  const gridItems = seed.items.filter(item => item.published).sort((left, right) => left.order - right.order);
+  assert.deepEqual([...slot(html, 'DISH-GRID').matchAll(/data-reveal-key="dish:([^"]+)"/g)].map(match => match[1]), gridItems.map(item => item.id));
+  assert.equal(slot(html, 'DISH-EXTRAS').trim(), '');
   assert.match(html, /Авокадо-тост с яйцом пашот и гуакамоле/);
   assert.match(html, /data-menu-roots/);
-  assert.match(html, /data-extra-section>/);
+  assert.match(html, /data-extra-section hidden>/);
   assert.doesNotMatch(html, /Чтобы увидеть карточки блюд/);
 });
 
@@ -68,9 +69,9 @@ test('JSON-LD uses only established cafe facts and the visible published menu', 
 
 test('re-rendering built HTML replaces old cards, counts and schema with the live menu', () => {
   const initial = transformPage(home, { production: true, items: [item({ name: 'Старый завтрак' }), item({ id: 'porridge', name: 'Каша', image: '' })] });
-  assert.doesNotMatch(slot(initial, 'DISH-GRID'), /Каша/);
-  assert.match(slot(initial, 'DISH-EXTRAS'), /Каша/);
-  assert.match(initial, /data-extra-section>/);
+  assert.match(slot(initial, 'DISH-GRID'), /Каша/);
+  assert.equal(slot(initial, 'DISH-EXTRAS').trim(), '');
+  assert.match(initial, /data-extra-section hidden>/);
   const live = transformPage(initial, { production: true, items: [item({ name: 'Новый завтрак', price: 650.5 })] });
   assert.doesNotMatch(live, /Старый завтрак|>Каша<|"name":"Каша"/);
   assert.deepEqual(renderedNames(live), ['Новый завтрак']);
@@ -96,7 +97,7 @@ test('HTML, JSON-LD and verification values cannot break out into executable mar
     googleVerification: '"><script>alert(2)</script>', yandexVerification: '" onload="alert(3)',
   });
   assert.doesNotMatch(html, /<script>alert\(|src="javascript:|content="" onload=/);
-  assert.match(slot(html, 'DISH-EXTRAS'), /&lt;\/script&gt;&lt;script&gt;alert\(&quot;x&quot;\)/);
+  assert.match(slot(html, 'DISH-GRID'), /&lt;\/script&gt;&lt;script&gt;alert\(&quot;x&quot;\)/);
   assert.equal(schema(html).hasMenu.hasMenuSection[0].hasMenuItem[0].name, attack);
   assert.match(html, /name="google-site-verification" content="&quot;&gt;&lt;script&gt;/);
   assert.match(html, /name="yandex-verification" content="&quot; onload=&quot;alert\(3\)"/);
@@ -118,7 +119,51 @@ test('rendered menu hides drafts and rejects unsafe images or invalid prices', (
   assert.equal(result.count, 3);
   assert.doesNotMatch(result.grid + result.extras, /Не показывать|Плохая цена|https:\/\/other|\.\.\//);
   assert.match(result.grid, /src="menu-images\/toast.webp"/);
-  assert.match(result.extras, /Без внешнего фото/);
+  assert.match(result.grid, /Без внешнего фото/);
+  assert.equal(result.extras, '');
+  assert.equal((result.grid.match(/class="dish-visual dish-placeholder"/g) || []).length, 2);
+});
+
+test('food cards share one ordered grid with decorative placeholders and no invented schema images', () => {
+  const items = [
+    item({ id: 'last', name: 'Последнее блюдо', image: '', order: 30 }),
+    item({ id: 'photo', name: 'Блюдо с фото', order: 20 }),
+    item({ id: 'first', name: 'Первое блюдо', image: '', order: 10 }),
+  ];
+  const before = structuredClone(items);
+  const html = transformPage(home, { production: true, items, delivery: false });
+  const grid = slot(html, 'DISH-GRID');
+  assert.deepEqual(renderedNames(html), ['Первое блюдо', 'Блюдо с фото', 'Последнее блюдо']);
+  assert.equal((grid.match(/class="dish-card"/g) || []).length, 3);
+  assert.equal((grid.match(/class="dish-visual dish-placeholder" aria-hidden="true"/g) || []).length, 2);
+  assert.equal((grid.match(/<span class="dish-placeholder-mark" aria-hidden="true"><\/span>/g) || []).length, 2);
+  assert.doesNotMatch(grid, /dish-card-text|Без фотографии|data-cart-add|src="[^"]*placeholder/);
+  assert.equal(slot(html, 'DISH-EXTRAS').trim(), '');
+  assert.match(html, /data-extra-section hidden>/);
+  const dishes = schema(html).hasMenu.hasMenuSection.flatMap(section => section.hasMenuItem);
+  assert.equal(dishes.find(dish => dish.name === 'Блюдо с фото').image, `${SITE_URL}menu-images/toast.webp`);
+  for (const name of ['Первое блюдо', 'Последнее блюдо']) assert.equal(Object.hasOwn(dishes.find(dish => dish.name === name), 'image'), false);
+  assert.deepEqual(items, before, 'Placeholders never become menu data or real photos');
+});
+
+test('drinks with and without photos share the ordered card grid and retain real schema images only', () => {
+  const drink = item({ id: 'coffee', name: 'Кофе', image: '', order: 0, drink: { section: 'Кофе', variants: [{ volumeMl: 200, price: 450 }], addons: [] } });
+  const photographedDrink = { ...drink, id: 'latte', name: 'Латте', image: '/menu-images/latte.webp', order: 2 };
+  const items = [photographedDrink, item({ order: 1 }), drink];
+  const before = structuredClone(items);
+  const result = renderMenu(items);
+  assert.equal(result.count, 3); assert.equal(result.extras, '');
+  assert.deepEqual([...result.grid.matchAll(/data-reveal-key="dish:([^"]+)"/g)].map(match => match[1]), ['coffee', 'toast', 'latte']);
+  assert.equal((result.grid.match(/class="dish-card"/g) || []).length, 3);
+  assert.equal((result.grid.match(/class="dish-visual dish-placeholder"/g) || []).length, 1);
+  assert.doesNotMatch(result.grid, /dish-card-text|Без фотографии/);
+  const html = transformPage(home, { production: true, items });
+  assert.match(html, /data-extra-section hidden>/);
+  const dishes = schema(html).hasMenu.hasMenuSection.flatMap(section => section.hasMenuItem);
+  assert.equal(dishes.length, 3, 'The full food and drink menu remains in JSON-LD');
+  assert.equal(Object.hasOwn(dishes.find(dish => dish.name === 'Кофе'), 'image'), false);
+  assert.equal(dishes.find(dish => dish.name === 'Латте').image, `${SITE_URL}menu-images/latte.webp`);
+  assert.deepEqual(items, before, 'Rendering leaves drink volumes and addons unchanged');
 });
 
 test('robots allows crawlers to see noindex and sitemap lists only the canonical production homepage', async () => {

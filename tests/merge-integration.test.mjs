@@ -18,15 +18,18 @@ test('merged homepage keeps cookies, menu and cart with one entry per module', a
   assert.match(html, /id="club"/);
 });
 
-test('merged cookie section documents both registration and order storage', async () => {
+test('imported catalog policy documents registration and FlashCall without disabled order storage', async () => {
   const html = await read('privacy.html');
   assert.doesNotMatch(html, /^(?:<<<<<<<|=======|>>>>>>>)/m);
   assert.equal((html.match(/id="cookies"/g) || []).length, 1);
-  for (const key of ['vosem_cookie_choice', 'vosem_loyalty', '_GRECAPTCHA', 'vosem_cart_v1', 'vosem_order_guest', 'vosem_admin']) {
+  for (const key of ['vosem_cookie_choice', 'vosem_loyalty', '_GRECAPTCHA', 'vosem_admin']) {
     assert.ok(html.includes(key), key);
   }
+  assert.doesNotMatch(html, /vosem_cart_v1|vosem_order_guest/);
+  assert.match(html, /id="phone-verification"/);
+  assert.match(html, /FlashCall/);
   assert.match(html, /Только необходимые/);
-  assert.match(html, /GitHub Pages/);
+  assert.match(html, /name="robots" content="noindex, nofollow"/);
 });
 
 test('REG build does not inject a second copy of the homepage cookie module', async () => {

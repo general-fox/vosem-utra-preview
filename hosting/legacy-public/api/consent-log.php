@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const CONSENT_VERSION = '2026-09-29-reg5';
+const CONSENT_VERSION = '2026-10-19-reg13';
 
 function consent_document_hash(string $document): string {
     if (!in_array($document, ['consent', 'privacy'], true)) throw new RuntimeException('consent_document_invalid');
@@ -35,7 +35,7 @@ function consent_key(): string {
     return $key;
 }
 
-function consent_record(array $payload): string {
+function consent_record(array $payload, bool $registrationGuard = false): string {
     $dir = consent_directory();
     $key = consent_key();
     $id = bin2hex(random_bytes(16));
@@ -48,6 +48,7 @@ function consent_record(array $payload): string {
         'payload_hmac'=>hash_hmac('sha256',json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),$key),
         'status'=>'submitted',
     ];
+    if ($registrationGuard) $record['registration_guard']='phone-v1';
     // No names, date of birth, phone, comment, IP or captcha token in the receipt.
     $file = $dir.'/'.$id.'.json';
     $data = json_encode($record,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);

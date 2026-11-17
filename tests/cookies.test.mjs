@@ -68,7 +68,8 @@ test('both privacy pages distinguish public search indexing from visitor analyti
     assert.match(policy, /id="search-engines">10\./);
     assert.match(policy, /Яндексом, Google/);
     assert.match(policy, /Яндекс Метрика и Google Analytics на сайте не подключены/);
-    assert.match(policy, /не публикует данные анкет гостей, заказов/);
+    assert.match(policy, /не публикует данные анкет гостей и учётные данные сотрудников/);
+    assert.doesNotMatch(policy, /vosem_cart_v1|vosem_order_guest/, 'The imported site is a catalog without ordering');
     assert.match(policy, /id="final">11\./);
   }
 });

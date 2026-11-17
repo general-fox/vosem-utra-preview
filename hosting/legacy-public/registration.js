@@ -1,5 +1,6 @@
 'use strict';
 import { cookieConsent } from './cookies.js?v=20260921-reg3';
+import { attachBirthDateInput } from './birth-date.js?v=dec0117bacee';
 const form = document.getElementById('registration-form');
 const submit = document.getElementById('submit-button');
 const message = document.getElementById('form-message');
@@ -7,22 +8,24 @@ const dateInput = document.getElementById('birth-date');
 const phone = document.getElementById('phone');
 const captchaStatus = document.getElementById('captcha-status');
 const consentVersion = form.elements.namedItem('ConsentVersion').value;
-const now = new Date();
-dateInput.max = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+const birthDate = attachBirthDateInput(dateInput);
 let sending = false, csrf = '', captchaWidget = null, captchaMode = 'checkbox';
 let captchaAllowed = false, captchaPromise = null, captchaPending = null, uncertain = false;
 let googleStarted = false, stopping = false, permissionWithdrawn = false, postedOnce = false, confirmed = false;
+let autoCompleteChallenge = '';
 let recaptchaRequired = form.dataset.phoneTest !== 'true';
 function sessionError(text) { const error = new Error(text); error.userMessage = true; return error; }
 // The optional module is shipped only in the phone-verification build.
 const phoneEnabled = form.dataset.phoneVerification === 'true';
-const phoneCheck = phoneEnabled ? new (await import('./phone-verification.js?v=20261002-1')).PhoneVerification({ document, request: async payload => {
+const phoneProvider = form.dataset.phoneProvider || '';
+const guestPresentation = form.dataset.phonePresentation === 'guest';
+const phoneModule = phoneEnabled ? await import('./phone-verification.js?v=d11a620c174c') : null;
+const phoneCheck = phoneEnabled ? new phoneModule.PhoneVerification({ document, guestPresentation, preview: form.dataset.phonePreview === 'true', onChange: syncPhoneControls, request: async payload => {
   const response = await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload)});
   const data = await response.json();
   if (!response.ok || data.IsSuccess !== true) {
-    const error = new Error(data.Message || 'Не удалось подтвердить телефон. Попробуйте ещё раз.');
+    const error = new Error(phoneModule.phoneErrorMessage(data));
     error.retryAfter = Number(data.retryAfter) || 0; error.userMessage = true;
-    if (error.retryAfter > 0) error.message += ` Повторный звонок будет доступен через ${Math.ceil(error.retryAfter/60)} мин.`;
     throw error;
   }
   return data;
@@ -34,13 +37,32 @@ const phoneCheck = phoneEnabled ? new (await import('./phone-verification.js?v=2
   async confirm() { return true; },
   reset() {}, dispose() {}
 };
-phoneCheck.configure(form.dataset.phoneVerification === 'true',form.dataset.phoneTest === 'true');
+phoneCheck.configure(form.dataset.phoneVerification === 'true',form.dataset.phoneTest === 'true',form.dataset.phoneRestrictedNumber === undefined ? form.dataset.phoneTest === 'true' : form.dataset.phoneRestrictedNumber === 'true');
 document.getElementById('captcha-privacy').hidden = !recaptchaRequired;
 document.getElementById('captcha-notice').hidden = !recaptchaRequired;
-function submitLabel() { return uncertain ? 'Уточните результат у кофейни' : phoneCheck.required ? phoneCheck.challenge ? 'Подтвердить и зарегистрироваться' : 'Подтвердить номер' : 'Зарегистрироваться'; }
-submit.textContent = submitLabel();
+function submitLabel() { return uncertain ? 'Уточните результат у кофейни' : phoneCheck.required ? phoneCheck.challenge?.verified ? 'Завершить регистрацию' : 'Подтвердить номер' : 'Зарегистрироваться'; }
+function updateSubmit() {
+  // Once a number is issued, the call link is the main action. A failed request has its own retry button.
+  submit.hidden = phoneCheck.required && Boolean(phoneCheck.challenge) && !phoneCheck.challenge.verified && !uncertain;
+  if (!sending) submit.textContent = submitLabel();
+}
+function syncPhoneControls() {
+  updateSubmit();
+  if (!phoneEnabled) return;
+  void Promise.resolve().then(() => {
+    const challenge = phoneCheck.challenge;
+    if (!challenge?.verified || sending || uncertain || stopping || confirmed || form.hidden || document.visibilityState === 'hidden') return;
+    if (autoCompleteChallenge === challenge.id || phoneCheck.number !== normalizedPhone(phone.value)) return;
+    if (!form.elements.namedItem('Consent').checked || !document.getElementById('phone-consent').checked || !form.reportValidity()) return;
+    // One automatic submit per verified challenge; uncertain final requests are never repeated.
+    autoCompleteChallenge = challenge.id;
+    form.requestSubmit();
+  });
+}
+updateSubmit();
+document.addEventListener?.('visibilitychange', () => { if (document.visibilityState !== 'hidden') syncPhoneControls(); });
 function showMessage(text) { message.textContent = text; message.hidden = false; }
-function showSuccess(test = false) {
+function showSuccess(test = false, alreadyRegistered = false) {
   form.reset(); form.hidden = true;
   document.querySelector('h1').textContent = 'Добро пожаловать!';
   document.querySelector('.intro').hidden = true;
@@ -50,6 +72,10 @@ function showSuccess(test = false) {
     document.querySelector('h1').textContent = 'Номер подтверждён';
     success.querySelector('h2').textContent = 'Проверка прошла успешно';
     success.querySelector('p').textContent = 'Это тест: анкета не отправлена в FlexBonus, бонусы не начислялись.';
+  } else if (alreadyRegistered) {
+    document.querySelector('h1').textContent = 'Вы уже в клубе гостей';
+    success.querySelector('h2').textContent = 'Рады видеть вас снова';
+    success.querySelector('p').textContent = 'Регистрация с этим номером уже есть. Назовите его при заказе в кофейне.';
   }
   phoneCheck.dispose();
 }
@@ -110,8 +136,9 @@ async function getToken() {
   if (!data || typeof data.csrf !== 'string' || (data.recaptchaRequired !== false && !data.recaptchaSiteKey)) throw sessionError('Не удалось получить настройки формы. Обновите страницу; если ошибка повторится, сообщите администратору.');
   if (data.consentVersion !== consentVersion) throw new Error('consent_version');
   csrf = data.csrf;
+  if (phoneEnabled && (data.phoneVerificationProvider !== phoneProvider || data.phoneVerificationMethod !== 'incoming')) throw sessionError('Способ подтверждения изменился. Обновите страницу.');
   recaptchaRequired = data.recaptchaRequired !== false;
-  phoneCheck.configure(data.phoneVerificationRequired === true,data.phoneTestMode === true);
+  phoneCheck.configure(data.phoneVerificationRequired === true,data.phoneTestMode === true,data.phoneRestrictedNumber ?? (data.phoneTestMode === true));
   document.getElementById('captcha-privacy').hidden = !recaptchaRequired;
   document.getElementById('captcha-notice').hidden = !recaptchaRequired;
   if (recaptchaRequired) {
@@ -133,7 +160,9 @@ function requestCaptchaToken() {
       if (captchaMode === 'invisible') {
         window.grecaptcha.reset(captchaWidget); window.grecaptcha.execute(captchaWidget);
       } else {
-        captchaStatus.textContent = 'Пройдите проверку «Я не робот» — после неё анкета отправится автоматически.';
+        captchaStatus.textContent = phoneCheck.required && !phoneCheck.challenge?.verified
+          ? 'Пройдите проверку «Я не робот», чтобы подтвердить номер.'
+          : 'Пройдите проверку «Я не робот» — после неё регистрация завершится автоматически.';
         document.getElementById('recaptcha-widget').scrollIntoView({block:'center',behavior:'smooth'});
       }
     }
@@ -216,7 +245,7 @@ phone.addEventListener('beforeinput', event => {
 });
 phone.addEventListener('blur', applyPhoneMask);
 phone.addEventListener('input', () => {
-  if (phoneCheck.number && phoneCheck.number !== normalizedPhone(phone.value)) { phoneCheck.reset(); submit.textContent = submitLabel(); }
+  if (phoneCheck.number && phoneCheck.number !== normalizedPhone(phone.value)) { phoneCheck.reset(); updateSubmit(); }
 });
 
 async function verificationPayload() {
@@ -226,21 +255,6 @@ async function verificationPayload() {
   return {Phone:normalizedPhone(phone.value),Consent:form.elements.namedItem('Consent').checked,PhoneConsent:document.getElementById('phone-consent')?.checked === true,
     ConsentVersion:consentVersion,CaptchaConsent:captchaAllowed,RecaptchaToken:token};
 }
-document.getElementById('phone-check')?.addEventListener('click',async()=>{
-  if (sending) return;
-  const button=document.getElementById('phone-check'), result=document.getElementById('phone-check-result');
-  button.disabled=true; sending=true; submit.disabled=true; result.hidden=false; result.textContent='Проверяем соединение без звонка…';
-  try {
-    await getToken();
-    if (!phoneCheck.test) throw sessionError('Проверка доступна только на тестовом сайте.');
-    if (!form.elements.namedItem('Consent').checked || !document.getElementById('phone-consent').checked) throw sessionError('Сначала отметьте согласия в форме.');
-    const response=await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify({Action:'phone-check',Consent:true,PhoneConsent:true,ConsentVersion:consentVersion})});
-    const data=await response.json();
-    if (!response.ok || data.IsSuccess!==true) throw sessionError(data.Message || 'Не удалось проверить соединение.');
-    result.textContent=data.connection.message;
-  } catch(error) { result.textContent=error.userMessage ? error.message : 'Не удалось получить результат проверки соединения.'; }
-  finally { button.disabled=false; sending=false; submit.disabled=uncertain; }
-});
 document.getElementById('phone-resend')?.addEventListener('click',async()=>{
   if (sending || uncertain || !form.reportValidity()) return;
   sending = true; submit.disabled = true;
@@ -249,7 +263,25 @@ document.getElementById('phone-resend')?.addEventListener('click',async()=>{
     await phoneCheck.send(payload,true);
     if (normalizedPhone(phone.value)!==payload.Phone) phoneCheck.reset();
   } catch(error) { showMessage(error.message); }
-  finally { sending=false;submit.disabled=false;submit.textContent=submitLabel();try{if(captchaWidget!==null)window.grecaptcha.reset(captchaWidget);}catch{} }
+  finally { sending=false;submit.disabled=false;syncPhoneControls();try{if(captchaWidget!==null)window.grecaptcha.reset(captchaWidget);}catch{} }
+});
+for (const [id,method] of [['phone-poll','poll']]) document.getElementById(id)?.addEventListener('click',async()=>{
+  if (sending || uncertain || !form.reportValidity()) return;
+  sending=true; submit.disabled=true;
+  try {
+    const number=normalizedPhone(phone.value);
+    // Checking an issued challenge uses the same consent/session as automatic polling.
+    // The server requires a fresh CAPTCHA for new calls and final registration only.
+    await phoneCheck[method]();
+    if (normalizedPhone(phone.value)!==number) phoneCheck.reset();
+  } catch(error) { showMessage(error.message); }
+  finally { sending=false;submit.disabled=false;syncPhoneControls(); }
+});
+document.getElementById('phone-consent')?.addEventListener('change',()=>{
+  if (!document.getElementById('phone-consent').checked) {phoneCheck.reset();updateSubmit();}
+});
+form.elements.namedItem('Consent').addEventListener('change',()=>{
+  if (!form.elements.namedItem('Consent').checked) {phoneCheck.reset();updateSubmit();}
 });
 
 form.addEventListener('submit', async event => {
@@ -258,6 +290,7 @@ form.addEventListener('submit', async event => {
   for (const name of ['LastName','FirstName']) form.elements.namedItem(name).value = form.elements.namedItem(name).value.trim();
   const number = normalizedPhone(phone.value);
   phone.setCustomValidity(number ? '' : 'Введите номер телефона: +7 и 10 цифр.');
+  birthDate.validate();
   if (!form.reportValidity()) return;
   permissionWithdrawn = false;
   sending = true; submit.disabled = true; submit.textContent = 'Проверяем…';
@@ -268,11 +301,13 @@ form.addEventListener('submit', async event => {
     // A guest may edit fields while completing the challenge; validate them again.
     const currentNumber = normalizedPhone(phone.value);
     phone.setCustomValidity(currentNumber ? '' : 'Введите номер телефона: +7 и 10 цифр.');
+    birthDate.validate();
     if (!form.reportValidity()) return;
     requirePermission();
     const values = new FormData(form);
     const payload = {...verification,Phone:currentNumber,Consent:values.get('Consent') === 'on'};
     for (const name of ['LastName','FirstName','MiddleName','BirthDate','Comment']) payload[name] = String(values.get(name)||'').trim();
+    payload.BirthDate = birthDate.value();
     const verified = await phoneCheck.confirm(payload);
     if (normalizedPhone(phone.value)!==payload.Phone) { phoneCheck.reset(); showMessage('Номер изменился. Подтвердите новый номер.'); return; }
     if (!verified) return;
@@ -280,7 +315,7 @@ form.addEventListener('submit', async event => {
     const response = await request('api/register.php',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRF-Token':csrf},body:JSON.stringify(payload)});
     const data = await response.json();
     if (response.ok && data.IsSuccess === true) {
-      confirmed = true; showSuccess(data.TestMode === true);
+      confirmed = true; showSuccess(data.TestMode === true, data.AlreadyRegistered === true);
     } else {
       if (response.status === 403) csrf = '';
       uncertain = data.Outcome === 'unknown';
@@ -299,7 +334,7 @@ form.addEventListener('submit', async event => {
   } finally {
     try { if (cookieConsent.allowed() && captchaWidget !== null && window.grecaptcha) window.grecaptcha.reset(captchaWidget); } catch {}
     sending = false; submit.disabled = uncertain;
-    submit.textContent = submitLabel();
+    syncPhoneControls();
     captchaStatus.textContent = '';
     form.removeAttribute('aria-busy');
     if (recaptchaRequired && (permissionWithdrawn || !cookieConsent.allowed()) && (googleStarted || csrf)) await stopGoogle();

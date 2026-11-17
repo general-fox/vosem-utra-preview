@@ -82,6 +82,32 @@ function cafe_snapshot(string $directory, bool $includeOrders): array {
                     $add('orders-data/orders.sqlite', $snapshot);
                 } finally { if (is_file($snapshot)) unlink($snapshot); }
             }
+            // Keep the duplicate-registration ledger and its stable key together, independently of orders.
+            $registration = $directory.'/registration-data';
+            if (file_exists($registration.'/ledger.sqlite') || file_exists($registration.'/hmac.key') || is_link($registration)
+                || is_link($registration.'/ledger.sqlite') || is_link($registration.'/hmac.key')) {
+                if (is_link($registration) || is_link($registration.'/ledger.sqlite') || is_link($registration.'/hmac.key')
+                    || !is_file($registration.'/ledger.sqlite') || !is_file($registration.'/hmac.key')) throw new RuntimeException('Incomplete registration ledger or unsafe path.');
+                $handle = @fopen($registration.'/hmac.key', 'rb');
+                if (!$handle) throw new RuntimeException('Cannot read registration key.');
+                $snapshot = $registration.'/backup-'.bin2hex(random_bytes(12)).'.sqlite';
+                try {
+                    if (!flock($handle, LOCK_SH) || strlen((string)stream_get_contents($handle)) !== 32) throw new RuntimeException('Invalid registration key.');
+                    $db = new PDO('sqlite:'.$registration.'/ledger.sqlite', null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+                    $db->exec('PRAGMA busy_timeout=5000');
+                    $db->exec('VACUUM INTO '.$db->quote($snapshot));
+                    $db = null;
+                    $copy = new PDO('sqlite:'.$snapshot, null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+                    if ($copy->query('PRAGMA integrity_check')->fetchColumn() !== 'ok') throw new RuntimeException('Invalid registration backup.');
+                    $copy = null;
+                    $add('registration-data/ledger.sqlite', $snapshot);
+                    $add('registration-data/hmac.key', $registration.'/hmac.key');
+                } finally {
+                    $db = $copy = null;
+                    flock($handle, LOCK_UN); fclose($handle);
+                    if (is_file($snapshot)) unlink($snapshot);
+                }
+            }
             return ['version'=>1, 'createdAt'=>gmdate('c'), 'source'=>'vosem-php', 'localTestData'=>is_file($directory.'/.local-development'),
                 'config'=>$config, 'auth'=>$state, 'menu'=>$menu, 'ordersConfig'=>$ordersConfig, 'files'=>$files];
         });
@@ -121,9 +147,16 @@ function cafe_import_private(string $bundle, string $keyFile, string $destinatio
     if (!is_int($menu['revision'] ?? null) || $menu['revision'] < 1) throw new RuntimeException('Invalid menu revision.');
     $decoded = [];
     foreach ($snapshot['files'] as $name => $encoded) {
-        if (!is_string($name) || !preg_match('~\A(?:admin-data/uploads/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpg|jpeg|png|webp)|orders-data/orders\.sqlite)\z~i', $name)
+        if (!is_string($name) || (!preg_match('~\A(?:admin-data/uploads/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpg|jpeg|png|webp)|orders-data/orders\.sqlite)\z~i', $name)
+                && !in_array($name, ['registration-data/ledger.sqlite','registration-data/hmac.key'], true))
             || str_contains($name, '..') || !is_string($encoded) || ($bytes = base64_decode($encoded, true)) === false) throw new RuntimeException('Unsafe backup path or contents.');
         $decoded[$name] = $bytes;
+    }
+    if (isset($decoded['registration-data/ledger.sqlite']) !== isset($decoded['registration-data/hmac.key'])) throw new RuntimeException('Registration ledger and key must be restored together.');
+    if (isset($decoded['registration-data/hmac.key'])) {
+        if (strlen($decoded['registration-data/hmac.key']) !== 32) throw new RuntimeException('Invalid registration key.');
+        // Phone hashes include the origin; silently changing it would disable duplicate protection.
+        if (($snapshot['config']['publicOrigin'] ?? '') !== $origin) throw new RuntimeException('Registration history can only be restored to its original site origin. Transfer admin/menu data separately for a different site.');
     }
     foreach ($menu['items'] as $item) if (str_starts_with($item['image'], '/uploads/') && !isset($decoded['admin-data'.$item['image']])) throw new RuntimeException('Missing menu photograph.');
     $parent = realpath(dirname($destination));
@@ -147,6 +180,11 @@ function cafe_import_private(string $bundle, string $keyFile, string $destinatio
     if (isset($decoded['orders-data/orders.sqlite'])) {
         $db = new PDO('sqlite:'.$staging.'/orders-data/orders.sqlite', null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
         if ($db->query('PRAGMA integrity_check')->fetchColumn() !== 'ok') throw new RuntimeException('Invalid restored order database.');
+        $db = null;
+    }
+    if (isset($decoded['registration-data/ledger.sqlite'])) {
+        $db = new PDO('sqlite:'.$staging.'/registration-data/ledger.sqlite', null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+        if ($db->query('PRAGMA integrity_check')->fetchColumn() !== 'ok') throw new RuntimeException('Invalid restored registration database.');
         $db = null;
     }
     if (($snapshot['ordersConfig'] ?? null) !== null) {

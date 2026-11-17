@@ -1,0 +1,5 @@
+# Consent receipts refer to exact published document bytes, including line endings.
+# Do not normalize immutable snapshots or the two matching source documents.
+hosting/legacy-private/legal-versions/** -text whitespace=cr-at-eol
+hosting/legacy-public/privacy.html -text whitespace=cr-at-eol
+hosting/legacy-public/consent.html -text whitespace=cr-at-eol

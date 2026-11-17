@@ -29,7 +29,8 @@ function cafe_dish_html(array $item, ?array $categories = null, bool $delivery =
     $categoryNames = array_column($categories, 'name', 'id');
     $categoryId = !isset($categoryNames[$item['category']]) && in_array($item['category'], ['signature','eggs','porridge','sweet'], true) ? 'breakfast' : $item['category'];
     $name = cafe_html($item['name']);
-    $visual = $item['image'] !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($item['image']).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async"></div>' : '';
+    $visual = $item['image'] !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($item['image']).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async"></div>'
+        : '<div class="dish-visual dish-placeholder" aria-hidden="true"><span class="dish-placeholder-mark" aria-hidden="true"></span></div>';
     $available = ($item['availableForOrder'] ?? true) !== false;
     $testOnly = ($item['source']['testOnly'] ?? false) === true;
     if ($testOnly || $item['category'] === null) $available = false;
@@ -38,7 +39,7 @@ function cafe_dish_html(array $item, ?array $categories = null, bool $delivery =
     $categoryLabel = ($testOnly ? 'Тестовое блюдо · ' : '').($categoryNames[$categoryId] ?? 'Меню');
     $label = $available ? 'В корзину' : 'Временно недоступно';
     $action = '<button class="dish-order-button'.($available ? '' : ' is-unavailable').'" type="button" data-cart-add="'.cafe_html($item['id']).'" aria-label="'.$label.': '.$name.'"'.($available ? '' : ' disabled').'>'.$label.'</button>';
-    return '<article class="dish-card'.($visual === '' ? ' dish-card-text' : '').'" data-menu-category="'.cafe_html($categoryId).'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html($categoryLabel).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price'.($priceUnset ? ' is-unset' : '').'">'.cafe_html($priceLabel).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p>'.($delivery ? '<div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div>' : '').'</div></article>';
+    return '<article class="dish-card" data-menu-category="'.cafe_html($categoryId).'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html($categoryLabel).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price'.($priceUnset ? ' is-unset' : '').'">'.cafe_html($priceLabel).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p>'.($delivery ? '<div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div>' : '').'</div></article>';
 }
 function cafe_schema(array $items, ?array $categories = null): array {
     $categories ??= cafe_default_categories();
@@ -121,15 +122,14 @@ function cafe_transform_page(string $html, string $page, bool $production, array
     if (!preg_match('~</head>~i', $html)) throw new RuntimeException('Missing page head');
     $html = preg_replace_callback('~</head>~i', static fn(): string => "<!-- SEO:HEAD:START -->\n".implode("\n", $tags)."\n<!-- SEO:HEAD:END -->\n</head>", $html, 1);
     if ($home) {
-        $published = cafe_published($items); $grid = []; $extras = [];
+        $published = cafe_published($items); $grid = [];
         foreach ($published as $item) {
             $dish = cafe_dish_html($item, $categories, ($config['delivery_enabled'] ?? true) === true);
-            if ($item['image'] !== '') $grid[] = $dish;
-            else $extras[] = $dish;
+            $grid[] = $dish;
         }
         $html = cafe_menu_slot($html, 'dish-grid', implode("\n", $grid));
-        if (str_contains($html, 'data-dish-extras')) $html = cafe_menu_slot($html, 'dish-extras', implode("\n", $extras));
-        $html = cafe_toggle_hidden($html, 'data-extra-section', !$extras);
+        if (str_contains($html, 'data-dish-extras')) $html = cafe_menu_slot($html, 'dish-extras', '');
+        $html = cafe_toggle_hidden($html, 'data-extra-section', true);
         $html = cafe_toggle_hidden($html, 'data-menu-empty', (bool)$published);
         $count = count($published);
         $word = $count % 10 === 1 && $count % 100 !== 11 ? 'блюдо' : ($count % 10 >= 2 && $count % 10 <= 4 && ($count % 100 < 12 || $count % 100 > 14) ? 'блюда' : 'блюд');

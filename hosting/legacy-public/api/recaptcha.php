@@ -5,12 +5,18 @@ function captcha_config(): array {
     $path = dirname(__DIR__,2).'/vosem-utra-private/recaptcha.php';
     $config = is_file($path) ? require $path : [];
     if (!is_array($config)) $config = [];
+    $app = dirname(__DIR__,2).'/vosem-utra-private/app';
+    $deployment = is_file($app.'/deployment.php') ? require $app.'/deployment.php' : [];
+    $features = is_file($app.'/features.php') ? require $app.'/features.php' : [];
+    $callsOnStaging = ($deployment['staging'] ?? false) === true
+        && ($deployment['publicOrigin'] ?? '') === 'https://test888.ru'
+        && ($features['phone_any_number_enabled'] ?? false) === true;
     return [
         'site_key'=>getenv('RECAPTCHA_SITE_KEY') ?: ($config['site_key'] ?? ''),
         'secret_key'=>getenv('RECAPTCHA_SECRET_KEY') ?: ($config['secret_key'] ?? ''),
         'mode'=>($config['mode'] ?? 'checkbox') === 'invisible' ? 'invisible' : 'checkbox',
-        // Development domains must never be accepted by the published handler.
-        'hostnames'=>['vosem-utra.ru','www.vosem-utra.ru'],
+        // Only the explicit any-number staging build accepts test888.ru.
+        'hostnames'=>$callsOnStaging ? ['test888.ru'] : ['vosem-utra.ru','www.vosem-utra.ru'],
     ];
 }
 

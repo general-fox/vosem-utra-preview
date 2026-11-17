@@ -1,71 +1,123 @@
-// The browser only holds an opaque challenge ID; expected codes stay on the server.
+// FlashCall.ru incoming verification. Only the server can approve a phone number.
+// Device hints affect presentation only. A narrow desktop window must never trigger a dialler.
+export function isPhoneDevice(nav = globalThis.navigator) {
+  const ua=nav?.userAgent || '';
+  if (/iPad|Tablet|Silk|PlayBook/i.test(ua) || /Macintosh/i.test(ua) && nav?.maxTouchPoints>1) return false;
+  return /iPhone|iPod|Windows Phone/i.test(ua) || /Android/i.test(ua) && /Mobile/i.test(ua) || nav?.userAgentData?.mobile===true;
+}
+export function phoneErrorMessage(data) {
+  const message=data.Message || 'Не удалось подтвердить телефон. Попробуйте ещё раз.';
+  const seconds=Math.ceil(Number(data.retryAfter)||0);
+  if(data.Code==='phone_budget_exhausted' || seconds<=0) return message;
+  return message + (seconds<60 ? ` Повторите через ${seconds} с.` : ` Повторите через ${Math.ceil(seconds/60)} мин.`);
+}
 export class PhoneVerification {
-  constructor({ document, request, now = Date.now, setTimer = setInterval, clearTimer = clearInterval }) {
-    this.doc = document; this.request = request; this.now = now; this.clearTimer = clearTimer;
-    this.challenge = null; this.number = ''; this.required = false; this.test = false; this.busy = false;
-    this.panel = document.getElementById('phone-verification');
-    this.code = document.getElementById('phone-code');
-    this.status = document.getElementById('phone-status');
-    this.resend = document.getElementById('phone-resend');
-    this.error = document.getElementById('phone-error');
-    this.code.addEventListener('input', () => { this.code.value = this.code.value.replace(/\D/g,'').slice(0,4); this.error.hidden = true; });
-    this.timer = setTimer(() => this.renderTime(), 1000);
+  constructor({ document, request, onChange = () => {}, guestPresentation = false, preview = false, mobilePhone = isPhoneDevice(document.defaultView?.navigator), autoDial = true, now = Date.now, setTimer = setInterval, clearTimer = clearInterval }) {
+    this.doc=document; this.request=request; this.onChange=onChange; this.guestPresentation=guestPresentation; this.now=now; this.clearTimer=clearTimer;
+    this.preview=preview; this.mobilePhone=mobilePhone; this.autoDial=autoDial && !preview; this.dialled=new Set();
+    this.challenge=null; this.number=''; this.required=false; this.test=false; this.busy=false; this.generation=0;
+    this.panel=document.getElementById('phone-verification'); this.status=document.getElementById('phone-status');
+    this.panel.dataset.phoneDevice=mobilePhone ? 'phone' : 'other';
+    this.resend=document.getElementById('phone-resend'); this.error=document.getElementById('phone-error');
+    this.timer=setTimer(()=>{this.renderTime(); if(this.challenge?.state==='waiting' && this.doc.visibilityState!=='hidden' && !this.busy && this.pollAt<=this.now()) void this.poll();},1000);
   }
-  configure(required, test) {
-    this.required = required; this.test = test;
-    this.doc.getElementById('phone-consent-row').hidden = !required;
-    this.doc.getElementById('phone-consent').required = required;
-    this.doc.getElementById('phone-test-note').hidden = !test;
-    this.doc.getElementById('phone-check-panel').hidden = !test;
-    if (!required) this.reset();
+  configure(required,test) {
+    this.required=required; this.test=test;
+    this.doc.getElementById('phone-consent-row').hidden=!required;
+    this.doc.getElementById('phone-consent').required=required;
+    const note=this.doc.getElementById('phone-test-note'); if(note) note.hidden=!test || this.guestPresentation;
+    if(!required) this.reset();
   }
-  reset() { this.challenge = null; this.number = ''; this.code.value = ''; this.panel.hidden = true; this.error.hidden = true; }
-  invalidate() { if (this.challenge) { this.challenge.verified = false; this.challenge.expires = 0; this.code.value = ''; this.renderTime(); } }
-  showError(message) { this.error.textContent = message; this.error.hidden = false; }
-  accept(data, number) {
-    if (!data || typeof data.challengeId !== 'string' || !/^[a-f0-9]{32}$/.test(data.challengeId) || !Number.isFinite(data.expiresIn) || !Number.isFinite(data.retryAfter)) throw Error('phone_response');
-    this.number = number;
-    this.challenge = { id:data.challengeId, expires:this.now()+data.expiresIn*1000, resendAt:this.now()+data.retryAfter*1000, verified:data.verified===true };
-    this.panel.hidden = false;
-    this.doc.getElementById('phone-target').textContent = data.phoneMask || 'указанный номер';
-    this.status.textContent = data.pending
-      ? (this.test && typeof data.connectionMessage === 'string' && data.connectionMessage ? data.connectionMessage+' ' : '')+'Начало звонка не подтверждено. Если звонок всё же поступит, введите код.'
-      : 'uCaller принял запрос. Ожидайте звонок и введите последние четыре цифры звонящего номера. Отвечать на звонок не нужно.';
-    this.error.hidden = true; this.renderTime();
-    if (!this.challenge.verified) this.code.focus();
+  reset() { this.generation++; this.challenge=null; this.payload=null; this.number=''; this.panel.hidden=true; this.error.hidden=true; }
+  invalidate() { this.generation++; if(this.challenge) {this.challenge.verified=false;this.challenge.state='expired';this.renderTime();} }
+  showError(message) { this.error.textContent=message; this.error.hidden=false; }
+  accept(data,number) {
+    if(!data || !/^[a-f0-9]{32}$/.test(data.challengeId || '') || data.method!=='incoming' || !Number.isFinite(data.expiresIn) || data.expiresIn<0 || data.expiresIn>60 || !Number.isFinite(data.retryAfter)
+      || !['waiting','verified','expired','failed','unknown','consumed'].includes(data.state)) throw Error('Некорректный ответ проверки телефона.');
+    if(!this.preview && data.state==='waiting' && data.expiresIn>0 && !/^\+7\d{10}$/.test(data.phoneToCall || '')) throw Error('Не удалось получить проверочный номер.');
+    const same=this.challenge?.id===data.challengeId;
+    const expires=this.now()+data.expiresIn*1000;
+    this.challenge={id:data.challengeId,method:'incoming',state:data.state,expires:same ? Math.min(this.challenge.expires,expires) : expires,
+      resendAt:this.now()+data.retryAfter*1000,verified:data.verified===true,proofExpires:this.now()+(Number(data.proofExpiresIn)||0)*1000,statusIssue:Boolean(data.connectionMessage)};
+    this.number=number; this.panel.hidden=false;
+    const link=this.doc.getElementById('phone-call-link');
+    const displayedNumber=this.doc.getElementById('phone-call-number');
+    if(!this.preview && /^\+7\d{10}$/.test(data.phoneToCall || '')) {
+      const formatted=data.phoneToCall.replace(/^(\+7)(\d{3})(\d{3})(\d{2})(\d{2})$/,'$1 ($2) $3-$4-$5');
+      if(this.mobilePhone) link.href=`tel:${data.phoneToCall}`; else link.removeAttribute('href');
+      link.textContent='Позвонить: '+formatted; displayedNumber.textContent=formatted;
+    } else {link.removeAttribute('href');link.textContent='';displayedNumber.textContent='';}
+    this.status.textContent=data.verified ? 'Номер подтверждён. Завершаем…'
+      : data.state==='waiting' ? this.preview ? 'Это демонстрация — звонить не нужно.'
+        : `Позвоните с ${data.phoneMask || 'номера из анкеты'} на номер:`
+      : data.state==='expired' ? 'Время истекло. Попробуйте ещё раз.'
+      : data.connectionMessage || 'Не удалось завершить проверку. Повторите запрос после окончания таймера.';
+    this.doc.getElementById('phone-call-help').textContent=this.preview ? 'Настоящий звонок можно проверить на test888.ru.' : this.mobilePhone
+      ? 'Выберите нужную SIM и вернитесь сюда после звонка.'
+      : 'Подтверждение появится автоматически.';
+    this.error.hidden=true; this.renderTime(); this.onChange();
   }
   renderTime() {
-    if (!this.challenge) return;
-    const seconds = Math.max(0,Math.ceil((this.challenge.resendAt-this.now())/1000));
-    this.resend.disabled = this.busy || seconds > 0;
-    this.resend.textContent = seconds ? `Повторить звонок через ${seconds} с` : 'Позвонить ещё раз';
-    const remaining = Math.max(0,Math.ceil((this.challenge.expires-this.now())/1000));
-    this.doc.getElementById('phone-code-time').textContent = this.challenge.verified ? 'Номер подтверждён.' : remaining ? `Код действует ещё ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}.` : 'Срок действия кода истёк. Запросите новый звонок.';
+    const c=this.challenge; if(!c) return;
+    if(c.verified && c.proofExpires<=this.now()) {c.verified=false;c.state='expired';this.status.textContent='Подтверждение истекло. Начните новую проверку.';this.onChange();}
+    const remaining=Math.max(0,Math.ceil((c.expires-this.now())/1000));
+    const retry=Math.max(0,Math.ceil((c.resendAt-this.now())/1000));
+    const waiting=c.state==='waiting';
+    this.doc.getElementById('phone-incoming-panel').hidden=!waiting;
+    this.doc.getElementById('phone-call-link').hidden=!waiting || !remaining || !this.mobilePhone || this.preview;
+    this.doc.getElementById('phone-call-number').hidden=!waiting || !remaining || this.mobilePhone || this.preview;
+    this.doc.getElementById('phone-preview-confirm').hidden=!this.preview || !waiting || !remaining;
+    this.doc.getElementById('phone-call-help').hidden=!waiting || !remaining;
+    this.doc.getElementById('phone-poll').disabled=this.busy || !waiting;
+    this.doc.getElementById('phone-poll').hidden=!waiting || !c.statusIssue;
+    this.resend.hidden=waiting || c.verified;
+    this.resend.disabled=this.busy || retry>0;
+    this.resend.textContent=retry ? `Новая проверка через ${retry} с` : 'Начать новую проверку';
+    this.doc.getElementById('phone-code-time').textContent=c.verified || this.preview ? ''
+      : waiting ? remaining ? `На звонок осталось ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}` : 'Уточняем результат звонка…' : '';
   }
-  async send(payload, resend = false) {
-    this.busy = true; this.renderTime();
+  async send(payload,resend=false) {
+    if(this.busy) return false;
+    const generation=this.generation; this.number=payload.Phone; this.busy=true; this.renderTime();
     try {
-      const data = await this.request({ ...payload, Action:resend ? 'phone-resend' : 'phone-start' });
-      this.code.value = ''; this.accept(data.phoneVerification, payload.Phone);
+      const data=await this.request({...payload,Action:resend ? 'phone-resend' : 'phone-start'});
+      if(generation!==this.generation) return false;
+      this.payload=payload; this.accept(data.phoneVerification,payload.Phone); this.pollAt=this.now()+2000;
+      // Only a user-requested start/resend may open the phone app, once per challenge.
+      // Polling, returning to the tab, or reopening the same live challenge must not do it again.
+      const c=this.challenge;
+      if(this.mobilePhone && this.autoDial && c.state==='waiting' && c.expires>this.now() && this.doc.visibilityState!=='hidden' && !this.dialled.has(c.id)) {
+        this.dialled.add(c.id);
+        try { this.doc.getElementById('phone-call-link').click(); } catch { /* The visible link remains available if the browser blocks launching. */ }
+      }
       return false;
-    } catch (error) {
-      if (this.challenge && error.retryAfter) this.challenge.resendAt = this.now()+error.retryAfter*1000;
-      this.showError(error.message); throw error;
-    } finally { this.busy = false; this.renderTime(); }
+    } catch(error) {
+      if(generation===this.generation) {if(this.challenge && error.retryAfter)this.challenge.resendAt=this.now()+error.retryAfter*1000;this.showError(error.message);}
+      throw error;
+    } finally {this.busy=false;this.renderTime();}
   }
   async confirm(payload) {
-    if (!this.required) return true;
-    if (!this.challenge || this.number !== payload.Phone) return this.send(payload);
-    if (this.challenge.expires <= this.now()) { this.showError('Срок действия кода истёк. Нажмите «Позвонить ещё раз».'); return false; }
-    if (this.challenge.verified) return true;
-    if (!/^\d{4}$/.test(this.code.value)) { this.showError('Введите четыре цифры из номера входящего звонка.'); this.code.focus(); return false; }
-    this.busy = true; this.renderTime();
-    try {
-      const data = await this.request({ ...payload, Action:'phone-verify', ChallengeId:this.challenge.id, Code:this.code.value });
-      this.accept(data.phoneVerification,payload.Phone);
-      return this.challenge.verified;
-    } catch (error) { this.showError(error.message); return false; }
-    finally { this.busy = false; this.renderTime(); }
+    if(!this.required) return true;
+    if(!this.challenge || this.number!==payload.Phone) return this.send(payload);
+    this.renderTime();
+    if(this.challenge.verified) return true;
+    await this.poll(payload);
+    return this.challenge?.verified===true;
   }
-  dispose() { this.clearTimer(this.timer); this.reset(); }
+  async poll(payload=this.payload) {
+    if(this.busy || !payload || this.number!==payload.Phone || this.challenge?.state!=='waiting') return;
+    const generation=this.generation; this.busy=true; this.renderTime();
+    try {
+      const data=await this.request({...payload,Action:'phone-status',ChallengeId:this.challenge.id});
+      if(generation===this.generation) this.accept(data.phoneVerification,payload.Phone);
+    } catch(error) {
+      if(generation===this.generation) {
+        this.showError(error.message);
+        if(this.challenge) this.challenge.statusIssue=true;
+        // A final poll must happen at/after the deadline; a network failure cannot loop forever.
+        if(this.challenge && this.challenge.expires<=this.now()) this.challenge.state='failed';
+      }
+    } finally {this.pollAt=this.now()+2000;this.busy=false;this.renderTime();}
+  }
+  dispose() {this.clearTimer(this.timer);this.reset();}
 }

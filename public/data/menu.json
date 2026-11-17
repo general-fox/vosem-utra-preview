@@ -1,1168 +1,9 @@
 {
   "source": {
-    "url": "https://yandex.ru/maps/org/vosem_utra/133294557510/menu/",
-    "checkedAt": "2026-09-28",
-    "note": "Меню представителя организации, обновлено 16 сентября. Рекламные описания сокращены до информации из названия. Мак и чиз и тартар не включены в раздел завтраков."
+    "type": "server-backup",
+    "checkedAt": "2026-11-11",
+    "note": "Актуальное опубликованное меню из резервной копии сайта. Скрытые позиции сохранены только в локальной админке."
   },
-  "items": [
-    {
-      "id": "morning-eight",
-      "name": "Завтрак «8 утра»",
-      "description": "Слабосолёная сёмга, мортаделла, микс салата, варёное яйцо, помидор, огурец и тартин.",
-      "price": 1190,
-      "category": "breakfast",
-      "image": "menu-images/morning-eight.webp",
-      "published": true,
-      "order": 0,
-      "availableForOrder": true
-    },
-    {
-      "id": "avocado-toast",
-      "name": "Авокадо-тост с яйцом пашот и гуакамоле",
-      "description": "Тартин, гуакамоле, авокадо, яйцо пашот, семена, оливковое масло и розовый перец.",
-      "price": 590,
-      "category": "breakfast",
-      "image": "menu-images/avocado-toast.webp",
-      "published": true,
-      "order": 1,
-      "availableForOrder": true
-    },
-    {
-      "id": "chef-syrniki",
-      "name": "Сырники от шефа",
-      "description": "Ванильная сметана с маком, клубника, голубика, мята и сахарная пудра.",
-      "price": 810,
-      "category": "breakfast",
-      "image": "menu-images/chef-syrniki.webp",
-      "published": true,
-      "order": 2,
-      "availableForOrder": true
-    },
-    {
-      "id": "feta-omelette",
-      "name": "Омлет с фетой",
-      "description": "Яйцо, фета, каперсы, оливковое масло, узбекские помидоры, сибулет и петрушка.",
-      "price": 520,
-      "category": "breakfast",
-      "image": "menu-images/feta-omelette.webp",
-      "published": true,
-      "order": 3,
-      "availableForOrder": true
-    },
-    {
-      "id": "oatmeal-berries",
-      "name": "Овсянка на молоке с ягодами",
-      "description": "Молочная овсяная каша с ягодами.",
-      "price": 580,
-      "category": "breakfast",
-      "image": "menu-images/oatmeal-berries.webp",
-      "published": true,
-      "order": 4,
-      "availableForOrder": true
-    },
-    {
-      "id": "salmon-draniki",
-      "name": "Драники с лососем и яйцом пашот",
-      "description": "Лосось, микс салата, сметана, яйцо пашот, семена, специи и трюфельное масло.",
-      "price": 1250,
-      "category": "breakfast",
-      "image": "menu-images/salmon-draniki.webp",
-      "published": true,
-      "order": 5,
-      "availableForOrder": true
-    },
-    {
-      "id": "ham-brioche",
-      "name": "Бриошь с окороком, яйцом пашот и гуакамоле",
-      "description": "Бриошь, гуакамоле, микс семян, яйцо пашот, окорок и голландский соус.",
-      "price": 990,
-      "category": "breakfast",
-      "image": "menu-images/ham-brioche.webp",
-      "published": true,
-      "order": 6,
-      "availableForOrder": true
-    },
-    {
-      "id": "shakshuka",
-      "name": "Шакшука",
-      "description": "Яйцо и свежая зелень: мята, петрушка, кинза.",
-      "price": 850,
-      "category": "breakfast",
-      "image": "menu-images/shakshuka.webp",
-      "published": true,
-      "order": 7,
-      "availableForOrder": true
-    },
-    {
-      "id": "granola",
-      "name": "Гранола с сезонными ягодами",
-      "description": "Гранола с сезонными ягодами.",
-      "price": 650,
-      "category": "breakfast",
-      "image": "menu-images/granola.webp",
-      "published": true,
-      "order": 8,
-      "availableForOrder": true
-    },
-    {
-      "id": "salmon-brioche",
-      "name": "Бриошь с лососем, яйцом пашот и гуакамоле",
-      "description": "Бриошь, гуакамоле, микс семян, яйцо пашот, лосось и голландский соус.",
-      "price": 1390,
-      "category": "breakfast",
-      "image": "menu-images/salmon-brioche.webp",
-      "published": true,
-      "order": 9,
-      "availableForOrder": true
-    },
-    {
-      "id": "vanilla-pancakes",
-      "name": "Блины с ванильной сметаной, ягодами и маком",
-      "description": "Нежные блины с ванильной сметаной, ягодами и маком.",
-      "price": 480,
-      "category": "breakfast",
-      "image": "menu-images/vanilla-pancakes.webp",
-      "published": true,
-      "order": 10,
-      "availableForOrder": true
-    },
-    {
-      "id": "green-buckwheat",
-      "name": "Зелёная гречка с пармезаном",
-      "description": "Зелёная гречка, соус чимичурри, пармезан, яйцо и сибулет.",
-      "price": 760,
-      "category": "breakfast",
-      "image": "menu-images/green-buckwheat.webp",
-      "published": true,
-      "order": 11,
-      "availableForOrder": true
-    },
-    {
-      "id": "wheat-porridge",
-      "name": "Каша пшеничная",
-      "description": "Тёплая пшеничная каша.",
-      "price": 250,
-      "category": "breakfast",
-      "image": "menu-images/wheat-porridge.webp",
-      "published": true,
-      "order": 12,
-      "availableForOrder": true
-    },
-    {
-      "id": "fried-eggs",
-      "name": "Глазунья",
-      "description": "Два яйца, сливочное масло, соль и чёрный перец.",
-      "price": 260,
-      "category": "breakfast",
-      "image": "",
-      "published": true,
-      "order": 13,
-      "availableForOrder": true
-    },
-    {
-      "id": "omelette-scramble",
-      "name": "Омлет / скрэмбл",
-      "description": "Яйцо, сливочное масло, соль, перец, сибулет и оливковое масло.",
-      "price": 370,
-      "category": "breakfast",
-      "image": "",
-      "published": true,
-      "order": 14,
-      "availableForOrder": true
-    },
-    {
-      "id": "caramel-syrniki",
-      "name": "Сырники с карамелью и миндалём",
-      "description": "Сырники с карамелью и миндалём.",
-      "price": 720,
-      "category": "breakfast",
-      "image": "",
-      "published": true,
-      "order": 15,
-      "availableForOrder": true
-    },
-    {
-      "id": "english-breakfast",
-      "name": "Английский завтрак с баварскими колбасками",
-      "description": "Сытный завтрак с баварскими колбасками.",
-      "price": 1190,
-      "category": "breakfast",
-      "image": "",
-      "published": true,
-      "order": 16,
-      "availableForOrder": true
-    },
-    {
-      "id": "cottage-casserole",
-      "name": "Творожная запеканка с солёной карамелью",
-      "description": "Творожная запеканка с солёной карамелью.",
-      "price": 550,
-      "category": "breakfast",
-      "image": "",
-      "published": true,
-      "order": 17,
-      "availableForOrder": true
-    },
-    {
-      "id": "sour-cream-pancakes",
-      "name": "Блины со сметаной",
-      "description": "Блины с порцией сметаны.",
-      "price": 250,
-      "category": "breakfast",
-      "image": "",
-      "published": true,
-      "order": 18,
-      "availableForOrder": true
-    },
-    {
-      "id": "drink-espresso",
-      "name": "Эспрессо",
-      "description": "",
-      "price": 180,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 19,
-      "drink": {
-        "section": "Кофе",
-        "variants": [
-          {
-            "volumeMl": 30,
-            "price": 180
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-double-espresso",
-      "name": "Двойной эспрессо",
-      "description": "",
-      "price": 280,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 20,
-      "drink": {
-        "section": "Кофе",
-        "variants": [
-          {
-            "volumeMl": 60,
-            "price": 280
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-americano",
-      "name": "Американо",
-      "description": "",
-      "price": 265,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 21,
-      "drink": {
-        "section": "Кофе",
-        "variants": [
-          {
-            "volumeMl": 200,
-            "price": 265
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-filter-coffee",
-      "name": "Фильтр-кофе",
-      "description": "",
-      "price": 300,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 22,
-      "drink": {
-        "section": "Кофе",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 300
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-cappuccino",
-      "name": "Капучино",
-      "description": "",
-      "price": 230,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 23,
-      "drink": {
-        "section": "С молоком",
-        "variants": [
-          {
-            "volumeMl": 230,
-            "price": 230
-          },
-          {
-            "volumeMl": 370,
-            "price": 370
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-latte",
-      "name": "Латте",
-      "description": "",
-      "price": 370,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 24,
-      "drink": {
-        "section": "С молоком",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 370
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-flat-white",
-      "name": "Флэт уайт",
-      "description": "",
-      "price": 285,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 25,
-      "drink": {
-        "section": "С молоком",
-        "variants": [
-          {
-            "volumeMl": 180,
-            "price": 285
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-raf",
-      "name": "Раф",
-      "description": "",
-      "price": 400,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 26,
-      "drink": {
-        "section": "С молоком",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 400
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-milk-chocolate",
-      "name": "Молочный шоколад",
-      "description": "",
-      "price": 320,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 27,
-      "drink": {
-        "section": "С молоком",
-        "variants": [
-          {
-            "volumeMl": 280,
-            "price": 320
-          },
-          {
-            "volumeMl": 350,
-            "price": 440
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ],
-        "childFriendly": true
-      }
-    },
-    {
-      "id": "drink-iced-latte",
-      "name": "Айс-латте",
-      "description": "",
-      "price": 370,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 28,
-      "drink": {
-        "section": "Холодные",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 370
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-iced-matcha",
-      "name": "Айс-матча",
-      "description": "",
-      "price": 380,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 29,
-      "drink": {
-        "section": "Холодные",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 380
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-bumble",
-      "name": "Бамбл",
-      "description": "",
-      "price": 550,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 30,
-      "drink": {
-        "section": "Холодные",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 550
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-matcha-bumble",
-      "name": "Матча бамбл",
-      "description": "",
-      "price": 540,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 31,
-      "drink": {
-        "section": "Холодные",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 540
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-espresso-tonic",
-      "name": "Эспрессо-тоник",
-      "description": "",
-      "price": 380,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 32,
-      "drink": {
-        "section": "Холодные",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 380
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-matcha-nut-foam",
-      "name": "Матча с ореховой пенкой",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 33,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-matcha-jasmine-baked-foam",
-      "name": "Матча с жасмином и топлёной пенкой",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 34,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-matcha-masala-banana-foam",
-      "name": "Матча масала с банановой пенкой",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 35,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-raf-macadamia",
-      "name": "Раф макадамия",
-      "description": "",
-      "price": 495,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 36,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 495
-          }
-        ],
-        "addons": [
-          {
-            "name": "Альтернативное молоко",
-            "price": 160
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-bumble-jerusalem-artichoke",
-      "name": "Бамбл с топинамбуром",
-      "description": "",
-      "price": 550,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 37,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 550
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-espresso-tonic-feijoa-yuzu",
-      "name": "Эспрессо-тоник с фейхоа-юдзу",
-      "description": "",
-      "price": 420,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 38,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 420
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-espresso-tonic-raspberry-pomegranate",
-      "name": "Эспрессо-тоник с малина-гранат",
-      "description": "",
-      "price": 420,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 39,
-      "drink": {
-        "section": "Авторские",
-        "variants": [
-          {
-            "volumeMl": 370,
-            "price": 420
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-lemonade-strawberry-barberry",
-      "name": "Клубника-барбарис",
-      "description": "",
-      "price": 440,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 40,
-      "drink": {
-        "section": "Домашние лимонады",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 440
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-lemonade-feijoa-grape-yuzu",
-      "name": "Фейхоа-виноград-юдзу",
-      "description": "",
-      "price": 440,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 41,
-      "drink": {
-        "section": "Домашние лимонады",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 440
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-lemonade-cream-soda",
-      "name": "Крем-сода с лаймом и лимоном",
-      "description": "",
-      "price": 440,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 42,
-      "drink": {
-        "section": "Домашние лимонады",
-        "variants": [
-          {
-            "volumeMl": 300,
-            "price": 440
-          }
-        ],
-        "addons": []
-      }
-    },
-    {
-      "id": "drink-juice-orange",
-      "name": "Апельсин",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 43,
-      "drink": {
-        "section": "Свежевыжатые соки",
-        "variants": [
-          {
-            "volumeMl": 200,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Дополнительные сливки",
-            "price": 70
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-juice-apple",
-      "name": "Яблоко",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 44,
-      "drink": {
-        "section": "Свежевыжатые соки",
-        "variants": [
-          {
-            "volumeMl": 200,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Дополнительные сливки",
-            "price": 70
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-juice-grapefruit",
-      "name": "Грейпфрут",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 45,
-      "drink": {
-        "section": "Свежевыжатые соки",
-        "variants": [
-          {
-            "volumeMl": 200,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Дополнительные сливки",
-            "price": 70
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-juice-carrot",
-      "name": "Морковь",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 46,
-      "drink": {
-        "section": "Свежевыжатые соки",
-        "variants": [
-          {
-            "volumeMl": 200,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Дополнительные сливки",
-            "price": 70
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-juice-celery",
-      "name": "Сельдерей",
-      "description": "",
-      "price": 450,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 47,
-      "drink": {
-        "section": "Свежевыжатые соки",
-        "variants": [
-          {
-            "volumeMl": 200,
-            "price": 450
-          }
-        ],
-        "addons": [
-          {
-            "name": "Дополнительные сливки",
-            "price": 70
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-milkshake-raspberry-coconut",
-      "name": "Молочный коктейль малина-кокос",
-      "description": "",
-      "price": 550,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 48,
-      "drink": {
-        "section": "Строго 18−",
-        "variants": [
-          {
-            "volumeMl": 450,
-            "price": 550
-          }
-        ],
-        "addons": [],
-        "childFriendly": true
-      }
-    },
-    {
-      "id": "drink-smoothie-mango-pineapple",
-      "name": "Смузи манго-ананас",
-      "description": "",
-      "price": 550,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 49,
-      "drink": {
-        "section": "Строго 18−",
-        "variants": [
-          {
-            "volumeMl": 450,
-            "price": 550
-          }
-        ],
-        "addons": [],
-        "childFriendly": true
-      }
-    },
-    {
-      "id": "drink-smoothie-blackcurrant-mint",
-      "name": "Смузи чёрная смородина-мята",
-      "description": "",
-      "price": 550,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 50,
-      "drink": {
-        "section": "Строго 18−",
-        "variants": [
-          {
-            "volumeMl": 450,
-            "price": 550
-          }
-        ],
-        "addons": [],
-        "childFriendly": true
-      }
-    },
-    {
-      "id": "drink-fruit-tea-seabuckthorn-mango",
-      "name": "Облепиха / манго",
-      "description": "",
-      "price": 350,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 51,
-      "drink": {
-        "section": "Не чай",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 350
-          },
-          {
-            "volumeMl": 600,
-            "price": 580
-          }
-        ],
-        "addons": [
-          {
-            "name": "Мёд",
-            "price": 60
-          },
-          {
-            "name": "Чабрец",
-            "price": 60
-          },
-          {
-            "name": "Мята",
-            "price": 60
-          },
-          {
-            "name": "Лимон",
-            "price": 60
-          },
-          {
-            "name": "Вода",
-            "price": 0
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-fruit-tea-pomegranate-raspberry-rosemary",
-      "name": "Гранат / малина / розмарин",
-      "description": "",
-      "price": 350,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 52,
-      "drink": {
-        "section": "Не чай",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 350
-          },
-          {
-            "volumeMl": 600,
-            "price": 580
-          }
-        ],
-        "addons": [
-          {
-            "name": "Мёд",
-            "price": 60
-          },
-          {
-            "name": "Чабрец",
-            "price": 60
-          },
-          {
-            "name": "Мята",
-            "price": 60
-          },
-          {
-            "name": "Лимон",
-            "price": 60
-          },
-          {
-            "name": "Вода",
-            "price": 0
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-fruit-tea-pineapple-rosemary-ginger",
-      "name": "Ананас / розмарин / имбирь",
-      "description": "",
-      "price": 350,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 53,
-      "drink": {
-        "section": "Не чай",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 350
-          },
-          {
-            "volumeMl": 600,
-            "price": 580
-          }
-        ],
-        "addons": [
-          {
-            "name": "Мёд",
-            "price": 60
-          },
-          {
-            "name": "Чабрец",
-            "price": 60
-          },
-          {
-            "name": "Мята",
-            "price": 60
-          },
-          {
-            "name": "Лимон",
-            "price": 60
-          },
-          {
-            "name": "Вода",
-            "price": 0
-          }
-        ]
-      }
-    },
-    {
-      "id": "drink-tea",
-      "name": "Чай",
-      "description": "Асам, эрл-грей, молочный улун, сенча, саган-дайля, травяной сбор, тибетская ромашка.",
-      "price": 210,
-      "category": "drinks",
-      "image": "",
-      "published": true,
-      "availableForOrder": false,
-      "order": 54,
-      "drink": {
-        "section": "Чай",
-        "variants": [
-          {
-            "volumeMl": 350,
-            "price": 210
-          },
-          {
-            "volumeMl": 600,
-            "price": 350
-          }
-        ],
-        "addons": [
-          {
-            "name": "Мёд",
-            "price": 60
-          },
-          {
-            "name": "Чабрец",
-            "price": 60
-          },
-          {
-            "name": "Мята",
-            "price": 60
-          },
-          {
-            "name": "Лимон",
-            "price": 60
-          },
-          {
-            "name": "Вода",
-            "price": 0
-          }
-        ]
-      }
-    }
-  ],
   "categories": [
     {
       "id": "breakfast",
@@ -1181,6 +22,1220 @@
       "name": "Напитки",
       "parentId": null,
       "order": 2
+    },
+    {
+      "id": "site-c394b3bb-c729-4727-b515-49b77a93119c",
+      "name": "Супы",
+      "parentId": null,
+      "order": 3
+    },
+    {
+      "id": "site-cb5a5fbf-8253-4c3f-8646-c3cb53986dbd",
+      "name": "Сэндвичи/Вафли",
+      "parentId": null,
+      "order": 4
     }
-  ]
+  ],
+  "sourceCategories": [],
+  "categoryMappings": [],
+  "items": [
+    {
+      "id": "morning-eight",
+      "name": "Завтрак «8 утра»",
+      "description": "Слабосолёная сёмга, мортаделла, микс салата, варёное яйцо, помидор, огурец и тартин.\n\nкБЖУ: 580/33/32.2/39.4",
+      "price": 1240,
+      "category": "breakfast",
+      "image": "menu-images/morning-eight.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 0,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "avocado-toast",
+      "name": "Авокадо-тост с яйцом пашот и гуакамоле",
+      "description": "Тартин, гуакамоле, авокадо, яйцо пашот, семена, оливковое масло и розовый перец.\nкБЖУ: 420/14.5/22/9/3",
+      "price": 620,
+      "category": "breakfast",
+      "image": "menu-images/avocado-toast.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 1,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "chef-syrniki",
+      "name": "Сырники от шефа",
+      "description": "Ванильная сметана с маком, клубника, голубика, мята и сахарная пудра.\nКбжу: 540/27.7/27.7/45",
+      "price": 810,
+      "category": "breakfast",
+      "image": "menu-images/chef-syrniki.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 2,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "feta-omelette",
+      "name": "Омлет с фетой",
+      "description": "Яйцо, фета, каперсы, оливковое масло, узбекские помидоры, сибулет и петрушка.\nкБЖУ: 407/15.2/36.4/4.5",
+      "price": 520,
+      "category": "breakfast",
+      "image": "menu-images/feta-omelette.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 3,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "oatmeal-berries",
+      "name": "Арахисовая овсянка с бананом",
+      "description": "Молочная овсяная каша с арахисовой пастой,бананом и фисташками.\nКбжу: 486/14.1/18.3/66.1",
+      "price": 450,
+      "category": "breakfast",
+      "image": "menu-images/server-81dff36d-3677-4e99-aed2-d5b6a76a772c.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 4,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "salmon-draniki",
+      "name": "Драники с лососем и яйцом пашот",
+      "description": "Лосось, микс салата, сметана, яйцо пашот, семена, специи и трюфельное масло.\nкБЖУ: 488/20.3/33.9/25.4",
+      "price": 1250,
+      "category": "breakfast",
+      "image": "menu-images/salmon-draniki.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 5,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "shakshuka",
+      "name": "Шакшука",
+      "description": "Яйца,томатная основа и свежая зелень: мята, петрушка, кинза.\nкБЖУ: 442/21.9/20.5/42.5",
+      "price": 850,
+      "category": "breakfast",
+      "image": "menu-images/shakshuka.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 7,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "salmon-brioche",
+      "name": "Бриошь с лососем, яйцом пашот и гуакамоле",
+      "description": "Бриошь, гуакамоле, микс семян, яйцо пашот, лосось и голландский соус.\nкБЖУ: 771/22.7/61.9/30.8",
+      "price": 1390,
+      "category": "breakfast",
+      "image": "menu-images/salmon-brioche.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 9,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "green-buckwheat",
+      "name": "Пророщеная гречка с трюфелем",
+      "description": "Зелёная пророщеная гречка с пармезаном и трюфельным маслом",
+      "price": 820,
+      "category": "breakfast",
+      "image": "menu-images/server-7a25d575-810a-4f42-abb1-0c3b92155741.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 11,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "wheat-porridge",
+      "name": "Каша пшеничная",
+      "description": "Тёплая пшеничная каша.\nКбжу: 504/11.8/24.1/60",
+      "price": 280,
+      "category": "breakfast",
+      "image": "menu-images/wheat-porridge.webp",
+      "published": true,
+      "availableForOrder": true,
+      "order": 12,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "omelette-scramble",
+      "name": "Омлет / скрэмбл",
+      "description": "Яйцо, сливочное масло, соль, перец, сибулет и оливковое масло.\nКбжу: 308/13/27.9/1.3",
+      "price": 370,
+      "category": "breakfast",
+      "image": "menu-images/server-da8028d5-525a-4638-aef2-d7326cf34bcc.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 14,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "caramel-syrniki",
+      "name": "Сырники с карамелью и миндалём",
+      "description": "Сырники с карамелью и миндалём.\nКбжу: 540/27.7/27.7/45",
+      "price": 720,
+      "category": "breakfast",
+      "image": "menu-images/server-a14bc2e7-6a3f-4baa-a932-37fe17d187ed.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 15,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "cottage-casserole",
+      "name": "Творожная запеканка с солёной карамелью",
+      "description": "Творожная запеканка с солёной карамелью.\nКбжу: 506/16.5/35.2/30.6",
+      "price": 550,
+      "category": "breakfast",
+      "image": "menu-images/server-d3e9b2e5-8913-4242-aad4-4bb890fa2db2.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 17,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "sour-cream-pancakes",
+      "name": "Блины со сметаной",
+      "description": "Блины с порцией сметаны.\nКбжу: 433/9.9/22.2/48.3",
+      "price": 250,
+      "category": "breakfast",
+      "image": "menu-images/server-3eac59de-4f9b-481a-a357-d1ca151e07ed.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 18,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "006c5f61-0eb0-45ba-9c98-7cdbb2e531ec",
+      "name": "Аля греческий",
+      "description": "",
+      "price": 820,
+      "category": "dinner",
+      "image": "menu-images/server-4259dd0c-e03c-494c-a21d-ba0772cbaa99.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 902
+    },
+    {
+      "id": "034a8e18-186c-4977-8cac-3c0509abfafe",
+      "name": "Стейк салат",
+      "description": "",
+      "price": 1450,
+      "category": "dinner",
+      "image": "menu-images/server-bfe49d02-f801-48ae-adcd-839b802f8530.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 903
+    },
+    {
+      "id": "e113c15a-2bb5-45dd-b8e8-f7675a4b50e5",
+      "name": "Орзо с опаленным лососем",
+      "description": "",
+      "price": 1320,
+      "category": "dinner",
+      "image": "menu-images/server-69d06491-8d11-4a00-afc9-40fd5b93d779.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 905
+    },
+    {
+      "id": "5e95df95-b45a-4edb-9a22-dbdbbb5d2e46",
+      "name": "Бефстроганов по-шефски",
+      "description": "",
+      "price": 1250,
+      "category": "dinner",
+      "image": "menu-images/server-b05b124a-d614-438f-ad5c-299a96592108.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 906
+    },
+    {
+      "id": "drink-espresso",
+      "name": "Эспрессо",
+      "description": "",
+      "price": 180,
+      "category": "drinks",
+      "image": "menu-images/server-140336bf-2406-4344-a869-1d146ef8711e.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 907,
+      "drink": {
+        "section": "Кофе",
+        "variants": [
+          {
+            "volumeMl": 30,
+            "price": 180
+          }
+        ],
+        "addons": [],
+        "childFriendly": false,
+        "sectionOrder": 1
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-double-espresso",
+      "name": "Двойной эспрессо",
+      "description": "",
+      "price": 280,
+      "category": "drinks",
+      "image": "menu-images/server-af85e43b-0822-4a6b-aa63-0c3d850b0d74.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 908,
+      "drink": {
+        "section": "Кофе",
+        "variants": [
+          {
+            "volumeMl": 60,
+            "price": 280
+          }
+        ],
+        "addons": [],
+        "childFriendly": false,
+        "sectionOrder": 1
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-americano",
+      "name": "Американо",
+      "description": "",
+      "price": 265,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 909,
+      "drink": {
+        "section": "Кофе",
+        "variants": [
+          {
+            "volumeMl": 200,
+            "price": 265
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 1
+      }
+    },
+    {
+      "id": "drink-filter-coffee",
+      "name": "Фильтр-кофе",
+      "description": "",
+      "price": 300,
+      "category": "drinks",
+      "image": "menu-images/server-67ac28d0-5412-4268-a6b4-69cf9f69dd3e.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 910,
+      "drink": {
+        "section": "Кофе",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 300
+          }
+        ],
+        "addons": [],
+        "childFriendly": false,
+        "sectionOrder": 1
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-cappuccino",
+      "name": "Капучино",
+      "description": "",
+      "price": 230,
+      "category": "drinks",
+      "image": "menu-images/server-ed9b483f-c631-43a3-a70e-1014f12b0752.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 911,
+      "drink": {
+        "section": "С молоком",
+        "variants": [
+          {
+            "volumeMl": 230,
+            "price": 230
+          },
+          {
+            "volumeMl": 370,
+            "price": 370
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 2
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-latte",
+      "name": "Латте",
+      "description": "",
+      "price": 370,
+      "category": "drinks",
+      "image": "menu-images/server-4341d3b9-c272-455c-a675-13dcd57214f6.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 912,
+      "drink": {
+        "section": "С молоком",
+        "variants": [
+          {
+            "volumeMl": 370,
+            "price": 370
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 2
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-flat-white",
+      "name": "Флэт уайт",
+      "description": "",
+      "price": 285,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 913,
+      "drink": {
+        "section": "С молоком",
+        "variants": [
+          {
+            "volumeMl": 180,
+            "price": 285
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "sectionOrder": 2
+      }
+    },
+    {
+      "id": "drink-raf",
+      "name": "Раф",
+      "description": "",
+      "price": 400,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 914,
+      "drink": {
+        "section": "С молоком",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 400
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "sectionOrder": 2
+      }
+    },
+    {
+      "id": "drink-milk-chocolate",
+      "name": "Молочный шоколад",
+      "description": "",
+      "price": 320,
+      "category": "drinks",
+      "image": "menu-images/server-7d549d49-57a3-4cd1-a4dd-19286f012d42.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 915,
+      "drink": {
+        "section": "С молоком",
+        "variants": [
+          {
+            "volumeMl": 280,
+            "price": 320
+          },
+          {
+            "volumeMl": 350,
+            "price": 440
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "childFriendly": true,
+        "sectionOrder": 2
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-iced-latte",
+      "name": "Айс-латте",
+      "description": "",
+      "price": 370,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 916,
+      "drink": {
+        "section": "Холодные",
+        "variants": [
+          {
+            "volumeMl": 370,
+            "price": 370
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "sectionOrder": 3
+      }
+    },
+    {
+      "id": "drink-bumble",
+      "name": "Бамбл",
+      "description": "",
+      "price": 550,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 918,
+      "drink": {
+        "section": "Холодные",
+        "variants": [
+          {
+            "volumeMl": 370,
+            "price": 550
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 3
+      }
+    },
+    {
+      "id": "drink-matcha-bumble",
+      "name": "Матча бамбл",
+      "description": "",
+      "price": 540,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 919,
+      "drink": {
+        "section": "Холодные",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 540
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 3
+      }
+    },
+    {
+      "id": "drink-espresso-tonic",
+      "name": "Эспрессо-тоник",
+      "description": "",
+      "price": 380,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 920,
+      "drink": {
+        "section": "Холодные",
+        "variants": [
+          {
+            "volumeMl": 370,
+            "price": 380
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 3
+      }
+    },
+    {
+      "id": "drink-matcha-nut-foam",
+      "name": "Матча с ореховой пенкой",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "menu-images/server-e43bbe44-67ec-4069-ac13-ea8fcda25542.webp",
+      "published": true,
+      "availableForOrder": false,
+      "order": 921,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-matcha-jasmine-baked-foam",
+      "name": "Матча с жасмином и топлёной пенкой",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "menu-images/server-8d4c3c74-de82-47b6-aa50-980f83d020b3.webp",
+      "published": true,
+      "availableForOrder": false,
+      "order": 922,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-matcha-masala-banana-foam",
+      "name": "Матча масала с банановой пенкой",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 923,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "sectionOrder": 0
+      }
+    },
+    {
+      "id": "drink-raf-macadamia",
+      "name": "Раф макадамия",
+      "description": "",
+      "price": 495,
+      "category": "drinks",
+      "image": "menu-images/server-61bde660-9ced-4b2d-a122-ad714a702ab5.webp",
+      "published": true,
+      "availableForOrder": false,
+      "order": 924,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 495
+          }
+        ],
+        "addons": [
+          {
+            "name": "Альтернативное молоко",
+            "price": 160
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-bumble-jerusalem-artichoke",
+      "name": "Бамбл с топинамбуром",
+      "description": "",
+      "price": 550,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 925,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 550
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 0
+      }
+    },
+    {
+      "id": "drink-espresso-tonic-feijoa-yuzu",
+      "name": "Эспрессо-тоник с фейхоа-юдзу",
+      "description": "",
+      "price": 420,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 926,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 370,
+            "price": 420
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 0
+      }
+    },
+    {
+      "id": "drink-espresso-tonic-raspberry-pomegranate",
+      "name": "Эспрессо-тоник с малина-гранат",
+      "description": "",
+      "price": 420,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 927,
+      "drink": {
+        "section": "Авторские",
+        "variants": [
+          {
+            "volumeMl": 370,
+            "price": 420
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 0
+      }
+    },
+    {
+      "id": "drink-lemonade-strawberry-barberry",
+      "name": "Клубника-барбарис",
+      "description": "",
+      "price": 440,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 928,
+      "drink": {
+        "section": "Домашние лимонады",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 440
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 4
+      }
+    },
+    {
+      "id": "drink-lemonade-feijoa-grape-yuzu",
+      "name": "Фейхоа-виноград-юдзу",
+      "description": "",
+      "price": 440,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 929,
+      "drink": {
+        "section": "Домашние лимонады",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 440
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 4
+      }
+    },
+    {
+      "id": "drink-lemonade-cream-soda",
+      "name": "Крем-сода с лаймом и лимоном",
+      "description": "",
+      "price": 440,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 930,
+      "drink": {
+        "section": "Домашние лимонады",
+        "variants": [
+          {
+            "volumeMl": 300,
+            "price": 440
+          }
+        ],
+        "addons": [],
+        "sectionOrder": 4
+      }
+    },
+    {
+      "id": "drink-juice-orange",
+      "name": "Апельсин",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "menu-images/server-97952884-c365-4850-a32f-632ada34e995.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 931,
+      "drink": {
+        "section": "Свежевыжатые соки",
+        "variants": [
+          {
+            "volumeMl": 200,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Дополнительные сливки",
+            "price": 70
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 5
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-juice-grapefruit",
+      "name": "Грейпфрут",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "menu-images/server-5405b9dd-e621-4251-a482-f06fb4ee7790.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 933,
+      "drink": {
+        "section": "Свежевыжатые соки",
+        "variants": [
+          {
+            "volumeMl": 200,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Дополнительные сливки",
+            "price": 70
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 5
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-juice-carrot",
+      "name": "Морковь",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "menu-images/server-0993ea63-4bc8-45c4-a0c2-60fff61a841b.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 934,
+      "drink": {
+        "section": "Свежевыжатые соки",
+        "variants": [
+          {
+            "volumeMl": 200,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Дополнительные сливки",
+            "price": 70
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 5
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-juice-celery",
+      "name": "Сельдерей",
+      "description": "",
+      "price": 450,
+      "category": "drinks",
+      "image": "menu-images/server-796bb85e-3a9b-4c7e-a915-3d200b23f68e.png",
+      "published": true,
+      "availableForOrder": false,
+      "order": 935,
+      "drink": {
+        "section": "Свежевыжатые соки",
+        "variants": [
+          {
+            "volumeMl": 200,
+            "price": 450
+          }
+        ],
+        "addons": [
+          {
+            "name": "Дополнительные сливки",
+            "price": 70
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 5
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-milkshake-raspberry-coconut",
+      "name": "Молочный коктейль малина-кокос",
+      "description": "",
+      "price": 550,
+      "category": "drinks",
+      "image": "menu-images/server-17f1db15-e4f1-451b-a8e9-d0fefd3eae15.webp",
+      "published": true,
+      "availableForOrder": false,
+      "order": 936,
+      "drink": {
+        "section": "Строго 18−",
+        "variants": [
+          {
+            "volumeMl": 450,
+            "price": 550
+          }
+        ],
+        "addons": [],
+        "childFriendly": true,
+        "sectionOrder": 6
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-smoothie-mango-pineapple",
+      "name": "Смузи манго-ананас",
+      "description": "",
+      "price": 550,
+      "category": "drinks",
+      "image": "menu-images/server-efea5b44-ef5c-4741-ad01-326e0781e640.webp",
+      "published": true,
+      "availableForOrder": false,
+      "order": 937,
+      "drink": {
+        "section": "Строго 18−",
+        "variants": [
+          {
+            "volumeMl": 450,
+            "price": 550
+          }
+        ],
+        "addons": [],
+        "childFriendly": true,
+        "sectionOrder": 6
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-smoothie-blackcurrant-mint",
+      "name": "Смузи чёрная смородина-мята",
+      "description": "",
+      "price": 550,
+      "category": "drinks",
+      "image": "menu-images/server-ab79273a-4aa0-4f24-ab74-de33a90601d3.webp",
+      "published": true,
+      "availableForOrder": false,
+      "order": 938,
+      "drink": {
+        "section": "Строго 18−",
+        "variants": [
+          {
+            "volumeMl": 450,
+            "price": 550
+          }
+        ],
+        "addons": [],
+        "childFriendly": true,
+        "sectionOrder": 6
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-fruit-tea-seabuckthorn-mango",
+      "name": "Облепиховый Чай",
+      "description": "",
+      "price": 350,
+      "category": "drinks",
+      "image": "menu-images/server-463fda79-ba6d-436f-a12a-4a1f1b8f8efb.jpg",
+      "published": true,
+      "availableForOrder": false,
+      "order": 939,
+      "drink": {
+        "section": "Не чай",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 350
+          },
+          {
+            "volumeMl": 600,
+            "price": 580
+          }
+        ],
+        "addons": [
+          {
+            "name": "Мёд",
+            "price": 60
+          },
+          {
+            "name": "Чабрец",
+            "price": 60
+          },
+          {
+            "name": "Мята",
+            "price": 60
+          },
+          {
+            "name": "Лимон",
+            "price": 60
+          },
+          {
+            "name": "Вода",
+            "price": 0
+          }
+        ],
+        "childFriendly": false,
+        "sectionOrder": 7
+      },
+      "hiddenOnSite": false
+    },
+    {
+      "id": "drink-fruit-tea-pomegranate-raspberry-rosemary",
+      "name": "Гранат / малина / розмарин",
+      "description": "",
+      "price": 350,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 940,
+      "drink": {
+        "section": "Не чай",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 350
+          },
+          {
+            "volumeMl": 600,
+            "price": 580
+          }
+        ],
+        "addons": [
+          {
+            "name": "Мёд",
+            "price": 60
+          },
+          {
+            "name": "Чабрец",
+            "price": 60
+          },
+          {
+            "name": "Мята",
+            "price": 60
+          },
+          {
+            "name": "Лимон",
+            "price": 60
+          },
+          {
+            "name": "Вода",
+            "price": 0
+          }
+        ],
+        "sectionOrder": 7
+      }
+    },
+    {
+      "id": "drink-fruit-tea-pineapple-rosemary-ginger",
+      "name": "Ананас / розмарин / имбирь",
+      "description": "",
+      "price": 350,
+      "category": "drinks",
+      "image": "",
+      "published": true,
+      "availableForOrder": false,
+      "order": 941,
+      "drink": {
+        "section": "Не чай",
+        "variants": [
+          {
+            "volumeMl": 350,
+            "price": 350
+          },
+          {
+            "volumeMl": 600,
+            "price": 580
+          }
+        ],
+        "addons": [
+          {
+            "name": "Мёд",
+            "price": 60
+          },
+          {
+            "name": "Чабрец",
+            "price": 60
+          },
+          {
+            "name": "Мята",
+            "price": 60
+          },
+          {
+            "name": "Лимон",
+            "price": 60
+          },
+          {
+            "name": "Вода",
+            "price": 0
+          }
+        ],
+        "sectionOrder": 7
+      }
+    },
+    {
+      "id": "38977528-a562-4194-945a-2e701588961b",
+      "name": "Тыквенный суп с креветками",
+      "description": "",
+      "price": 660,
+      "category": "site-c394b3bb-c729-4727-b515-49b77a93119c",
+      "image": "menu-images/server-649dd65b-7650-4161-ab9d-e150f0f4812c.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 943,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "bea2a42c-4113-464d-9267-1d5a1ddfd283",
+      "name": "Куриный бульон",
+      "description": "",
+      "price": 560,
+      "category": "site-c394b3bb-c729-4727-b515-49b77a93119c",
+      "image": "menu-images/server-0f963d38-383a-43cb-af1b-3e9b7d688470.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 944,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "4e020acc-da8a-4cf3-9e71-9a5c38e9e8ea",
+      "name": "Финский суп",
+      "description": "",
+      "price": 660,
+      "category": "site-c394b3bb-c729-4727-b515-49b77a93119c",
+      "image": "menu-images/server-a68ae21e-6c6d-4205-afa1-d52dfa0c2e25.png",
+      "published": true,
+      "availableForOrder": true,
+      "order": 945,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "c3521337-2cc0-4252-a3c3-912f150fad14",
+      "name": "Сэндвич с ростбиф",
+      "description": "",
+      "price": 780,
+      "category": "site-cb5a5fbf-8253-4c3f-8646-c3cb53986dbd",
+      "image": "menu-images/server-47f95ccf-427e-45a8-a81c-36994db1b097.jpg",
+      "published": true,
+      "availableForOrder": true,
+      "order": 946,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "7be8b321-9243-4f21-9a39-26a5696a6641",
+      "name": "Качо Э Пепе с медальоном",
+      "description": "Паста фетучини в сливочном соусе с трюфельной пастой, 2 медальона из говяжьей вырезки,сыр пармезан",
+      "price": 1450,
+      "category": "dinner",
+      "image": "",
+      "published": true,
+      "availableForOrder": true,
+      "order": 947,
+      "hiddenOnSite": false
+    },
+    {
+      "id": "ed1909de-035d-447b-96fb-50d9b9a60de6",
+      "name": "Мергато",
+      "description": "Салат с жареными кревестками ,микс зелени,помидоры черри ,клубника ,шарики из сыра креметта в дробленной фисташке ,манговый соус",
+      "price": 1450,
+      "category": "dinner",
+      "image": "",
+      "published": true,
+      "availableForOrder": true,
+      "order": 948,
+      "hiddenOnSite": false
+    }
+  ],
+  "revision": 106
 }

@@ -32,11 +32,11 @@ function dishMarkup(item, categories, delivery = true) {
   const priceUnset = testOnly && item.price === 0;
   const visual = item.image
     ? `<div class="dish-visual"><img class="dish-photo" src="${escapeHtml(item.image)}" width="600" height="450" alt="${escapeHtml(item.name)}" loading="lazy" decoding="async"></div>`
-    : '';
+    : '<div class="dish-visual dish-placeholder" aria-hidden="true"><span class="dish-placeholder-mark" aria-hidden="true"></span></div>';
   const available = item.availableForOrder !== false && !testOnly;
   const label = available ? 'В корзину' : 'Временно недоступно';
   const action = `<button class="dish-order-button${available ? '' : ' is-unavailable'}" type="button" data-cart-add="${escapeHtml(item.id)}" aria-label="${label}: ${escapeHtml(item.name)}"${available ? '' : ' disabled'}>${label}</button>`;
-  return `<article class="dish-card${item.image ? '' : ' dish-card-text'}" data-reveal="visual" data-reveal-key="dish:${escapeHtml(item.id)}" data-menu-category="${escapeHtml(item.category)}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categoryLabel)}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price${priceUnset ? ' is-unset' : ''}">${escapeHtml(priceUnset ? 'Цена уточняется' : money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p>${delivery ? `<div class="dish-cart-actions" data-cart-item="${escapeHtml(item.id)}">${action}</div>` : ''}</div></article>`;
+  return `<article class="dish-card" data-reveal="visual" data-reveal-key="dish:${escapeHtml(item.id)}" data-menu-category="${escapeHtml(item.category)}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categoryLabel)}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price${priceUnset ? ' is-unset' : ''}">${escapeHtml(priceUnset ? 'Цена уточняется' : money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p>${delivery ? `<div class="dish-cart-actions" data-cart-item="${escapeHtml(item.id)}">${action}</div>` : ''}</div></article>`;
 }
 
 /** Initial HTML uses the same card structure as menu.js; no JavaScript is needed to read dishes. */
@@ -45,8 +45,8 @@ export function renderMenu(items, inputCategories, options = {}) {
   const { categories } = menu;
   const published = publishedItems(menu.items).filter(item => item.category !== null);
   return {
-    grid: published.filter(item => item.image).map(item => dishMarkup(item, categories, options.delivery)).join('\n'),
-    extras: published.filter(item => !item.image).map(item => dishMarkup(item, categories, options.delivery)).join('\n'),
+    grid: published.map(item => dishMarkup(item, categories, options.delivery)).join('\n'),
+    extras: '',
     count: published.length,
   };
 }

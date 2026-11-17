@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="format-detection" content="telephone=no">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#F9F7F1">
   <title>Клуб гостей — Восемь утра</title>
-  <meta name="description" content="Регистрация в клубе гостей кофейни «Восемь утра»: 5% бонусами с каждого заказа и возможность оплатить бонусами до 30% покупки.">
+  <meta name="description" content="Регистрация в клубе гостей кофейни «Восемь утра»: приветственные 500 ₽ бонусами, 5% бонусами с каждого заказа и возможность оплатить бонусами до 30% чека.">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="assets/VosemSans-Regular.woff2" as="font" type="font/woff2" crossorigin>
   <script>
@@ -37,13 +38,13 @@
     @media(prefers-reduced-motion:reduce){html[data-intro] .intro-curtain{display:none}}
     @media print{html[data-intro] .intro-curtain{display:none}}
   </style>
-  <link rel="stylesheet" href="style.css?v=20260919-coffee7">
-  <link rel="stylesheet" href="registration.css?v=20260921-reg3">
+  <link rel="stylesheet" href="style.css?v=656a010016a5">
+  <link rel="stylesheet" href="registration.css?v=d7d5cfe2507a">
   <script type="module" src="site.js?v=20260919-coffee6"></script>
-  <script type="module" src="registration.js?v=20260921-reg3"></script>
+  <script type="module" src="registration.js?v=23ded5602e23"></script>
   <link rel="stylesheet" href="cookies.css?v=20260921-reg3">
   <script type="module" src="cookies.js?v=20260921-reg3"></script>
-</head>
+<meta id="site-profile" name="cafe-profile" content="catalog"></head>
 <body>
   <div class="intro-curtain" aria-hidden="true">
     <div class="intro-sheet">
@@ -83,8 +84,9 @@
       <p>Назовите номер телефона при заказе — бонусы начислятся автоматически.</p>
     </div>
     <div class="loyalty-summary">
+      <div class="loyalty-welcome"><strong>500 ₽</strong><span>бонусами за регистрацию<br>в клубе гостей</span></div>
       <div><strong>5%</strong><span>с каждого заказа<br>возвращаем бонусами</span></div>
-      <div><strong>до 30%</strong><span>суммы заказа можно<br>оплатить бонусами</span></div>
+      <div><strong>до 30%</strong><span>чека можно оплатить бонусами,<br>включая приветственные</span></div>
     </div>
     <p class="brand-quote"><span aria-hidden="true"><svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg></span> Хорошие привычки дарят больше.</p>
   </aside>
@@ -95,13 +97,13 @@
       <h1 id="registration-title" data-reveal="text">Давайте знакомиться</h1>
       <p class="intro" data-reveal="text">Пара слов о вас — и у любимого утреннего ритуала появится ещё один приятный повод.</p>
       <p class="required-help">Поля со звёздочкой обязательны</p>
-      <form id="registration-form" action="api/register.php" method="post">
-        <input type="hidden" name="ConsentVersion" value="2026-09-29-reg5">
+      <form data-phone-provider="flashcall" data-phone-verification="true" data-phone-test="false" data-phone-restricted-number="false" id="registration-form" action="api/register.php" method="post">
+        <input type="hidden" name="ConsentVersion" value="2026-10-19-reg13">
         <div class="fields">
           <div class="field full"><label for="last-name">Фамилия <span class="required-mark" aria-hidden="true">*</span></label><input id="last-name" name="LastName" autocomplete="family-name" placeholder="Ваша фамилия" maxlength="100" required></div>
           <div class="field"><label for="first-name">Имя <span class="required-mark" aria-hidden="true">*</span></label><input id="first-name" name="FirstName" autocomplete="given-name" placeholder="Ваше имя" maxlength="100" required></div>
           <div class="field"><label for="middle-name">Отчество <small>если есть</small></label><input id="middle-name" name="MiddleName" autocomplete="additional-name" placeholder="Ваше отчество" maxlength="100"></div>
-          <div class="field"><label for="birth-date">Дата рождения <span class="required-mark" aria-hidden="true">*</span></label><input id="birth-date" name="BirthDate" type="date" autocomplete="bday" min="1900-01-01" required></div>
+          <div class="field"><label for="birth-date">Дата рождения <span class="required-mark" aria-hidden="true">*</span></label><input id="birth-date" name="BirthDate" type="text" inputmode="numeric" autocomplete="bday" placeholder="ДД.ММ.ГГГГ" maxlength="10" required></div>
           <div class="field"><label for="phone">Номер телефона <span class="required-mark" aria-hidden="true">*</span></label><input id="phone" name="Phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="25" required></div>
           <div class="field full"><label for="guest-comment">Комментарий <small>необязательно</small></label><textarea id="guest-comment" name="Comment" rows="4" maxlength="500" aria-describedby="guest-comment-help" placeholder="Любимый напиток или пожелание к обслуживанию"></textarea><p id="guest-comment-help" class="field-help">Эта информация будет доступна сотрудникам кафе и поможет сделать обслуживание внимательнее.</p></div>
         </div>
@@ -109,15 +111,20 @@
         <div class="consent"><input id="consent" name="Consent" type="checkbox" required aria-describedby="consent-help"><label for="consent">Я даю <a href="consent.html" target="_blank" rel="noopener">согласие на обработку персональных данных<span class="visually-hidden"> (откроется в новой вкладке)</span></a> для участия в программе лояльности. <span class="required-mark" aria-hidden="true">*</span></label></div>
         <p id="consent-help" class="legal-note">Согласие можно отозвать: <a href="mailto:vosem.utra@inbox.ru">vosem.utra@inbox.ru</a>. Оно не включает рекламные рассылки.</p>
         <!-- phone-verification:start -->
-        <p id="phone-test-note" class="phone-test-note" hidden>Тест подтверждения телефона. Звонки доступны только на доверенный номер. Анкета не отправляется в FlexBonus, бонусы не начисляются.</p>
-        <div class="consent" id="phone-consent-row" hidden><input id="phone-consent" type="checkbox"><label for="phone-consent">Разрешаю передать номер телефона сервису uCaller для подтверждения звонком. <a href="privacy.html#phone-verification" target="_blank" rel="noopener">Подробнее</a></label></div>
-        <div id="phone-check-panel" class="phone-check-panel" hidden><button id="phone-check" type="button">Проверить связь с uCaller</button><p id="phone-check-result" class="field-help" role="status" hidden></p></div>
+        <p id="phone-test-note" class="phone-test-note" hidden>Тест подтверждения номера. Анкета не отправляется в FlexBonus, бонусы не начисляются.</p>
+        <div class="consent" id="phone-consent-row" hidden><input id="phone-consent" type="checkbox"><label for="phone-consent">Разрешаю передать номер телефона сервису FlashCall для подтверждения звонком. <a href="privacy.html#phone-verification" target="_blank" rel="noopener">Подробнее</a></label></div>
         <section id="phone-verification" class="phone-verification" aria-labelledby="phone-title" hidden>
-          <p class="eyebrow">ПОДТВЕРЖДЕНИЕ ТЕЛЕФОНА</p><h2 id="phone-title">Номер <span id="phone-target"></span></h2>
+          <h2 id="phone-title">Подтвердите номер</h2>
           <p id="phone-status" role="status"></p>
-          <div class="field"><label for="phone-code">Последние 4 цифры номера звонка</label><input id="phone-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="4" placeholder="0000" aria-describedby="phone-code-time phone-error"></div>
+          <div id="phone-incoming-panel" class="phone-incoming-panel" hidden>
+            <p id="phone-call-number" class="phone-call-number" hidden></p>
+            <a id="phone-call-link" class="phone-call-link" aria-label="Позвонить на проверочный номер">Позвонить</a>
+            <button id="phone-preview-confirm" class="phone-preview-confirm" type="button" hidden>Показать подтверждение</button>
+            <p id="phone-call-help" class="field-help"></p>
+            <button id="phone-poll" type="button">Я уже позвонил</button>
+          </div>
           <p id="phone-code-time" class="field-help"></p><p id="phone-error" class="message" role="alert" hidden></p>
-          <button id="phone-resend" type="button">Позвонить ещё раз</button>
+          <button id="phone-resend" type="button">Начать новую проверку</button>
         </section>
         <!-- phone-verification:end -->
         <p id="form-message" class="message" role="alert" hidden></p>

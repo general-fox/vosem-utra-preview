@@ -35,7 +35,7 @@ test('REG.RU consent receipts hash the current archived documents, not removed p
   const privateDir = path.join(root, 'dist-reg/vosem-utra-private');
   const registration = await readFile(path.join(privateDir, 'app/templates/registration.html'), 'utf8');
   const version = registration.match(/name="ConsentVersion" value="([^"]+)"/)[1];
-  assert.equal(version, '2026-09-29-reg5');
+  assert.equal(version, '2026-10-19-reg13');
   const result = spawnSync(phpBinary, ['-r', 'require $argv[1]; echo json_encode([CONSENT_VERSION, consent_document_hash("privacy"), consent_document_hash("consent")]);', path.join(site, 'api/consent-log.php')], { encoding: 'utf8', env: phpEnvironment });
   assert.equal(result.status, 0, result.stderr);
   const hashes = JSON.parse(result.stdout);

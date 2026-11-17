@@ -1,5 +1,8 @@
 import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from './menu-categories.js';
 import { orderedDrinkSections } from './menu-drinks-model.js';
+import { setupMobileCategoryRail } from './menu-mobile-navigation.js';
+import { createDrinkAddonsDialog } from './drink-addons-dialog.js';
+import { setupMenuHeader } from './menu-header.js';
 
 const root = document.querySelector('[data-breakfast-menu]');
 const deliveryEnabled = document.querySelector('meta[name="cafe-profile"]')?.content !== 'catalog';
@@ -18,6 +21,7 @@ let drinkSection = null;
 let drinkCategory = null;
 let drinkSignature = '';
 let activeDrinkPicker = null;
+let addonsDialog;
 
 function closeDrinkPicker() {
   if (activeDrinkPicker) activeDrinkPicker.open = false;
@@ -31,6 +35,7 @@ function returnToMenuResults(target) {
 }
 
 function setupMobileMenu() {
+  setupMobileCategoryRail(root);
   document.addEventListener('pointerdown', event => {
     if (activeDrinkPicker?.open && !activeDrinkPicker.contains(event.target)) closeDrinkPicker();
   });
@@ -68,6 +73,14 @@ function element(tag, className, text) {
   return node;
 }
 
+function showDishPlaceholder(visual, kind = 'dish') {
+  visual.className = `${kind}-visual ${kind}-placeholder`;
+  visual.setAttribute('aria-hidden', 'true');
+  const mark = element('span', 'dish-placeholder-mark');
+  mark.setAttribute('aria-hidden', 'true');
+  visual.replaceChildren(mark);
+}
+
 function dishCard(item) {
   const path = categoryPath(categories, item.category);
   const category = path.at(-1);
@@ -75,12 +88,12 @@ function dishCard(item) {
   const signature = JSON.stringify([item, category?.name, testOnly]);
   const cached = cards.get(item.id);
   if (cached?.signature === signature) return cached.card;
-  const card = element('article', `dish-card${item.image ? '' : ' dish-card-text'}`);
+  const card = element('article', 'dish-card');
   card.dataset.reveal = 'visual';
   card.dataset.revealKey = `dish:${item.id}`;
   card.dataset.menuCategory = item.category;
+  const visual = element('div', 'dish-visual');
   if (item.image) {
-    const visual = element('div', 'dish-visual');
     const img = element('img', 'dish-photo');
     img.src = new URL(item.image, pageBase).href;
     img.alt = item.name;
@@ -89,11 +102,13 @@ function dishCard(item) {
     img.width = 600;
     img.height = 450;
     img.addEventListener('error', () => {
-      visual.replaceChildren(element('span', 'dish-image-fallback', 'Фото скоро появится'));
+      showDishPlaceholder(visual);
     }, { once: true });
     visual.append(img);
-    card.append(visual);
+  } else {
+    showDishPlaceholder(visual);
   }
+  card.append(visual);
   const body = element('div', 'dish-body');
   body.append(element('p', 'dish-category', `${testOnly ? 'Тестовое блюдо · ' : ''}${category?.name || 'Меню'}`));
   const heading = element('div', 'dish-heading');
@@ -141,10 +156,10 @@ function drinkCard(item) {
   const signature = JSON.stringify({ ...item, drink: drinkContents });
   const cached = drinkCards.get(item.id);
   if (cached?.signature === signature) return cached.card;
-  const card = element('article', `drink-card${item.image ? ' drink-card-with-photo' : ''}`);
+  const card = element('article', 'drink-card drink-card-with-photo');
   card.dataset.drinkId = item.id;
+  const visual = element('div', 'drink-visual');
   if (item.image) {
-    const visual = element('div', 'drink-visual');
     const photo = element('img', 'drink-photo');
     photo.src = new URL(item.image, pageBase).href;
     photo.alt = item.name;
@@ -153,12 +168,13 @@ function drinkCard(item) {
     photo.loading = 'lazy';
     photo.decoding = 'async';
     photo.addEventListener('error', () => {
-      visual.hidden = true;
-      card.className = 'drink-card drink-card-photo-unavailable';
+      showDishPlaceholder(visual, 'drink');
     }, { once:true });
     visual.append(photo);
-    card.append(visual);
+  } else {
+    showDishPlaceholder(visual, 'drink');
   }
+  card.append(visual);
   const body = element('div', 'drink-body');
   const heading = element('div', 'drink-heading');
   const title = element('h5', 'drink-name', item.name);
@@ -170,14 +186,26 @@ function drinkCard(item) {
   if (item.description) body.append(element('p', 'drink-description', item.description));
   if (item.drink.childFriendly) body.append(element('span', 'drink-child-note', 'Можно детям'));
   const variants = item.drink.variants;
-  let variantIndex = 0;
-  const extras = new Set();
+  const selection = cached?.selection || { volumeMl:variants[0].volumeMl, extras:new Set() };
+  let variantIndex = Math.max(0, variants.findIndex(variant => variant.volumeMl === selection.volumeMl));
+  selection.volumeMl = variants[variantIndex].volumeMl;
+  const extras = selection.extras;
+  for (const name of extras) if (!item.drink.addons?.some(addon => addon.name === name)) extras.delete(name);
+  let addonsCount;
+  let addonsButton;
+  let addonConfig;
   const updatePrice = () => {
-    const extraPrice = [...extras].reduce((sum, index) => sum + Math.round(item.drink.addons[index].price * 100), 0);
+    const extraPrice = (item.drink.addons || []).reduce((sum, addon) => sum + (extras.has(addon.name) ? Math.round(addon.price * 100) : 0), 0);
     const value = money.format((Math.round(variants[variantIndex].price * 100) + extraPrice) / 100);
     price.textContent = value;
     price.setAttribute('aria-label', `${item.name}, ${variants[variantIndex].volumeMl} мл${extras.size ? ', с дополнениями' : ''}: ${value}`);
     price.dataset.includesAddons = String(extras.size > 0);
+    if (addonsCount) {
+      addonsCount.textContent = String(extras.size);
+      addonsCount.hidden = extras.size === 0;
+      addonsButton.setAttribute('aria-label', `Дополнения: ${item.name}${extras.size ? `, выбрано ${extras.size}` : ''}`);
+    }
+    addonsDialog?.refresh(item.id);
   };
   if (variants.length > 1) {
     const sizes = element('div', 'drink-volumes');
@@ -189,6 +217,7 @@ function drinkCard(item) {
       button.setAttribute('aria-pressed', String(index === variantIndex));
       button.addEventListener('click', () => {
         variantIndex = index;
+        selection.volumeMl = variants[index].volumeMl;
         buttons.forEach((other, i) => other.setAttribute('aria-pressed', String(i === index)));
         updatePrice();
       });
@@ -198,35 +227,40 @@ function drinkCard(item) {
     body.append(sizes);
   } else body.append(element('p', 'drink-volume-single', `${variants[0].volumeMl} мл`));
   if (item.drink.addons?.length) {
-    const details = element('details', 'drink-addons');
-    const summary = element('summary', 'drink-addons-title', 'Дополнения');
+    const addons = element('div', 'drink-addons');
+    addonsButton = element('button', 'drink-addons-title', 'Дополнения');
+    addonsButton.type = 'button';
+    addonsButton.setAttribute('aria-haspopup', 'dialog');
+    addonsCount = element('span', 'drink-addons-count');
+    addonsCount.setAttribute('aria-hidden', 'true');
     const symbol = element('span', 'drink-addons-symbol');
     symbol.setAttribute('aria-hidden', 'true');
-    summary.append(symbol);
-    const options = element('div', 'drink-addon-options');
-    options.append(element('p', 'drink-addon-help', 'Выберите дополнение — цена обновится.'));
-    item.drink.addons.forEach((addon, index) => {
-      const label = element('label', 'drink-addon');
-      const checkbox = element('input', 'drink-addon-check');
-      checkbox.type = 'checkbox';
-      checkbox.setAttribute('aria-label', `${addon.name}: ${item.name}`);
-      checkbox.addEventListener('change', () => {
-        if (checkbox.checked) extras.add(index); else extras.delete(index);
+    addonsButton.append(addonsCount, symbol);
+    addonConfig = {
+      id:item.id, name:item.name, addons:item.drink.addons, trigger:addonsButton,
+      getState:() => ({ selected:extras, volumeMl:variants[variantIndex].volumeMl, total:price.textContent }),
+      onChange:(name, checked) => {
+        if (checked) extras.add(name); else extras.delete(name);
         updatePrice();
-      });
-      label.append(checkbox, element('span', 'drink-addon-name', addon.name), element('span', 'drink-addon-price', addon.price ? `+${money.format(addon.price)}` : 'Бесплатно'));
-      options.append(label);
+      },
+    };
+    addonsButton.addEventListener('click', () => {
+      addonsDialog ||= createDrinkAddonsDialog(document, window);
+      addonsDialog.open(addonConfig);
     });
-    details.append(summary, options);
-    body.append(details);
+    addons.append(addonsButton);
+    body.append(addons);
   }
   card.append(body);
   updatePrice();
-  drinkCards.set(item.id, { signature, card });
+  drinkCards.set(item.id, { signature, card, selection });
+  if (addonConfig) addonsDialog?.update(addonConfig);
+  else addonsDialog?.close(item.id);
   return card;
 }
 
 function renderDrinks(drinks, otherCount) {
+  addonsDialog?.retain(drinks.map(item => item.id));
   const container = root.querySelector('[data-drinks-menu]');
   const pickerSlot = root.querySelector('[data-menu-drink-nav]');
   container.hidden = drinks.length === 0;
@@ -277,12 +311,9 @@ function renderDrinks(drinks, otherCount) {
     section.setAttribute('aria-labelledby', title.id);
     head.append(title);
     const photos = element('div', 'drink-photo-list');
-    photos.append(...group.filter(item => item.image).map(drinkCard));
+    photos.append(...group.map(drinkCard));
     photos.hidden = photos.children.length === 0;
-    const list = element('div', 'drink-list');
-    list.append(...group.filter(item => !item.image).map(drinkCard));
-    list.hidden = list.children.length === 0;
-    section.append(head, photos, list);
+    section.append(head, photos);
     sectionNodes.set(name, section);
     sections.append(section);
   }
@@ -403,10 +434,9 @@ function render() {
   renderNavigation(visible);
   const drinks = visible.filter(item => item.drink?.variants?.length);
   const dishes = visible.filter(item => !item.drink?.variants?.length);
-  replaceCards(root.querySelector('[data-dish-grid]'), dishes.filter(item => item.image).map(dishCard));
-  const withoutPhotos = dishes.filter(item => !item.image);
-  replaceCards(root.querySelector('[data-dish-extras]'), withoutPhotos.map(dishCard));
-  root.querySelector('[data-extra-section]').hidden = withoutPhotos.length === 0;
+  replaceCards(root.querySelector('[data-dish-grid]'), dishes.map(dishCard));
+  replaceCards(root.querySelector('[data-dish-extras]'), []);
+  root.querySelector('[data-extra-section]').hidden = true;
   const empty = root.querySelector('[data-menu-empty]');
   empty.hidden = visible.length !== 0;
   empty.textContent = selected === 'dinner' ? 'Ужины скоро появятся в меню. А пока можно выбрать что-нибудь из завтраков.' : 'В этом разделе пока нет блюд. Посмотрите другие разделы меню.';
@@ -443,7 +473,8 @@ async function loadMenu() {
   loading = true;
   const status = root.querySelector('[data-menu-status]');
   const retry = root.querySelector('[data-menu-retry]');
-  status.textContent = items.length ? 'Обновляем меню…' : 'Загружаем меню…';
+  // A background refresh must not add a status row and move the visible cards.
+  status.textContent = items.length ? '' : 'Загружаем меню…';
   retry.hidden = true;
   root.setAttribute('aria-busy', 'true');
   try {
@@ -470,6 +501,7 @@ async function loadMenu() {
 }
 
 if (root) {
+  setupMenuHeader(root);
   setupMobileMenu();
   root.querySelector('[data-menu-retry]').addEventListener('click', loadMenu);
   // Reflect edits made in another tab when guests return to the menu.

@@ -41,11 +41,17 @@ test('catalog packages exclude delivery assets and keep a versioned privacy arch
     assert.doesNotMatch(privacy,/vosem_cart_v1|vosem_order_guest|оформления заказа|отправка заказов/);
     assert.match(privacy,/vosem_admin/);
     const consent = await readFile(path.join(dir,'site/api/consent-log.php'),'utf8');
-    const phoneBuild = /data-phone-verification="true"/.test(registration);
-    assert.equal(files.includes('loyalty-phone.php'), phoneBuild);
-    assert.equal((await readdir(path.join(dir,'site'))).includes('phone-verification.js'), phoneBuild);
-    if (!phoneBuild) assert.doesNotMatch(registration, /uCaller|id="phone-(?:code|verification|consent|test-note)"/);
-    const version = phoneBuild ? '2026-10-02-reg7' : '2026-10-01-reg6';
+    const production = folder === 'dist-reg';
+    assert.match(registration, /data-phone-provider="flashcall"/);
+    assert.equal(files.includes('loyalty-phone.php'), production);
+    assert.ok((await readdir(path.join(dir,'site'))).includes('phone-verification.js'));
+    assert.ok((await readdir(path.join(dir,'site'))).includes('birth-date.js'));
+    if (!production) {
+      const handler = await readFile(path.join(dir,'site/api/register.php'),'utf8');
+      assert.match(handler,/http_response_code\(503\)/);
+      assert.doesNotMatch(handler,/loyalty_send|curl_exec|LoyaltyPhone/, 'Test package cannot call live services');
+    }
+    const version = '2026-10-19-reg13';
     assert.ok(consent.includes(version));
     for (const page of ['privacy','consent']) {
       assert.deepEqual(await readFile(path.join(app,'templates',`${page}.html`)), await readFile(path.join(dir,`vosem-utra-private/legal-versions/${version}`,`${page}.html`)));

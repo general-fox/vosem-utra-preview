@@ -7,8 +7,10 @@ import { profileHtml } from './site-profile.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staging = process.argv.includes('--staging');
 const delivery = process.argv.includes('--delivery');
-const ucaller = process.argv.includes('--ucaller');
-if (ucaller && (!staging || delivery)) throw new Error('uCaller rollout currently supports only the catalog staging package');
+// The imported production form uses FlashCall. Test packages remain offline;
+// do not silently turn the retired uCaller command into a paid-call workflow.
+if (process.argv.includes('--ucaller')) throw new Error('The uCaller build is retired. Use build:reg:test for an offline test package.');
+const phoneVerification = !staging;
 const outputName = staging ? 'dist-reg-test' : 'dist-reg';
 const output = path.join(root, outputName);
 const marker = '.generated-reg-package';
@@ -30,18 +32,19 @@ const built = path.join(root, staging ? 'dist-hosting-test' : 'dist-hosting');
 const manifest = JSON.parse(await readFile(path.join(built, 'site-build.json'), 'utf8'));
 if (manifest.production !== !staging || manifest.delivery !== delivery || manifest.siteUrl !== 'https://vosem-utra.ru/') throw new Error('Build mode does not match the requested REG.RU package');
 await cp(built, site, { recursive: true });
-await cp(path.join(root, 'hosting/legacy-public'), site, { recursive: true,
-  filter: source => ucaller || path.basename(source) !== 'phone-verification.js' });
+await cp(path.join(root, 'hosting/legacy-public'), site, { recursive: true });
 await cp(path.join(root, 'hosting/legacy-private'), privateRoot, { recursive: true });
 await cp(path.join(root, 'hosting/php'), app, { recursive: true, filter: source => {
   const name = path.basename(source);
-  if (!ucaller && name === 'loyalty-phone.php') return false;
+  if (!phoneVerification && name === 'loyalty-phone.php') return false;
   if (!delivery && /^(?:orders\.php|staff-|telegram|kds-|import-menu\.php|menu-import\.php)/.test(name)) return false;
   return !staging || !/^(?:staff-|telegram)/.test(name);
 } });
-await writeFile(path.join(app, 'features.php'), `<?php\n// Build-owned module switches: private settings cannot re-enable excluded modules.\nreturn ['delivery_enabled'=>${delivery ? 'true' : 'false'}, 'keeper_enabled'=>${delivery ? 'true' : 'false'}, 'manual_menu_enabled'=>${delivery ? 'false' : 'true'}, 'telegram_enabled'=>${delivery && !staging ? 'true' : 'false'}, 'phone_verification_enabled'=>${ucaller ? 'true' : 'false'}];\n`);
+await writeFile(path.join(app, 'features.php'), `<?php\n// Build-owned module switches: private settings cannot re-enable excluded modules.\nreturn ['delivery_enabled'=>${delivery ? 'true' : 'false'}, 'keeper_enabled'=>${delivery ? 'true' : 'false'}, 'manual_menu_enabled'=>${delivery ? 'false' : 'true'}, 'telegram_enabled'=>${delivery && !staging ? 'true' : 'false'}, 'phone_verification_enabled'=>${phoneVerification ? 'true' : 'false'}];\n`);
 // Always overwrite an old staging deployment profile when promoting to production.
 if (!staging) await writeFile(path.join(app, 'deployment.php'), "<?php\nreturn ['publicOrigin'=>'https://vosem-utra.ru','public_origin'=>'https://vosem-utra.ru','indexing'=>true,'staging'=>false];\n");
+// This is a non-secret build policy, never a copied live API credential.
+if (phoneVerification) await writeFile(path.join(privateRoot, 'loyalty-phone-policy.php'), "<?php\nreturn ['provider'=>'flashcall','required'=>true,'testOnly'=>false,'publicOrigin'=>'https://vosem-utra.ru'];\n");
 await cp(path.join(root, 'hosting/public'), site, { recursive: true });
 // The PHP registration/legal pages keep stable URLs instead of Vite's hashed URLs.
 // Copy only their dependencies, not font sources or unused photo originals.
@@ -64,24 +67,20 @@ for (const pattern of [/<aside\b[^>]*class="brand-panel"[^>]*>[\s\S]*?<\/aside>/
   if (!current || !pattern.test(registrationHosted)) throw new Error('Registration content slot is missing');
   registrationHosted = registrationHosted.replace(pattern, () => current);
 }
-for (const name of ['style.css', 'registration.css', 'registration.js', ...(ucaller ? ['phone-verification.js'] : [])]) {
+for (const name of ['style.css', 'registration.css', 'registration.js', 'phone-verification.js', 'birth-date.js']) {
   const version = createHash('sha256').update(await readFile(path.join(site, name))).digest('hex').slice(0, 12);
   const attribute = name.endsWith('.js') ? 'src' : 'href';
   registrationHosted = registrationHosted.replace(new RegExp(`${attribute}="${name.replace('.', '\\.')}[^\"]*"`), `${attribute}="${name}?v=${version}"`);
-  if (name === 'phone-verification.js') {
+  if (name === 'phone-verification.js' || name === 'birth-date.js') {
     const file = path.join(site,'registration.js');
-    const js = (await readFile(file,'utf8')).replace(/phone-verification\.js\?v=[^']+/, `phone-verification.js?v=${version}`);
+    const js = (await readFile(file,'utf8')).replace(new RegExp(name.replace('.', '\\.') + "\\?v=[^']+"), `${name}?v=${version}`);
     await writeFile(file,js);
     const scriptVersion=createHash('sha256').update(js).digest('hex').slice(0,12);
     registrationHosted=registrationHosted.replace(/src="registration\.js[^\"]*"/,`src="registration.js?v=${scriptVersion}"`);
   }
 }
-if (ucaller) registrationHosted = registrationHosted.replace('<form id="registration-form"','<form data-phone-verification="true" data-phone-test="true" id="registration-form"');
-else {
-  const phoneMarkup = /<!-- phone-verification:start -->[\s\S]*?<!-- phone-verification:end -->/;
-  if (!phoneMarkup.test(registrationHosted)) throw new Error('Phone verification content slot is missing');
-  registrationHosted = registrationHosted.replace(phoneMarkup, '');
-}
+// Registration on the ordinary test domain stays disabled by the server stub below.
+// Keep the imported production markup; never replace it with the retired uCaller UI.
 await writeFile(registrationPath, registrationHosted);
 await mkdir(path.join(app, 'seed'), { recursive: true });
 await cp(path.join(root, 'public/data/menu.json'), path.join(app, 'seed/menu.json'));
@@ -90,11 +89,6 @@ await cp(path.join(root, 'scripts/import-drinks.php'), path.join(app, 'import-dr
 for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', ...(delivery ? ['checkout', 'order-terms', ...(staging ? [] : ['staff', 'staff-demo'])] : [])]) {
   let html = await readFile(path.join(site, `${page}.html`), 'utf8');
   if (!delivery) html = profileHtml(html, false);
-  if (ucaller) {
-    html = html.replaceAll('2026-10-01-reg6','2026-10-02-reg7');
-    if (page === 'privacy') html = html.replace('</article>', '<h2 id="phone-verification">Подтверждение телефона звонком</h2><p>По отдельному согласию на проверку телефона сайт передаёт номер сервису uCaller (ucaller.ru) для проверочного звонка. Фамилия, имя, дата рождения и комментарий в uCaller не передаются. Гость вводит последние четыре цифры номера входящего звонка; правильный код проверяется на сервере и действует пять минут. Для защиты от перебора и лишних звонков сервер временно хранит техническую сессию и криптографические отпечатки номера и сетевого адреса.</p><p>На test888.ru проверка доступна только для доверенного тестового номера. Анкета не отправляется в FlexBonus, гостевая карта не создаётся и бонусы не начисляются.</p></article>');
-    if (page === 'consent') html = html.replace('</article>', '<p>На test888.ru проводится только тест подтверждения телефона: анкета в FlexBonus не отправляется, бонусы не начисляются. Номер передаётся uCaller для проверочного звонка только после отдельной отметки согласия в форме. Остальные поля анкеты сервису звонков не передаются.</p></article>');
-  }
   // The current homepage already includes cookies.js and its settings button.
   // Vite bundles that module: injecting the legacy URL too creates two banners.
   await writeFile(path.join(app, 'templates', `${page}.html`), html);
@@ -104,18 +98,22 @@ for (const page of ['index', 'admin', 'registration', 'privacy', 'consent', ...(
 // Public JSON also passes through PHP and cannot leak a hidden seed item.
 // Each registration receipt refers to an immutable copy of the displayed legal
 // documents. Keep earlier revisions; never relabel them with the current text.
-let consentLog = await readFile(path.join(site, 'api/consent-log.php'), 'utf8');
-if (!delivery) {
-  consentLog = consentLog.replaceAll('2026-09-29-reg5', '2026-10-01-reg6');
-  await writeFile(path.join(site, 'api/consent-log.php'), consentLog);
-}
-if (ucaller) { consentLog=consentLog.replaceAll('2026-10-01-reg6','2026-10-02-reg7'); await writeFile(path.join(site,'api/consent-log.php'),consentLog); }
+const consentLog = await readFile(path.join(site, 'api/consent-log.php'), 'utf8');
 const legalVersion = consentLog.match(/const CONSENT_VERSION = '([0-9]{4}-[0-9]{2}-[0-9]{2}-reg[0-9]+)';/)?.[1];
 if (!legalVersion) throw new Error('Missing legal document version');
 const legalArchive = path.join(privateRoot, 'legal-versions', legalVersion);
 await mkdir(legalArchive, { recursive: true });
 for (const page of ['privacy', 'consent']) {
-  await cp(path.join(app, 'templates', `${page}.html`), path.join(legalArchive, `${page}.html`), { force: false, errorOnExist: true });
+  const template = path.join(app, 'templates', `${page}.html`);
+  const snapshot = path.join(legalArchive, `${page}.html`);
+  // Preserve the exact bytes imported from the live backup. An existing legal
+  // revision must never be silently relabelled with modified document contents.
+  try {
+    if (!(await readFile(snapshot)).equals(await readFile(template))) throw new Error(`Legal document changed without a new revision: ${page}`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    await cp(template, snapshot, { force: false, errorOnExist: true });
+  }
 }
 await rm(path.join(site, 'data'), { recursive: true, force: true });
 await rm(path.join(site, 'site-build.json'), { force: true });
@@ -142,29 +140,24 @@ if (!staging) {
   for (const worker of ['kds-worker.php', 'telegram-worker.php', 'telegram-setup.php']) await writeFile(path.join(privateRoot, worker), "<?php\nif (PHP_SAPI !== 'cli') { http_response_code(404); exit; }\necho \"Delivery module is disabled.\\n\";\n");
 }
 await cp(path.join(root, 'hosting/prepare-access.php'), path.join(privateRoot, 'prepare-access.php'));
-await cp(path.join(root, ucaller ? 'docs/ucaller-test.md' : !delivery ? 'docs/catalog-upload.md' : staging ? 'docs/test888-upload.md' : 'docs/reg-upload.md'), path.join(output, 'READ-ME.md'));
+await cp(path.join(root, !delivery ? 'docs/catalog-upload.md' : staging ? 'docs/test888-upload.md' : 'docs/reg-upload.md'), path.join(output, 'READ-ME.md'));
 if (!staging && delivery) {
   for (const name of ['local-runtime-and-transfer', 'delivery', 'telegram']) {
     await cp(path.join(root, `docs/${name}.md`), path.join(output, `${name}.md`));
   }
 }
 // A package never includes runtime data or the old integration credentials.
-for (const name of ['admin-config.php', 'admin-data', 'orders-config.php', 'telegram-config.php', 'telegram-access.txt', 'kds-config.json', 'kds-config.php', 'kds-data', 'order-data', 'orders-data', 'loyalty.php', 'recaptcha.php', 'consents', 'ucaller-config.json', 'phone-data']) {
+for (const name of ['admin-config.php', 'admin-data', 'orders-config.php', 'telegram-config.php', 'telegram-access.txt', 'kds-config.json', 'kds-config.php', 'kds-data', 'order-data', 'orders-data', 'loyalty.php', 'recaptcha.php', 'consents', 'ucaller-config.json', 'flashcall-config.json', 'phone-data', 'registration-data']) {
   if ((await readdir(privateRoot)).includes(name)) throw new Error(`Private runtime content leaked into package: ${name}`);
 }
 if (staging) {
   await cp(path.join(root, 'hosting/staging/deployment.php'), path.join(app, 'deployment.php'));
   if (delivery) await cp(path.join(root, 'hosting/staging/orders-config.example.php'), path.join(privateRoot, 'orders-config.php'));
-  if (!ucaller) await cp(path.join(root, 'hosting/staging/register.php'), path.join(site, 'api/register.php'));
+  await cp(path.join(root, 'hosting/staging/register.php'), path.join(site, 'api/register.php'));
   await cp(path.join(root, 'hosting/staging/staging.css'), path.join(site, 'staging.css'));
   const rules = await readFile(path.join(site, '.htaccess'), 'utf8');
   const headers = rules.replace(/# Use the original request line:[\s\S]*?(?=<FilesMatch "\\\.)/, 'Header always set Referrer-Policy "strict-origin-when-cross-origin"\nHeader always set X-Frame-Options "DENY"\n');
   await writeFile(path.join(site, '.htaccess'), headers);
-}
-if (ucaller) {
-  await writeFile(path.join(privateRoot,'loyalty-phone-policy.php'),"<?php\nreturn ['required'=>true,'testOnly'=>true,'publicOrigin'=>'https://test888.ru'];\n");
-  await cp(path.join(root,'hosting/ucaller-config.example.json'),path.join(privateRoot,'ucaller-config.example.json'));
-  await cp(path.join(root,'docs/ucaller-test.md'),path.join(output,'UCALLER-TEST.md'));
 }
 if (!delivery) {
   const rules = await readFile(path.join(site, '.htaccess'), 'utf8');

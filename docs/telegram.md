@@ -8,7 +8,7 @@
 ## Куда вставить токен
 
 На компьютере подготовлен приватный файл
-`C:\8utra\vosem-utra-preview\.data\telegram-config.php`. Вставить токен BotFather
+`C:\Websites\vosem-utra\github-preview\.data\telegram-config.php`. Вставить токен BotFather
 между кавычками в строке `'botToken' => ''`. Пока оставить `'enabled' => false`.
 Файл и вся `.data` исключены из Git. Не вставлять токен в HTML, JavaScript,
 Vite-переменные, переписку, публичный репозиторий или URL в адресной строке.

@@ -35,7 +35,7 @@ WebP подготовлены без увеличения разрешения �
 
 Неиспользуемые PNG/JPG/WebP и отдельный неиспользуемый SVG убраны из рабочего
 дерева. Для восстановления на этом компьютере оставлены в
-`C:\vosem-utra\_archive\2026-09-29\unused-assets` с прежними именами.
+`C:\Websites\vosem-utra\_archive\2026-09-29\unused-assets` с прежними именами.
 История обработки и промпты сохранены в
-`C:\vosem-utra\_archive\2026-09-29\before-cleanup\docs\photo-preparation.md`
+`C:\Websites\vosem-utra\_archive\2026-09-29\before-cleanup\docs\photo-preparation.md`
 и предыдущих коммитах Git. Возвращать старые варианты в публичную сборку не нужно.

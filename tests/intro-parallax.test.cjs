@@ -293,8 +293,8 @@ function harness(options = {}) {
   }
 
   const depthImages = [...html.matchAll(/<img data-depth="([^"]+)"[^>]*>/g)];
-  assert.equal(depthImages.length, 3, 'Only the three menu cards use depth');
-  assert.deepEqual(depthImages.map(match => match[1]), ['coffee', 'breakfast', 'pastry']);
+  // The seasonal invitation can replace the introductory photo cards.
+  assert.ok(depthImages.every(match => ['coffee', 'breakfast', 'pastry'].includes(match[1])), 'Only supported introductory photos use depth');
   assert.doesNotMatch(depthImages.map(match => match[0]).join(''), /hero-photo|cafe-friends|cafe-barista|cafe-sign/);
   assert.match(css, /hours-sun-turn 36s linear infinite/);
   assert.match(css, /prefers-reduced-motion:reduce\)\{\.hours-note \.sun-icon\{animation:none!important/);

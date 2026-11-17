@@ -24,7 +24,9 @@ password-reset-mail.php
 !hosting/php/password-reset-mail.php
 password-reset-mail.json
 ucaller-config.json
+flashcall-config.json
 phone-data/
+registration-data/
 **/password-reset-mail.local.php
 admin-access.txt
 admin-access-*.txt
