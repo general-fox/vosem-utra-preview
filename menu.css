@@ -251,7 +251,7 @@ button.menu-breadcrumb{text-decoration:underline;text-decoration-color:var(--sto
 .dish-details-button{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:9px 15px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font-size:12px;line-height:1.4;cursor:pointer;white-space:nowrap}
 .dish-details-arrow{font-size:18px;line-height:1}
 .dish-allergen{position:relative;flex-shrink:0}
-.dish-allergen-button{display:grid;place-items:center;width:38px;height:38px;padding:2px 0 0;border:1px solid #C9BEA4;border-radius:50%;background:var(--cream);color:#62563C;font-size:13px;line-height:1;cursor:pointer}
+.dish-allergen-button{display:grid;place-items:center;width:38px;height:38px;padding:0;border:1px solid #C9BEA4;border-radius:50%;background:var(--cream);color:#62563C;font-size:13px;line-height:1;cursor:pointer}
 .dish-allergen-tooltip{position:absolute;right:0;bottom:calc(100% + 10px);z-index:4;width:210px;max-width:70vw;padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:0 8px 24px #2B2B2B14;font-size:12px;line-height:1.5;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .15s}
 .dish-allergen.is-open .dish-allergen-tooltip,.dish-allergen-button:focus-visible+.dish-allergen-tooltip{opacity:1;visibility:visible}
 .dish-details-button:focus-visible,.dish-allergen-button:focus-visible,.dish-details-close:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
