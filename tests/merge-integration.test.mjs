@@ -1,15 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { profileHtml } from '../scripts/site-profile.mjs';
 
 const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
 
-test('merged homepage keeps cookies, menu and cart with one entry per module', async () => {
+test('homepage keeps cookies, menu and workshop once; cart requires an explicit delivery profile', async () => {
   const html = await read('index.html');
   assert.doesNotMatch(html, /^(?:<<<<<<<|=======|>>>>>>>)/m);
-  for (const name of ['cookies.js', 'menu.js', 'cart.js']) {
-    const sources = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(match => match[1].split('?')[0]);
-    assert.equal(sources.filter(source => source === name).length, 1, name);
+  for (const [name, page, delivery] of [['GitHub source', html, false], ['catalog build', profileHtml(html, false), false], ['delivery build', profileHtml(html, true), true]]) {
+    const sources = [...page.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(match => match[1].split('?')[0]);
+    for (const module of ['cookies.js', 'menu.js', 'workshop.js']) assert.equal(sources.filter(source => source === module).length, 1, name + ': ' + module);
+    assert.equal(sources.filter(source => source === 'cart.js').length, Number(delivery), name + ': cart script');
+    assert.equal((page.match(/href="cart\.css"/g) || []).length, Number(delivery), name + ': cart stylesheet');
+    assert.equal((page.match(/\bdata-cart-open\b/g) || []).length, Number(delivery), name + ': cart entry');
+    assert.ok(page.includes('name="cafe-profile" content="' + (delivery ? 'delivery' : 'catalog') + '"'), name + ': profile');
   }
   assert.equal((html.match(/\bdata-cookie-settings\b/g) || []).length, 1);
   assert.match(html, /name="robots" content="noindex, nofollow"/);

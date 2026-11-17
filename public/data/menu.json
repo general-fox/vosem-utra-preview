@@ -42,170 +42,219 @@
     {
       "id": "morning-eight",
       "name": "Завтрак «8 утра»",
-      "description": "Слабосолёная сёмга, мортаделла, микс салата, варёное яйцо, помидор, огурец и тартин.\n\nкБЖУ: 580/33/32.2/39.4",
+      "description": "Слабосолёная сёмга, мортаделла, микс салата, варёное яйцо, помидор, огурец и тартин.",
       "price": 1240,
       "category": "breakfast",
-      "image": "menu-images/morning-eight.webp",
+      "image": "/menu-images/morning-eight-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 0,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "580/33/32.2/39.4",
+      "images": [
+        "/menu-images/morning-eight-1-landscape.webp",
+        "/menu-images/morning-eight-wide-filled.webp"
+      ]
     },
     {
       "id": "avocado-toast",
       "name": "Авокадо-тост с яйцом пашот и гуакамоле",
-      "description": "Тартин, гуакамоле, авокадо, яйцо пашот, семена, оливковое масло и розовый перец.\nкБЖУ: 420/14.5/22/9/3",
+      "description": "Тартин, гуакамоле, авокадо, яйцо пашот, семена, оливковое масло и розовый перец.",
       "price": 620,
       "category": "breakfast",
-      "image": "menu-images/avocado-toast.webp",
+      "image": "/menu-images/avocado-toast-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 1,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "420/14.5/22/9/3",
+      "images": [
+        "/menu-images/avocado-toast-1-landscape.webp",
+        "/menu-images/avocado-toast-wide-filled.webp"
+      ]
     },
     {
       "id": "chef-syrniki",
       "name": "Сырники от шефа",
-      "description": "Ванильная сметана с маком, клубника, голубика, мята и сахарная пудра.\nКбжу: 540/27.7/27.7/45",
+      "description": "Ванильная сметана с маком, клубника, голубика, мята и сахарная пудра.",
       "price": 810,
       "category": "breakfast",
-      "image": "menu-images/chef-syrniki.webp",
+      "image": "/menu-images/chef-syrniki-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 2,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "540/27.7/27.7/45",
+      "images": [
+        "/menu-images/chef-syrniki-1-landscape.webp",
+        "/menu-images/chef-syrniki-wide-filled.webp"
+      ]
     },
     {
       "id": "feta-omelette",
       "name": "Омлет с фетой",
-      "description": "Яйцо, фета, каперсы, оливковое масло, узбекские помидоры, сибулет и петрушка.\nкБЖУ: 407/15.2/36.4/4.5",
+      "description": "Яйцо, фета, каперсы, оливковое масло, узбекские помидоры, сибулет и петрушка.",
       "price": 520,
       "category": "breakfast",
-      "image": "menu-images/feta-omelette.webp",
+      "image": "/menu-images/feta-omelette-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 3,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "407/15.2/36.4/4.5",
+      "images": [
+        "/menu-images/feta-omelette-1-landscape.webp",
+        "/menu-images/feta-omelette-wide-filled.webp"
+      ]
     },
     {
       "id": "oatmeal-berries",
       "name": "Арахисовая овсянка с бананом",
-      "description": "Молочная овсяная каша с арахисовой пастой,бананом и фисташками.\nКбжу: 486/14.1/18.3/66.1",
+      "description": "Молочная овсяная каша с арахисовой пастой,бананом и фисташками.",
       "price": 450,
       "category": "breakfast",
-      "image": "menu-images/server-81dff36d-3677-4e99-aed2-d5b6a76a772c.jpg",
+      "image": "/menu-images/oatmeal-berries-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 4,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "486/14.1/18.3/66.1"
     },
     {
       "id": "salmon-draniki",
       "name": "Драники с лососем и яйцом пашот",
-      "description": "Лосось, микс салата, сметана, яйцо пашот, семена, специи и трюфельное масло.\nкБЖУ: 488/20.3/33.9/25.4",
+      "description": "Лосось, микс салата, сметана, яйцо пашот, семена, специи и трюфельное масло.",
       "price": 1250,
       "category": "breakfast",
-      "image": "menu-images/salmon-draniki.webp",
+      "image": "/menu-images/salmon-draniki-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 5,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "488/20.3/33.9/25.4",
+      "images": [
+        "/menu-images/salmon-draniki-1-landscape.webp",
+        "/menu-images/salmon-draniki-wide-filled.webp"
+      ]
     },
     {
       "id": "shakshuka",
       "name": "Шакшука",
-      "description": "Яйца,томатная основа и свежая зелень: мята, петрушка, кинза.\nкБЖУ: 442/21.9/20.5/42.5",
+      "description": "Яйца,томатная основа и свежая зелень: мята, петрушка, кинза.",
       "price": 850,
       "category": "breakfast",
-      "image": "menu-images/shakshuka.webp",
+      "image": "/menu-images/shakshuka-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 7,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "442/21.9/20.5/42.5",
+      "images": [
+        "/menu-images/shakshuka-1-landscape.webp",
+        "/menu-images/shakshuka-wide-filled.webp"
+      ]
     },
     {
       "id": "salmon-brioche",
       "name": "Бриошь с лососем, яйцом пашот и гуакамоле",
-      "description": "Бриошь, гуакамоле, микс семян, яйцо пашот, лосось и голландский соус.\nкБЖУ: 771/22.7/61.9/30.8",
+      "description": "Свежая обжаренная на сливочном масле бриошь с гуакамоле ,лососем, яйцом пашот и соусом голландез",
       "price": 1390,
       "category": "breakfast",
-      "image": "menu-images/salmon-brioche.webp",
+      "image": "/menu-images/salmon-brioche-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 9,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "771/22.7/61.9/30.8",
+      "images": [
+        "/menu-images/salmon-brioche-1-landscape.webp",
+        "/menu-images/salmon-brioche-wide-filled.webp"
+      ]
     },
     {
       "id": "green-buckwheat",
       "name": "Пророщеная гречка с трюфелем",
-      "description": "Зелёная пророщеная гречка с пармезаном и трюфельным маслом",
+      "description": "Зелёная пророщеная гречка с пармезаном, трюфельным маслом и шампиньонами",
       "price": 820,
       "category": "breakfast",
-      "image": "menu-images/server-7a25d575-810a-4f42-abb1-0c3b92155741.jpg",
+      "image": "/menu-images/green-buckwheat-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 11,
       "hiddenOnSite": false
     },
     {
       "id": "wheat-porridge",
       "name": "Каша пшеничная",
-      "description": "Тёплая пшеничная каша.\nКбжу: 504/11.8/24.1/60",
+      "description": "Пшеничная каша на молоке со сливочным маслом",
       "price": 280,
       "category": "breakfast",
-      "image": "menu-images/wheat-porridge.webp",
+      "image": "/menu-images/wheat-porridge-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 12,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "504/11.8/24.1/60",
+      "images": [
+        "/menu-images/wheat-porridge-1-landscape.webp",
+        "/menu-images/wheat-porridge-wide-filled.webp"
+      ]
     },
     {
       "id": "omelette-scramble",
       "name": "Омлет / скрэмбл",
-      "description": "Яйцо, сливочное масло, соль, перец, сибулет и оливковое масло.\nКбжу: 308/13/27.9/1.3",
+      "description": "Нежный скрэмбл на сливочном масле",
       "price": 370,
       "category": "breakfast",
-      "image": "menu-images/server-da8028d5-525a-4638-aef2-d7326cf34bcc.png",
+      "image": "/menu-images/omelette-scramble-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 14,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "308/13/27.9/1.3",
+      "images": [
+        "/menu-images/omelette-scramble-1-landscape.webp",
+        "/menu-images/omelette-scramble-wide-filled.webp"
+      ]
     },
     {
       "id": "caramel-syrniki",
       "name": "Сырники с карамелью и миндалём",
-      "description": "Сырники с карамелью и миндалём.\nКбжу: 540/27.7/27.7/45",
+      "description": "Сырники из кремчиза с домашней соленой карамелью и миндальными лепестками",
       "price": 720,
       "category": "breakfast",
-      "image": "menu-images/server-a14bc2e7-6a3f-4baa-a932-37fe17d187ed.png",
+      "image": "/menu-images/caramel-syrniki-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 15,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "540/27.7/27.7/45"
     },
     {
       "id": "cottage-casserole",
       "name": "Творожная запеканка с солёной карамелью",
-      "description": "Творожная запеканка с солёной карамелью.\nКбжу: 506/16.5/35.2/30.6",
+      "description": "Домашняя творожная запеканка с ягодами и домашней солёной карамелью.",
       "price": 550,
       "category": "breakfast",
-      "image": "menu-images/server-d3e9b2e5-8913-4242-aad4-4bb890fa2db2.png",
+      "image": "/menu-images/cottage-casserole-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 17,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "506/16.5/35.2/30.6"
     },
     {
       "id": "sour-cream-pancakes",
       "name": "Блины со сметаной",
-      "description": "Блины с порцией сметаны.\nКбжу: 433/9.9/22.2/48.3",
+      "description": "Блины как дома со сметаной",
       "price": 250,
       "category": "breakfast",
-      "image": "menu-images/server-3eac59de-4f9b-481a-a357-d1ca151e07ed.png",
+      "image": "/menu-images/sour-cream-pancakes-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 18,
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "nutrition": "433/9.9/22.2/48.3"
     },
     {
       "id": "006c5f61-0eb0-45ba-9c98-7cdbb2e531ec",
@@ -213,10 +262,14 @@
       "description": "",
       "price": 820,
       "category": "dinner",
-      "image": "menu-images/server-4259dd0c-e03c-494c-a21d-ba0772cbaa99.jpg",
+      "image": "/menu-images/006c5f61-0eb0-45ba-9c98-7cdbb2e531ec-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
-      "order": 902
+      "availableForOrder": false,
+      "order": 902,
+      "images": [
+        "/menu-images/006c5f61-0eb0-45ba-9c98-7cdbb2e531ec-1-landscape.webp",
+        "/menu-images/006c5f61-0eb0-45ba-9c98-7cdbb2e531ec-wide-filled.webp"
+      ]
     },
     {
       "id": "034a8e18-186c-4977-8cac-3c0509abfafe",
@@ -224,10 +277,14 @@
       "description": "",
       "price": 1450,
       "category": "dinner",
-      "image": "menu-images/server-bfe49d02-f801-48ae-adcd-839b802f8530.jpg",
+      "image": "/menu-images/034a8e18-186c-4977-8cac-3c0509abfafe-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
-      "order": 903
+      "availableForOrder": false,
+      "order": 903,
+      "images": [
+        "/menu-images/034a8e18-186c-4977-8cac-3c0509abfafe-1-landscape.webp",
+        "/menu-images/034a8e18-186c-4977-8cac-3c0509abfafe-wide-filled.webp"
+      ]
     },
     {
       "id": "e113c15a-2bb5-45dd-b8e8-f7675a4b50e5",
@@ -235,10 +292,14 @@
       "description": "",
       "price": 1320,
       "category": "dinner",
-      "image": "menu-images/server-69d06491-8d11-4a00-afc9-40fd5b93d779.jpg",
+      "image": "/menu-images/e113c15a-2bb5-45dd-b8e8-f7675a4b50e5-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
-      "order": 905
+      "availableForOrder": false,
+      "order": 905,
+      "images": [
+        "/menu-images/e113c15a-2bb5-45dd-b8e8-f7675a4b50e5-1-landscape.webp",
+        "/menu-images/e113c15a-2bb5-45dd-b8e8-f7675a4b50e5-wide-filled.webp"
+      ]
     },
     {
       "id": "5e95df95-b45a-4edb-9a22-dbdbbb5d2e46",
@@ -246,10 +307,14 @@
       "description": "",
       "price": 1250,
       "category": "dinner",
-      "image": "menu-images/server-b05b124a-d614-438f-ad5c-299a96592108.jpg",
+      "image": "/menu-images/5e95df95-b45a-4edb-9a22-dbdbbb5d2e46-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
-      "order": 906
+      "availableForOrder": false,
+      "order": 906,
+      "images": [
+        "/menu-images/5e95df95-b45a-4edb-9a22-dbdbbb5d2e46-1-landscape.webp",
+        "/menu-images/5e95df95-b45a-4edb-9a22-dbdbbb5d2e46-wide-filled.webp"
+      ]
     },
     {
       "id": "drink-espresso",
@@ -257,7 +322,7 @@
       "description": "",
       "price": 180,
       "category": "drinks",
-      "image": "menu-images/server-140336bf-2406-4344-a869-1d146ef8711e.png",
+      "image": "/menu-images/drink-espresso-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 907,
@@ -281,7 +346,7 @@
       "description": "",
       "price": 280,
       "category": "drinks",
-      "image": "menu-images/server-af85e43b-0822-4a6b-aa63-0c3d850b0d74.png",
+      "image": "/menu-images/drink-espresso-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 908,
@@ -327,7 +392,7 @@
       "description": "",
       "price": 300,
       "category": "drinks",
-      "image": "menu-images/server-67ac28d0-5412-4268-a6b4-69cf9f69dd3e.png",
+      "image": "/menu-images/drink-filter-coffee-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 910,
@@ -351,12 +416,12 @@
       "description": "",
       "price": 230,
       "category": "drinks",
-      "image": "menu-images/server-ed9b483f-c631-43a3-a70e-1014f12b0752.png",
+      "image": "/menu-images/drink-cappuccino-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 911,
       "drink": {
-        "section": "С молоком",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 230,
@@ -374,7 +439,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 2
+        "sectionOrder": 0
       },
       "hiddenOnSite": false
     },
@@ -384,12 +449,12 @@
       "description": "",
       "price": 370,
       "category": "drinks",
-      "image": "menu-images/server-4341d3b9-c272-455c-a675-13dcd57214f6.png",
+      "image": "/menu-images/drink-latte-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 912,
       "drink": {
-        "section": "С молоком",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 370,
@@ -403,7 +468,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 2
+        "sectionOrder": 0
       },
       "hiddenOnSite": false
     },
@@ -418,7 +483,7 @@
       "availableForOrder": false,
       "order": 913,
       "drink": {
-        "section": "С молоком",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 180,
@@ -431,8 +496,10 @@
             "price": 160
           }
         ],
-        "sectionOrder": 2
-      }
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-raf",
@@ -445,7 +512,7 @@
       "availableForOrder": false,
       "order": 914,
       "drink": {
-        "section": "С молоком",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 300,
@@ -458,8 +525,10 @@
             "price": 160
           }
         ],
-        "sectionOrder": 2
-      }
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-milk-chocolate",
@@ -467,12 +536,12 @@
       "description": "",
       "price": 320,
       "category": "drinks",
-      "image": "menu-images/server-7d549d49-57a3-4cd1-a4dd-19286f012d42.png",
+      "image": "/menu-images/drink-milk-chocolate-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 915,
       "drink": {
-        "section": "С молоком",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 280,
@@ -490,7 +559,7 @@
           }
         ],
         "childFriendly": true,
-        "sectionOrder": 2
+        "sectionOrder": 0
       },
       "hiddenOnSite": false
     },
@@ -505,7 +574,7 @@
       "availableForOrder": false,
       "order": 916,
       "drink": {
-        "section": "Холодные",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 370,
@@ -518,8 +587,10 @@
             "price": 160
           }
         ],
-        "sectionOrder": 3
-      }
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-bumble",
@@ -532,7 +603,7 @@
       "availableForOrder": false,
       "order": 918,
       "drink": {
-        "section": "Холодные",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 370,
@@ -540,8 +611,10 @@
           }
         ],
         "addons": [],
-        "sectionOrder": 3
-      }
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-matcha-bumble",
@@ -554,7 +627,7 @@
       "availableForOrder": false,
       "order": 919,
       "drink": {
-        "section": "Холодные",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 350,
@@ -562,8 +635,10 @@
           }
         ],
         "addons": [],
-        "sectionOrder": 3
-      }
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-espresso-tonic",
@@ -576,7 +651,7 @@
       "availableForOrder": false,
       "order": 920,
       "drink": {
-        "section": "Холодные",
+        "section": "Авторские",
         "variants": [
           {
             "volumeMl": 370,
@@ -584,8 +659,10 @@
           }
         ],
         "addons": [],
-        "sectionOrder": 3
-      }
+        "childFriendly": false,
+        "sectionOrder": 0
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-matcha-nut-foam",
@@ -593,7 +670,7 @@
       "description": "",
       "price": 450,
       "category": "drinks",
-      "image": "menu-images/server-e43bbe44-67ec-4069-ac13-ea8fcda25542.webp",
+      "image": "/menu-images/drink-matcha-nut-foam-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 921,
@@ -614,7 +691,11 @@
         "childFriendly": false,
         "sectionOrder": 0
       },
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "images": [
+        "/menu-images/drink-matcha-nut-foam-1-landscape.webp",
+        "/menu-images/drink-matcha-nut-foam-2-landscape.webp"
+      ]
     },
     {
       "id": "drink-matcha-jasmine-baked-foam",
@@ -622,7 +703,7 @@
       "description": "",
       "price": 450,
       "category": "drinks",
-      "image": "menu-images/server-8d4c3c74-de82-47b6-aa50-980f83d020b3.webp",
+      "image": "/menu-images/drink-matcha-jasmine-baked-foam-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 922,
@@ -643,7 +724,11 @@
         "childFriendly": false,
         "sectionOrder": 0
       },
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "images": [
+        "/menu-images/drink-matcha-jasmine-baked-foam-1-landscape.webp",
+        "/menu-images/drink-matcha-jasmine-baked-foam-2-landscape.webp"
+      ]
     },
     {
       "id": "drink-matcha-masala-banana-foam",
@@ -678,7 +763,7 @@
       "description": "",
       "price": 495,
       "category": "drinks",
-      "image": "menu-images/server-61bde660-9ced-4b2d-a122-ad714a702ab5.webp",
+      "image": "/menu-images/drink-raf-macadamia-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 924,
@@ -699,7 +784,11 @@
         "childFriendly": false,
         "sectionOrder": 0
       },
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "images": [
+        "/menu-images/drink-raf-macadamia-1-landscape.webp",
+        "/menu-images/drink-raf-macadamia-2-landscape.webp"
+      ]
     },
     {
       "id": "drink-bumble-jerusalem-artichoke",
@@ -778,7 +867,7 @@
       "availableForOrder": false,
       "order": 928,
       "drink": {
-        "section": "Домашние лимонады",
+        "section": "Домашние лимонады/смузи",
         "variants": [
           {
             "volumeMl": 300,
@@ -786,7 +875,7 @@
           }
         ],
         "addons": [],
-        "sectionOrder": 4
+        "sectionOrder": 2
       }
     },
     {
@@ -800,7 +889,7 @@
       "availableForOrder": false,
       "order": 929,
       "drink": {
-        "section": "Домашние лимонады",
+        "section": "Домашние лимонады/смузи",
         "variants": [
           {
             "volumeMl": 300,
@@ -808,7 +897,7 @@
           }
         ],
         "addons": [],
-        "sectionOrder": 4
+        "sectionOrder": 2
       }
     },
     {
@@ -822,7 +911,7 @@
       "availableForOrder": false,
       "order": 930,
       "drink": {
-        "section": "Домашние лимонады",
+        "section": "Домашние лимонады/смузи",
         "variants": [
           {
             "volumeMl": 300,
@@ -830,7 +919,7 @@
           }
         ],
         "addons": [],
-        "sectionOrder": 4
+        "sectionOrder": 2
       }
     },
     {
@@ -839,7 +928,7 @@
       "description": "",
       "price": 450,
       "category": "drinks",
-      "image": "menu-images/server-97952884-c365-4850-a32f-632ada34e995.png",
+      "image": "/menu-images/drink-juice-orange-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 931,
@@ -858,7 +947,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 5
+        "sectionOrder": 3
       },
       "hiddenOnSite": false
     },
@@ -868,7 +957,7 @@
       "description": "",
       "price": 450,
       "category": "drinks",
-      "image": "menu-images/server-5405b9dd-e621-4251-a482-f06fb4ee7790.png",
+      "image": "/menu-images/drink-juice-grapefruit-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 933,
@@ -887,7 +976,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 5
+        "sectionOrder": 3
       },
       "hiddenOnSite": false
     },
@@ -897,7 +986,7 @@
       "description": "",
       "price": 450,
       "category": "drinks",
-      "image": "menu-images/server-0993ea63-4bc8-45c4-a0c2-60fff61a841b.png",
+      "image": "/menu-images/drink-juice-carrot-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 934,
@@ -916,7 +1005,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 5
+        "sectionOrder": 3
       },
       "hiddenOnSite": false
     },
@@ -926,7 +1015,7 @@
       "description": "",
       "price": 450,
       "category": "drinks",
-      "image": "menu-images/server-796bb85e-3a9b-4c7e-a915-3d200b23f68e.png",
+      "image": "/menu-images/drink-juice-celery-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 935,
@@ -945,7 +1034,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 5
+        "sectionOrder": 3
       },
       "hiddenOnSite": false
     },
@@ -955,12 +1044,12 @@
       "description": "",
       "price": 550,
       "category": "drinks",
-      "image": "menu-images/server-17f1db15-e4f1-451b-a8e9-d0fefd3eae15.webp",
+      "image": "/menu-images/drink-milkshake-raspberry-coconut-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 936,
       "drink": {
-        "section": "Строго 18−",
+        "section": "Домашние лимонады/смузи",
         "variants": [
           {
             "volumeMl": 450,
@@ -969,9 +1058,13 @@
         ],
         "addons": [],
         "childFriendly": true,
-        "sectionOrder": 6
+        "sectionOrder": 2
       },
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "images": [
+        "/menu-images/drink-milkshake-raspberry-coconut-1-landscape.webp",
+        "/menu-images/drink-milkshake-raspberry-coconut-2-landscape.webp"
+      ]
     },
     {
       "id": "drink-smoothie-mango-pineapple",
@@ -979,12 +1072,12 @@
       "description": "",
       "price": 550,
       "category": "drinks",
-      "image": "menu-images/server-efea5b44-ef5c-4741-ad01-326e0781e640.webp",
+      "image": "/menu-images/drink-smoothie-mango-pineapple-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 937,
       "drink": {
-        "section": "Строго 18−",
+        "section": "Домашние лимонады/смузи",
         "variants": [
           {
             "volumeMl": 450,
@@ -993,9 +1086,13 @@
         ],
         "addons": [],
         "childFriendly": true,
-        "sectionOrder": 6
+        "sectionOrder": 2
       },
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "images": [
+        "/menu-images/drink-smoothie-mango-pineapple-1-landscape.webp",
+        "/menu-images/drink-smoothie-mango-pineapple-2-landscape.webp"
+      ]
     },
     {
       "id": "drink-smoothie-blackcurrant-mint",
@@ -1003,12 +1100,12 @@
       "description": "",
       "price": 550,
       "category": "drinks",
-      "image": "menu-images/server-ab79273a-4aa0-4f24-ab74-de33a90601d3.webp",
+      "image": "/menu-images/drink-smoothie-blackcurrant-mint-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 938,
       "drink": {
-        "section": "Строго 18−",
+        "section": "Домашние лимонады/смузи",
         "variants": [
           {
             "volumeMl": 450,
@@ -1017,9 +1114,13 @@
         ],
         "addons": [],
         "childFriendly": true,
-        "sectionOrder": 6
+        "sectionOrder": 2
       },
-      "hiddenOnSite": false
+      "hiddenOnSite": false,
+      "images": [
+        "/menu-images/drink-smoothie-blackcurrant-mint-1-landscape.webp",
+        "/menu-images/drink-smoothie-blackcurrant-mint-2-landscape.webp"
+      ]
     },
     {
       "id": "drink-fruit-tea-seabuckthorn-mango",
@@ -1027,12 +1128,12 @@
       "description": "",
       "price": 350,
       "category": "drinks",
-      "image": "menu-images/server-463fda79-ba6d-436f-a12a-4a1f1b8f8efb.jpg",
+      "image": "/menu-images/drink-fruit-tea-seabuckthorn-mango-1-landscape.webp",
       "published": true,
       "availableForOrder": false,
       "order": 939,
       "drink": {
-        "section": "Не чай",
+        "section": "Чай",
         "variants": [
           {
             "volumeMl": 350,
@@ -1066,7 +1167,7 @@
           }
         ],
         "childFriendly": false,
-        "sectionOrder": 7
+        "sectionOrder": 6
       },
       "hiddenOnSite": false
     },
@@ -1081,7 +1182,7 @@
       "availableForOrder": false,
       "order": 940,
       "drink": {
-        "section": "Не чай",
+        "section": "Чай",
         "variants": [
           {
             "volumeMl": 350,
@@ -1114,8 +1215,10 @@
             "price": 0
           }
         ],
-        "sectionOrder": 7
-      }
+        "childFriendly": false,
+        "sectionOrder": 6
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "drink-fruit-tea-pineapple-rosemary-ginger",
@@ -1128,7 +1231,7 @@
       "availableForOrder": false,
       "order": 941,
       "drink": {
-        "section": "Не чай",
+        "section": "Чай",
         "variants": [
           {
             "volumeMl": 350,
@@ -1161,8 +1264,10 @@
             "price": 0
           }
         ],
-        "sectionOrder": 7
-      }
+        "childFriendly": false,
+        "sectionOrder": 6
+      },
+      "hiddenOnSite": false
     },
     {
       "id": "38977528-a562-4194-945a-2e701588961b",
@@ -1170,9 +1275,9 @@
       "description": "",
       "price": 660,
       "category": "site-c394b3bb-c729-4727-b515-49b77a93119c",
-      "image": "menu-images/server-649dd65b-7650-4161-ab9d-e150f0f4812c.png",
+      "image": "/menu-images/38977528-a562-4194-945a-2e701588961b-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 943,
       "hiddenOnSite": false
     },
@@ -1182,9 +1287,9 @@
       "description": "",
       "price": 560,
       "category": "site-c394b3bb-c729-4727-b515-49b77a93119c",
-      "image": "menu-images/server-0f963d38-383a-43cb-af1b-3e9b7d688470.png",
+      "image": "/menu-images/bea2a42c-4113-464d-9267-1d5a1ddfd283-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 944,
       "hiddenOnSite": false
     },
@@ -1194,9 +1299,9 @@
       "description": "",
       "price": 660,
       "category": "site-c394b3bb-c729-4727-b515-49b77a93119c",
-      "image": "menu-images/server-a68ae21e-6c6d-4205-afa1-d52dfa0c2e25.png",
+      "image": "/menu-images/4e020acc-da8a-4cf3-9e71-9a5c38e9e8ea-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 945,
       "hiddenOnSite": false
     },
@@ -1206,9 +1311,9 @@
       "description": "",
       "price": 780,
       "category": "site-cb5a5fbf-8253-4c3f-8646-c3cb53986dbd",
-      "image": "menu-images/server-47f95ccf-427e-45a8-a81c-36994db1b097.jpg",
+      "image": "/menu-images/c3521337-2cc0-4252-a3c3-912f150fad14-1-landscape.webp",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 946,
       "hiddenOnSite": false
     },
@@ -1220,7 +1325,7 @@
       "category": "dinner",
       "image": "",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 947,
       "hiddenOnSite": false
     },
@@ -1232,10 +1337,10 @@
       "category": "dinner",
       "image": "",
       "published": true,
-      "availableForOrder": true,
+      "availableForOrder": false,
       "order": 948,
       "hiddenOnSite": false
     }
   ],
-  "revision": 106
+  "revision": 135
 }

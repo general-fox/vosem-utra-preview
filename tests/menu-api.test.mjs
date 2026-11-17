@@ -17,6 +17,78 @@ const seedItems = [
   { id: 'hidden', name: 'Черновик', description: '', price: 600, category: 'signature', image: '', published: false, order: 0 },
 ];
 
+test('dish nutrition and allergens survive save, public JSON, restart and explicit clearing', async t => {
+  const app = await fixture(t);
+  await app.login();
+  let current = (await app.request('/api/admin/menu')).value;
+  for (const item of current.items) for (const key of ['nutrition','allergens']) assert.equal(Object.hasOwn(item,key),false);
+  Object.assign(current.items[0], { nutrition:'  420 ккал\nБ: 14 г, Ж: 22 г, У: 39 г  ', allergens:'  Яйцо, молоко и глютен  ' });
+  let saved = await app.request('/api/admin/menu', { method:'PUT', body:current });
+  assert.equal(saved.status,200);
+  assert.equal(saved.value.items[0].nutrition,'420 ккал\nБ: 14 г, Ж: 22 г, У: 39 г');
+  assert.equal(saved.value.items[0].allergens,'Яйцо, молоко и глютен');
+  assert.equal(saved.value.items[0].description,seedItems[0].description);
+  for (const route of ['/api/menu','/data/menu.json']) {
+    const guest=(await app.request(route,{authenticated:false})).value.items.find(item=>item.id===current.items[0].id);
+    assert.equal(guest.nutrition,saved.value.items[0].nutrition);
+    assert.equal(guest.allergens,saved.value.items[0].allergens);
+  }
+  const bytes=await readFile(path.join(app.dataDir,'menu.json'),'utf8');
+  for (const patch of [{nutrition:null},{nutrition:42},{nutrition:'я'.repeat(501)},{allergens:[]},{allergens:'bad\u0000value'},{allergens:'я'.repeat(1001)}]) {
+    const invalid=structuredClone(saved.value); Object.assign(invalid.items[0],patch);
+    const result=await app.request('/api/admin/menu',{method:'PUT',body:invalid});
+    assert.equal(result.status,400); assert.equal(result.value.code,'invalid_item');
+    assert.equal(await readFile(path.join(app.dataDir,'menu.json'),'utf8'),bytes);
+  }
+  await app.stop(); await app.start(); await app.login();
+  current=(await app.request('/api/admin/menu')).value;
+  assert.deepEqual(current,saved.value);
+  assert.equal(Object.hasOwn(current.items[1],'nutrition'),false);
+  assert.equal(Object.hasOwn(current.items[1],'allergens'),false);
+  Object.assign(current.items[0],{nutrition:' \n ',allergens:''});
+  saved=await app.request('/api/admin/menu',{method:'PUT',body:current});
+  assert.equal(saved.status,200);
+  const cleared=(await app.request('/api/menu',{authenticated:false})).value.items.find(item=>item.id===current.items[0].id);
+  assert.equal(cleared.nutrition,''); assert.equal(cleared.allergens,'');
+});
+
+test('photo galleries survive save, public JSON and restart with ordered covers', async t => {
+  const app = await fixture(t);
+  await app.login();
+  let current = (await app.request('/api/admin/menu')).value;
+  assert.equal(Object.hasOwn(current.items[0], 'images'), false, 'Old records remain backward compatible');
+  current.items[0].images = ['uploads/second.png', '/menu-images/toast.jpg', '/uploads/third.webp'];
+  let saved = await app.request('/api/admin/menu', { method:'PUT', body:current });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.value.items[0].images, ['/uploads/second.png', '/menu-images/toast.jpg', '/uploads/third.webp']);
+  assert.equal(saved.value.items[0].image, '/uploads/second.png');
+  for (const route of ['/api/menu','/data/menu.json']) {
+    const guest=(await app.request(route,{authenticated:false})).value.items.find(item=>item.id===current.items[0].id);
+    assert.deepEqual(guest.images,saved.value.items[0].images);
+    assert.equal(guest.image,guest.images[0]);
+  }
+  await app.stop(); await app.start(); await app.login();
+  current=(await app.request('/api/admin/menu')).value;
+  assert.deepEqual(current.items[0].images,saved.value.items[0].images);
+  current.items[0].images.reverse();
+  saved=await app.request('/api/admin/menu',{method:'PUT',body:current});
+  assert.equal(saved.status,200);
+  assert.equal(saved.value.items[0].image,'/uploads/third.webp');
+  const bytes=await readFile(path.join(app.dataDir,'menu.json'),'utf8');
+  const invalid=structuredClone(saved.value);
+  invalid.items[0].images=['https://outside.test/a.jpg'];
+  assert.equal((await app.request('/api/admin/menu',{method:'PUT',body:invalid})).status,400);
+  assert.equal(await readFile(path.join(app.dataDir,'menu.json'),'utf8'),bytes,'Invalid gallery cannot corrupt saved state');
+  current=structuredClone(saved.value); current.items[0].images=[];
+  saved=await app.request('/api/admin/menu',{method:'PUT',body:current});
+  assert.equal(saved.status,200);
+  assert.deepEqual(saved.value.items[0].images,[]);
+  assert.equal(saved.value.items[0].image,'');
+  await app.stop(); await app.start(); await app.login();
+  const cleared=(await app.request('/api/admin/menu')).value.items[0];
+  assert.deepEqual(cleared.images,[]); assert.equal(cleared.image,'');
+});
+
 test('beverage edits survive save, public JSON and restart while invalid choices leave storage untouched', async t => {
   const app = await fixture(t);
   await app.login();

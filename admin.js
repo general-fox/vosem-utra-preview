@@ -1,5 +1,7 @@
 import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from './menu-categories.js';
 import { orderedDrinkSections } from './menu-drinks-model.js';
+import { MAX_MENU_IMAGES, menuImages } from './menu-images.js';
+import { setupTouchPhotoSort } from './admin-photo-sort.js';
 import { createDrinkSectionManager, drinkSectionOrderForItem } from './admin-drink-sections.js';
 
 const $ = (id) => document.getElementById(id);
@@ -11,7 +13,13 @@ const state = { items: [], categories: [], sourceCategories: [], mode: 'site', s
 const auth = { challengeToken: '', recovery: false, busy: false, setupRequired: false, production: false, mfaRequired: false, passwordOnly: false,
   enrollmentAvailable: false, enrollmentToken: '', enrollmentPhase: '', enrollmentTimer: null, generation: 0,
   requiresNewPassword: false, recoveryPending: false, trustedUsername: '', logoutPending: false };
-const draft = { id: null, image: '', file: null, previewUrl: '', dirty: false, resume: false };
+const draft = { id: null, photos: [], dirty: false, resume: false };
+let photoDrag = null;
+let photoSaveAttempt = 0;
+const photoTouchSort = setupTouchPhotoSort($('photo-list'), { document, window,
+  isDisabled: () => state.busy || !$('editor-dialog').open,
+  onMove: (from, to) => { const photo = draft.photos[from]; if (photo) moveDraftPhoto(photo, to); },
+});
 const drinkEditor = { variants: [], addons: [], nextRow: 0 };
 const passwordReset = { token: '', passwordToken: '', email: '', retryAt: 0, verifyAt: 0, completeAt: 0, expiresAt: 0, resumeUntil: 0, timer: null, generation: 0 };
 const RESET_STORAGE_KEY = 'vosem-utra-password-reset';
@@ -946,7 +954,7 @@ function itemCard(item) {
   sun.setAttribute('aria-hidden', 'true');
   placeholder.append(sun, element('p', '', 'Без фотографии'));
   photo.append(placeholder);
-  const src = imageUrl(item.image);
+  const src = imageUrl(menuImages(item)[0]);
   if (src) {
     placeholder.hidden = true;
     const img = element('img');
@@ -956,6 +964,7 @@ function itemCard(item) {
     img.src = src;
     photo.append(img);
   }
+  if (menuImages(item).length > 1) photo.append(element('span', 'item-photo-count', `${menuImages(item).length} фото`));
   photo.append(element('span', `item-status${item.published ? '' : ' is-hidden'}`,
     item.published ? 'На сайте' : item.category ? 'Скрыто с сайта' : 'Только на кассе'));
   const body = element('div', 'admin-item-body');
@@ -1185,17 +1194,91 @@ async function persist(items, { categories = state.categories } = {}) {
 }
 
 function clearPreviewUrl() {
-  if (draft.previewUrl) URL.revokeObjectURL(draft.previewUrl);
-  draft.previewUrl = '';
+  photoTouchSort.cancel();
+  for (const photo of draft.photos) if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+  draft.photos = [];
+  photoDrag = null;
+}
+
+
+function moveDraftPhoto(photo, position) {
+  if (state.busy) return;
+  const previous = draft.photos.indexOf(photo);
+  if (previous < 0 || position < 0 || position >= draft.photos.length || previous === position) return;
+  draft.photos.splice(previous, 1);
+  draft.photos.splice(position, 0, photo);
+  draft.dirty = true;
+  updatePreview();
+  $('photo-list').children[position]?.querySelector('.photo-select')?.focus();
+  $('photo-announcement').textContent = `Фотография перемещена на место ${position + 1} из ${draft.photos.length}.`;
+}
+
+function removeDraftPhoto(photo) {
+  if (state.busy) return;
+  const position = draft.photos.indexOf(photo);
+  if (position < 0) return;
+  if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+  draft.photos.splice(position, 1);
+  draft.dirty = true;
+  updatePreview();
+  const next = $('photo-list').children[Math.min(position, draft.photos.length - 1)];
+  (next?.querySelector('.photo-select') || $('photo')).focus();
+  $('photo-announcement').textContent = 'Фотография удалена из карточки. Сохраните блюдо, чтобы применить изменения.';
 }
 
 function updatePreview() {
-  const src = draft.previewUrl || imageUrl(draft.image);
-  $('preview-image').hidden = !src;
-  $('photo-placeholder').hidden = !!src;
-  if (src) $('preview-image').src = src;
-  else $('preview-image').removeAttribute('src');
-  $('remove-photo').hidden = !src;
+  $('photo').disabled = draft.photos.length >= MAX_MENU_IMAGES;
+  $('photo-count').textContent = `${draft.photos.length} из ${MAX_MENU_IMAGES}`;
+  $('photo-order-help').hidden = !draft.photos.length;
+  $('photo-list').hidden = !draft.photos.length;
+  const rows = draft.photos.map((photo, index) => {
+    const row = element('li', 'photo-list-item');
+    row.draggable = true;
+    const select = element('button', 'photo-select');
+    select.type = 'button';
+    select.setAttribute('aria-label', `Фотография ${index + 1}${index === 0 ? ', главная' : ''}. Перетащите для изменения порядка`);
+    select.setAttribute('aria-describedby', 'photo-keyboard-help');
+    const image = element('img');
+    image.src = photo.previewUrl || imageUrl(photo.image);
+    image.alt = '';
+    image.draggable = false;
+    image.addEventListener('error', () => { image.hidden = true; });
+    select.append(image, element('span', 'photo-position', String(index + 1)));
+    select.addEventListener('keydown', event => {
+      const next = event.key === 'ArrowLeft' ? index - 1 : event.key === 'ArrowRight' ? index + 1 : event.key === 'Home' ? 0 : event.key === 'End' ? draft.photos.length - 1 : null;
+      if (next !== null) { event.preventDefault(); moveDraftPhoto(photo, next); }
+    });
+    const remove = element('button', 'photo-remove', '×');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Удалить фотографию ${index + 1}`);
+    remove.addEventListener('click', () => removeDraftPhoto(photo));
+    row.append(select, remove);
+    row.addEventListener('dragstart', event => {
+      if (state.busy) { event.preventDefault(); return; }
+      photoDrag = photo;
+      row.classList.add('is-dragging');
+      if (event.dataTransfer) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(index)); }
+    });
+    row.addEventListener('dragover', event => {
+      if (!photoDrag || photoDrag === photo || state.busy) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      row.classList.add('is-drop-target');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('is-drop-target'));
+    row.addEventListener('drop', event => {
+      if (!photoDrag || state.busy) return;
+      event.preventDefault();
+      moveDraftPhoto(photoDrag, draft.photos.indexOf(photo));
+      photoDrag = null;
+    });
+    row.addEventListener('dragend', () => {
+      photoDrag = null;
+      for (const child of $('photo-list').children) child.classList.remove('is-dragging', 'is-drop-target');
+    });
+    return row;
+  });
+  $('photo-list').replaceChildren(...rows);
 }
 
 function syncDrinkPrice() {
@@ -1254,6 +1337,8 @@ function addDrinkRow(kind, value = {}, { focus = false } = {}) {
 
 function updateDrinkEditor() {
   const enabled = $('item-kind').value === 'drink';
+  $('description-label').textContent = enabled ? 'Описание' : 'Состав';
+  $('description').setAttribute('placeholder', enabled ? 'Описание напитка' : 'Ингредиенты блюда');
   $('drink-fields').hidden = !enabled;
   $('drink-fields').disabled = !enabled;
   $('dish-price-field').hidden = enabled;
@@ -1315,16 +1400,20 @@ function openEditor(item) {
   const isNew = !item;
   if (isNew && !state.categories.length) { notice('Сначала добавьте группу для нового блюда.'); return; }
   item ??= { id: crypto.randomUUID(), category: state.siteCategory || state.categories[0]?.id };
+  photoSaveAttempt++;
   clearPreviewUrl();
   draft.id = item.id;
   draft.isNew = isNew;
-  draft.image = item?.image || '';
-  draft.file = null;
+  draft.photos = menuImages(item).map(image => ({ image, file: null, previewUrl: '' }));
   draft.dirty = false;
   draft.resume = false;
   $('item-form').reset();
+  $('photo-progress').textContent = '';
+  $('photo-announcement').textContent = '';
   $('item-name').value = item?.name || '';
   $('description').value = item?.description || '';
+  $('nutrition').value = item?.nutrition || '';
+  $('allergens').value = item?.allergens || '';
   $('price').value = item.price ?? '';
   resetDrinkEditor(item);
   const groupOptions = categoryOptions(state.categories, { placeholder: 'Не размещать на сайте' });
@@ -1352,6 +1441,7 @@ function closeEditor() {
   if (draft.dirty && !window.confirm('Закрыть редактор? Несохранённые изменения будут потеряны.')) return;
   draft.dirty = false;
   draft.resume = false;
+  photoSaveAttempt++;
   clearPreviewUrl();
   $('editor-dialog').close();
 }
@@ -1988,32 +2078,31 @@ $('add-drink-addon').addEventListener('click', () => { if (!state.busy) { draft.
 
 $('photo').addEventListener('change', () => {
   if (state.busy) return;
-  const file = $('photo').files[0];
-  if (!file) return;
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 100 * 1024 * 1024 || file.size === 0) {
-    message($('editor-error'), 'Выберите изображение JPG, PNG или WebP размером до 100 МБ.');
-    $('photo').value = '';
+  const files = Array.from($('photo').files || []);
+  $('photo').value = '';
+  if (!files.length) return;
+  if (draft.photos.length + files.length > MAX_MENU_IMAGES) {
+    message($('editor-error'), `Можно добавить до ${MAX_MENU_IMAGES} фотографий. Сейчас в карточке: ${draft.photos.length}.`);
     return;
   }
-  clearPreviewUrl();
-  draft.file = file;
-  draft.previewUrl = URL.createObjectURL(file);
+  if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !Number.isFinite(file.size) || file.size > 100 * 1024 * 1024 || file.size <= 0)) {
+    message($('editor-error'), 'Выберите изображения JPG, PNG или WebP размером до 100 МБ каждое.');
+    return;
+  }
+  const added = [];
+  try {
+    for (const file of files) added.push({ image: '', file, previewUrl: URL.createObjectURL(file) });
+  } catch {
+    for (const photo of added) URL.revokeObjectURL(photo.previewUrl);
+    message($('editor-error'), 'Не удалось открыть фотографии. Попробуйте выбрать их ещё раз.');
+    return;
+  }
+  draft.photos.push(...added);
   draft.dirty = true;
   message($('editor-error'), '');
+  $('photo-progress').textContent = '';
   updatePreview();
-});
-$('preview-image').addEventListener('error', () => {
-  $('preview-image').hidden = true;
-  $('photo-placeholder').hidden = false;
-});
-$('remove-photo').addEventListener('click', () => {
-  if (state.busy) return;
-  clearPreviewUrl();
-  draft.file = null;
-  draft.image = '';
-  draft.dirty = true;
-  $('photo').value = '';
-  updatePreview();
+  $('photo-announcement').textContent = `Добавлено фотографий: ${added.length}. Всего: ${draft.photos.length}.`;
 });
 
 $('item-form').addEventListener('submit', async (event) => {
@@ -2037,36 +2126,61 @@ $('item-form').addEventListener('submit', async (event) => {
     $('category').focus();
     return;
   }
+  const details = {};
+  for (const [field, label, limit] of [['nutrition', 'КБЖУ', 500], ['allergens', 'Аллергены', 1000]]) {
+    const value = $(field).value.trim();
+    if (value.length > limit) {
+      message($('editor-error'), '«' + label + '»: не более ' + limit + ' символов.');
+      $(field).focus();
+      return;
+    }
+    if (value || Object.hasOwn(existingItem || {}, field)) details[field] = value;
+  }
   let drink;
   try { drink = readDrinkEditor(); } catch (error) { message($('editor-error'), error.message); return; }
   setBusy(true);
   message($('editor-error'), '');
   const saveGeneration = idle.generation;
+  const saveAttempt = ++photoSaveAttempt;
   try {
     if (drink) {
       const { normalizeDrink } = await import('./menu-drinks-model.js');
+      if (saveGeneration !== idle.generation || saveAttempt !== photoSaveAttempt) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
       drink = normalizeDrink(drink);
       const sectionOrder = drinkSectionOrderForItem(state.items, selectedCategory || null, drink.section);
       if (sectionOrder !== undefined) drink.sectionOrder = sectionOrder;
     }
-    if (draft.file) {
+    const pendingPhotos = draft.photos.filter(photo => photo.file);
+    if (pendingPhotos.length) {
       const { prepareAdminPhoto } = await import('./admin-photo.js');
-      const preparedPhoto = await prepareAdminPhoto(draft.file);
-      if (saveGeneration !== idle.generation) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
-      const upload = await api('upload', { method: 'POST', body: preparedPhoto, raw: true });
-      if (!upload.url || !imageUrl(upload.url)) throw new ApiError('Сервер не вернул адрес фотографии. Попробуйте загрузить её ещё раз.');
-      draft.image = upload.url;
-      draft.file = null;
+      if (saveGeneration !== idle.generation || saveAttempt !== photoSaveAttempt) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
+      for (const [index, photo] of pendingPhotos.entries()) {
+        $('photo-progress').textContent = `Подготавливаем фотографию ${index + 1} из ${pendingPhotos.length}…`;
+        const preparedPhoto = await prepareAdminPhoto(photo.file);
+        if (saveGeneration !== idle.generation || saveAttempt !== photoSaveAttempt) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
+        $('photo-progress').textContent = `Загружаем фотографию ${index + 1} из ${pendingPhotos.length}…`;
+        const upload = await api('upload', { method: 'POST', body: preparedPhoto, raw: true });
+        if (saveAttempt !== photoSaveAttempt) return;
+        if (!upload.url || !imageUrl(upload.url)) throw new ApiError('Сервер не вернул адрес фотографии. Попробуйте загрузить её ещё раз.');
+        photo.image = upload.url;
+        photo.file = null;
+        if (saveGeneration !== idle.generation || saveAttempt !== photoSaveAttempt) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
+      }
     }
+    if (saveGeneration !== idle.generation || saveAttempt !== photoSaveAttempt) throw new ApiError('Сессия закрыта. Черновик сохранён в этой вкладке.', 401, 'client_locked');
+    const images = draft.photos.map(photo => photo.image);
+    $('photo-progress').textContent = 'Сохраняем блюдо…';
     const item = {
       ...(existingItem?.source ? { source: existingItem.source } : {}),
-      id: draft.id, name, description: $('description').value.trim(), price: drink ? drink.variants[0].price : Number($('price').value),
+      id: draft.id, name, description: $('description').value.trim(), ...details,
+      price: drink ? drink.variants[0].price : Number($('price').value),
       ...(drink ? { drink } : {}),
-      category: selectedCategory || null, image: draft.image, hiddenOnSite: !$('show-on-site').checked, published: !!selectedCategory && $('show-on-site').checked,
+      category: selectedCategory || null, image: images[0] || '', images, hiddenOnSite: !$('show-on-site').checked, published: !!selectedCategory && $('show-on-site').checked,
       availableForOrder: !!selectedCategory && $('show-on-site').checked && existingItem?.source?.testOnly !== true, order: existingItem?.order ?? Math.max(0, ...state.items.map(entry => entry.order)) + 1,
     };
     const items = draft.isNew ? [...state.items, item] : state.items.map((entry) => entry.id === item.id ? item : entry);
     await persist(items);
+    if (saveAttempt !== photoSaveAttempt) return;
     draft.dirty = false;
     clearPreviewUrl();
     $('editor-dialog').close();
@@ -2075,10 +2189,12 @@ $('item-form').addEventListener('submit', async (event) => {
       ? `«${name}» сохранено. Видно на сайте и можно заказать.`
       : `«${name}» сохранено. Видно на сайте, временно недоступно для заказа.`);
   } catch (error) {
+    if (saveAttempt !== photoSaveAttempt) return;
     sessionExpired(error);
+    $('photo-progress').textContent = '';
     message($('editor-error'), error.status === 409 ? 'Не удалось сохранить: меню уже изменилось. Ваш черновик остался в форме.' : error.message);
   } finally {
-    setBusy(false);
+    if (saveAttempt === photoSaveAttempt) setBusy(false);
   }
 });
 

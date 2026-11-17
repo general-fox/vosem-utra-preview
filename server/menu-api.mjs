@@ -6,6 +6,7 @@ import { createAuthService, AuthError, equalSecret } from './auth.mjs';
 import { enrollmentQr } from './qr.mjs';
 import { normalizeMenuCategories, normalizeMenuItems, normalizeMenuSource, normalizeMenuData } from '../menu-categories.js';
 import { normalizeDrink } from '../menu-drinks-model.js';
+import { MAX_MENU_IMAGES } from '../menu-images.js';
 export { makePasswordRecord } from './auth.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -89,15 +90,23 @@ export function validateItems(items, categories = undefined) {
     let availableForOrder = Object.hasOwn(item, 'availableForOrder') ? item.availableForOrder : true;
     if (typeof availableForOrder !== 'boolean') fail(400, 'Укажите доступность позиции для заказа.', 'invalid_availability');
     if (!Number.isInteger(item.order) || item.order < 0 || item.order > 100000) fail(400, 'Укажите корректный порядок позиции.', 'invalid_order');
-    let image = textField(item.image, 'фотография', 250);
-    if (image) {
-      if (!image.startsWith('/')) image = `/${image}`;
+    const hasGallery = Object.hasOwn(item, 'images');
+    const rawImages = hasGallery ? item.images : [item.image];
+    if (!Array.isArray(rawImages) || rawImages.length > MAX_MENU_IMAGES) fail(400, 'Добавьте не более 10 фотографий блюда.', 'invalid_images');
+    const images = [];
+    for (const value of rawImages) {
+      let image = textField(value, 'фотография', 250);
+      if (!image && !hasGallery) continue;
+      if (!image.startsWith('/')) image = '/' + image;
       if (!/^\/(menu-images|uploads)\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$/i.test(image) || image.includes('..')) fail(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
+      if (images.includes(image)) fail(400, 'Фотографии блюда не должны повторяться.', 'invalid_images');
+      images.push(image);
     }
+    const image = images[0] || '';
     let source;
     try { source = normalizeMenuSource(item.source); } catch { fail(400, 'Некорректный источник блюда.', 'invalid_source'); }
     if (source?.testOnly || item.category === null || item.hiddenOnSite === true || drink) availableForOrder = false;
-    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), price, category: item.category, image, published: item.hiddenOnSite === true ? false : item.published, availableForOrder, order: item.order, ...(source ? { source } : {}), ...(Object.hasOwn(item, 'hiddenOnSite') ? { hiddenOnSite: item.hiddenOnSite } : {}), ...(drink ? { drink } : {}) };
+    return { id, name: textField(item.name, 'название', 160, 1), description: textField(item.description, 'описание', 2000), ...(Object.hasOwn(item, 'nutrition') ? { nutrition:textField(item.nutrition, 'КБЖУ', 500) } : {}), ...(Object.hasOwn(item, 'allergens') ? { allergens:textField(item.allergens, 'аллергены', 1000) } : {}), price, category: item.category, image, ...(hasGallery ? { images } : {}), published: item.hiddenOnSite === true ? false : item.published, availableForOrder, order: item.order, ...(source ? { source } : {}), ...(Object.hasOwn(item, 'hiddenOnSite') ? { hiddenOnSite: item.hiddenOnSite } : {}), ...(drink ? { drink } : {}) };
   });
 }
 

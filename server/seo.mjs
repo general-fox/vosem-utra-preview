@@ -1,4 +1,6 @@
 import { normalizeMenuData, categoryPath } from '../menu-categories.js';
+import { menuImages } from '../menu-images.js';
+import { dishInformation } from '../dish-details.js';
 export const SITE_URL = 'https://vosem-utra.ru/';
 export const SEO_TITLE = 'Восемь утра — кофе и завтраки весь день на Шелепихинской набережной';
 export const SEO_DESCRIPTION = 'Кофейня «Восемь утра» в ЖК «Сердце Столицы», Москва, Шелепихинская набережная, 34, корп. 6. Завтраки весь день, кофе и десерты. Ежедневно с 8:00 до 20:00.';
@@ -21,7 +23,10 @@ function publishedItems(items) {
   return (Array.isArray(items) ? items : [])
     .filter((item) => item && item.published === true && typeof item.name === 'string'
       && item.name.trim() && typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0)
-    .map((item) => ({ ...item, image: safeImage(item.image) }))
+    .map((item) => {
+      const images = menuImages(item).map(safeImage).filter(Boolean);
+      return { ...item, images, image: images[0] || '' };
+    })
     .sort((left, right) => (Number(left.order) || 0) - (Number(right.order) || 0));
 }
 
@@ -36,7 +41,12 @@ function dishMarkup(item, categories, delivery = true) {
   const available = item.availableForOrder !== false && !testOnly;
   const label = available ? 'В корзину' : 'Временно недоступно';
   const action = `<button class="dish-order-button${available ? '' : ' is-unavailable'}" type="button" data-cart-add="${escapeHtml(item.id)}" aria-label="${label}: ${escapeHtml(item.name)}"${available ? '' : ' disabled'}>${label}</button>`;
-  return `<article class="dish-card" data-reveal="visual" data-reveal-key="dish:${escapeHtml(item.id)}" data-menu-category="${escapeHtml(item.category)}">${visual}<div class="dish-body"><p class="dish-category">${escapeHtml(categoryLabel)}</p><div class="dish-heading"><h3>${escapeHtml(item.name)}</h3><span class="dish-price${priceUnset ? ' is-unset' : ''}">${escapeHtml(priceUnset ? 'Цена уточняется' : money.format(item.price))}</span></div><p class="dish-description">${escapeHtml(item.description)}</p>${delivery ? `<div class="dish-cart-actions" data-cart-item="${escapeHtml(item.id)}">${action}</div>` : ''}</div></article>`;
+  const info = dishInformation(item);
+  const allergenLabel = escapeHtml(`Аллергены: ${info.allergens}`);
+  const allergen = info.allergens ? `<span class="dish-allergen"><span class="dish-allergen-button" role="img" aria-label="${allergenLabel}" title="${allergenLabel}">А</span></span>` : '';
+  const fallback = [['nutrition', 'КБЖУ'], ['allergens', 'Аллергены']].filter(([key]) => info[key])
+    .map(([key, title]) => `<p class="dish-details-text"><strong>${title}:</strong> ${escapeHtml(info[key])}</p>`).join('');
+  return `<article class="dish-card" data-reveal="visual" data-reveal-key="dish:${escapeHtml(item.id)}" data-menu-category="${escapeHtml(item.category)}">${visual}<div class="dish-body">${testOnly ? `<p class="dish-category">${escapeHtml(categoryLabel)}</p>` : ''}<div class="dish-heading"><h3>${escapeHtml(item.name)}</h3></div><p class="dish-description">${escapeHtml(info.composition)}</p>${fallback ? `<noscript>${fallback}</noscript>` : ''}<div class="dish-card-footer"><span class="dish-price${priceUnset ? ' is-unset' : ''}">${escapeHtml(priceUnset ? 'Цена уточняется' : money.format(item.price))}</span>${allergen}</div>${delivery ? `<div class="dish-cart-actions" data-cart-item="${escapeHtml(item.id)}">${action}</div>` : ''}</div></article>`;
 }
 
 /** Initial HTML uses the same card structure as menu.js; no JavaScript is needed to read dishes. */
@@ -60,7 +70,7 @@ function structuredData(items, inputCategories, options = {}) {
     const children = categories.filter(child => child.parentId === category.id).sort((a,b) => a.order-b.order).map(section).filter(Boolean);
     const dishes = published.filter(item => item.category === category.id).map((item) => ({
       '@type': 'MenuItem', name: item.name, description: String(item.description ?? ''),
-      ...(item.image ? { image: new URL(item.image, SITE_URL).href } : {}),
+      ...(item.images.length ? { image: item.images.length === 1 ? new URL(item.image, SITE_URL).href : item.images.map(image => new URL(image, SITE_URL).href) } : {}),
       offers: { '@type': 'Offer', price: item.price, priceCurrency: 'RUB' },
     }));
     return dishes.length || children.length ? { '@type':'MenuSection', name:category.name, hasMenuItem:dishes, ...(children.length ? {hasMenuSection:children} : {}) } : null;

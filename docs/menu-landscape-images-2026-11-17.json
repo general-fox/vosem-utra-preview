@@ -1,0 +1,820 @@
+{
+  "updatedAt": "2026-11-17",
+  "menuRevision": 135,
+  "aspectRatio": "4:3",
+  "tool": "image_gen",
+  "encoding": {
+    "format": "WebP",
+    "quality": 86,
+    "cropped": false,
+    "upscaled": false
+  },
+  "originalFilesRetained": true,
+  "images": [
+    {
+      "key": "morning-eight-1-landscape",
+      "name": "Завтрак «8 утра»",
+      "image": "/menu-images/morning-eight-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/morning-eight-close.webp"
+      ],
+      "originalSha256": "ef02e0ff696b7b2a3bd6195cce1d740f4a55d69fa9afa7305cc3c9b63f4631c2",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 194030,
+      "sha256": "2b7f675dcb93e3a0ebf42eeebec4483d094ddc031a55ea0532d1455dfcf9490c",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit target: attached original cafe breakfast photo. Make it exactly 4:3 LANDSCAPE by slightly expanding the real pale tabletop/plate-edge background at top and bottom. Preserve the original image and precise food arrangement: FOUR egg halves, salmon folds, folded ham, toast, greens, cucumber, tomatoes, cream and avocado. Keep textures, colors, quantities, viewing angle and daylight identical; only extend scene edges naturally. This is a close-up photo, keep plate filling the frame but food completely visible. No crop, rotate, stretch, added food, new props, text, borders, blur or flat padding. Output one horizontal photo, 1448x1086.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "avocado-toast-1-landscape",
+      "name": "Авокадо-тост с яйцом пашот и гуакамоле",
+      "image": "/menu-images/avocado-toast-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/avocado-toast-close.webp"
+      ],
+      "originalSha256": "91d77a74839fb2395022ac6a8d65a336de092c86bbedb96328a07e8e0a5f2dc9",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 98930,
+      "sha256": "b2d05545e2ff38a52260d19ed5beea0023bc520996d480ad4c08992bbfb0584b",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. The attached original cafe food photo is the edit target. Avocado toast with ONE poached egg, guacamole and neat avocado slices, same seeds and red seasoning. Convert from 3:2 to exact 4:3 LANDSCAPE horizontal (1448x1086) by adding a little seamless pale tabletop/plate-edge background at top and bottom. Preserve the original visible food with extreme fidelity, same textures, plate, colors, serving, perspective and lighting. Keep close-up framing, no change of camera angle, no zooming far away. Do not crop the dish, alter ingredients, retouch the food, rotate or stretch. No additional objects, text, watermark, frame, flat padding or blur bands. Photo alone.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "chef-syrniki-1-landscape",
+      "name": "Сырники от шефа",
+      "image": "/menu-images/chef-syrniki-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/chef-syrniki-close.webp"
+      ],
+      "originalSha256": "e09cc7cf1b0d1b54253f36e8767bcdd9d241336ae5aad224e2cb4b084e9b7c71",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 109212,
+      "sha256": "bf48326a3f345039bd7a6c7e808dfc28513a490e6ac53a05c64aad2ca58c36ed",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. The attached original cafe food photo is the edit target. Exactly THREE syrniki, white sour-cream poppy-seed sauce, strawberries, blueberries, almond flakes and mint; retain exact quantity and placement. Convert from 3:2 to exact 4:3 LANDSCAPE horizontal (1448x1086) by adding a little seamless pale tabletop/plate-edge background at top and bottom. Preserve the original visible food with extreme fidelity, same textures, plate, colors, serving, perspective and lighting. Keep close-up framing, no change of camera angle, no zooming far away. Do not crop the dish, alter ingredients, retouch the food, rotate or stretch. No additional objects, text, watermark, frame, flat padding or blur bands. Photo alone.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "feta-omelette-1-landscape",
+      "name": "Омлет с фетой",
+      "image": "/menu-images/feta-omelette-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/feta-omelette-close.webp"
+      ],
+      "originalSha256": "60e8a2dc76d4c064c97170e3da12a366f31ff5d8ff421120048eaeb1c739bb47",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 196400,
+      "sha256": "2be36430eaf15b5296a11a041c9d41a72e109fa77ee278f61017329bcfa561a9",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, background outpainting. Image 1 is the EDIT TARGET: original close-up portrait food photo of a feta omelette on a pale blue-edged irregular white plate on wood. Image 2 is supporting reference only showing the SAME dish, plate and surroundings from farther away. Turn image 1 into a 4:3 LANDSCAPE horizontal close-up photograph (e.g. 1448x1086) by naturally expanding the canvas left and right; preserve the original visible omelette, feta crumbs, capers, tomatoes, greens and plate details, camera angle, texture and lighting. Use image 2 only to accurately continue plate/background at the edges. Keep this a CLOSE view, dish filling about 80% of image width, distinct from the wider second reference. Do not crop original food, stretch, rotate, change ingredients, change portion or add props. Extend real tabletop seamlessly, no borders, flat padding, blur bands, text, UI or collage. Deliver one horizontal photo only.",
+      "notes": "Reviewed close original and wider supporting angle."
+    },
+    {
+      "key": "oatmeal-berries-1-landscape",
+      "name": "Арахисовая овсянка с бананом",
+      "image": "/menu-images/oatmeal-berries-1-landscape.webp",
+      "previousImages": [
+        "/uploads/81dff36d-3677-4e99-aed2-d5b6a76a772c.jpg",
+        "menu-images/server-81dff36d-3677-4e99-aed2-d5b6a76a772c.jpg"
+      ],
+      "originalSha256": "a553f4fa85dbb755d6639fa4396a5023fe599dfaa68fdce5b2dc364f14521ccf",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 223840,
+      "sha256": "9b2e090f7126ad87abef7967f589e60f3f698ea2d67332b6422c8a2e42ea7922",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit the attached food photograph into one exact 4:3 HORIZONTAL landscape menu photograph. Input 1 is the edit target. Expand/outpaint the existing scene naturally left and right; preserve the entire original oatmeal, curved row of banana slices, chopped pistachios, ceramic white plate with fine blue rim, viewing angle, lighting, texture, colors and portion exactly. Complete only the cropped outer plate edges and extend the same wooden tabletop and subtle chair background logically. Retain a close food photograph, with the full serving and plate visible and filling most of the horizontal frame; no excessive empty space. No cropping of food, no stretching, no rotation, no additional ingredients or utensils, no text or watermark, no collage, no blurred or solid-color padding. Photorealistic seamless background continuation. Output aspect ratio exactly 4:3 landscape.",
+      "notes": "Visual QA: full oatmeal serving, original banana/pistachio arrangement and natural table continuation; 4:3 horizontal."
+    },
+    {
+      "key": "salmon-draniki-1-landscape",
+      "name": "Драники с лососем и яйцом пашот",
+      "image": "/menu-images/salmon-draniki-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/salmon-draniki-close.webp"
+      ],
+      "originalSha256": "aee1303f4b0b2d1d55d4d58b44ccb54204799d30a8b710c832b3ad2e4788e57e",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 68528,
+      "sha256": "bf2f5832586c2650dd9a9dd6b961a983ba422eeffc6b7b736bb3a47324006747",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. The attached original cafe food photo is the edit target. Potato draniki, salmon folds, poached egg with runny yolk, greens; retain exact quantity and placement. Convert from 3:2 to exact 4:3 LANDSCAPE horizontal (1448x1086) by adding a little seamless pale tabletop/plate-edge background at top and bottom. Preserve the original visible food with extreme fidelity, same textures, plate, colors, serving, perspective and lighting. Keep close-up framing, no change of camera angle, no zooming far away. Do not crop the dish, alter ingredients, retouch the food, rotate or stretch. No additional objects, text, watermark, frame, flat padding or blur bands. Photo alone.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "ham-brioche-1-landscape",
+      "name": "Бриошь с окороком, яйцом пашот и гуакамоле",
+      "image": "/menu-images/ham-brioche-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/ham-brioche-close.webp"
+      ],
+      "originalSha256": "d31d00077ae709a3e45103ab11207bcf1f20cf9851c186bcb309e2aea5eb53c4",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 100982,
+      "sha256": "fd2dbef0ee85f9281648a4a38d9d21864980574ffed898ff251dc1bb57469db3",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Input is the ORIGINAL photo to edit. Brioche toast with ham, poached egg, orange sauce, seeds, guacamole; keep exact single serving. Make EXACT4:3 LANDSCAPE horizontal (1448x1086), slightly extend existing background at top and bottom to convert from3:2. Preserve original scene with extreme fidelity: same food, portions, vessel, textures, ingredient placement, perspective, colors and lighting. Keep close framing and every food element complete, do not crop, stretch, rotate or change camera angle. Extend real background seamlessly; no newfood, props, stylization, flat padding, blurred bands, text or borders. One photograph only.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "shakshuka-1-landscape",
+      "name": "Шакшука",
+      "image": "/menu-images/shakshuka-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/shakshuka-close.webp"
+      ],
+      "originalSha256": "edbd692ad040b85636c9c644ae83e200893b4d650df49757f8db4472a99ffbc4",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 139588,
+      "sha256": "aefda51fc029d875bfc122aed2bb08000d560e8f2ad56de4cb412e84de5d2f25",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Create exact 4:3 horizontal landscape by naturally outpainting Image 1, the close photograph of shakshuka. Image 2 is SUPPORT ONLY to understand complete white blue-rimmed plate and existing serving layout; do not copy its distant framing or its separate toast plate. Preserve Image 1 camera angle, close detail, original eggs/tomato sauce, all herbs and seeds, colors, texture, serving and lighting. Extend the pale tabletop and missing outer plate edges naturally left/right to show the entire existing dish, plate occupying most of frame. Keep it a close food view, distinct from the distant reference. No crop of food, no rotation/stretching, no extra ingredients, utensils or objects, no collage, no text, no blur/solid padding. Exact 4:3 landscape seamless photograph.",
+      "notes": "Visual QA passed: complete serving, natural continuous background, landscape 4:3."
+    },
+    {
+      "key": "granola-1-landscape",
+      "name": "Гранола с сезонными ягодами",
+      "image": "/menu-images/granola-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/granola-close.webp"
+      ],
+      "originalSha256": "cb9cf4e32033e2604b20450af2791112cf47b0b409d4032a2603dd869cc33a2d",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 109984,
+      "sha256": "c981e5c48975545412f74110f66af5a61af05a03b968c561696ea26626b4c983",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint Image 1 into exact 4:3 horizontal landscape menu photograph. Image 1 is the close angled view of granola; Image 2 is supporting reference for the same serving only, do not use its distant top-down camera. Keep the close viewing angle, white blue-rim ceramic plate, every existing strawberry, blueberry, orange fruit chunk, almond flake, granola and small sorrel leaf in place; keep texture, colors, light and shadows. Extend the pale tabletop seamlessly left and right, full plate visible, dish large in frame. Natural photography, no added objects/ingredients, no text/watermark, no stretch or rotation, no cropping of serving, no blurred or solid padding. Exactly 4:3 landscape.",
+      "notes": "Visual QA passed: complete serving, natural continuous background, landscape 4:3."
+    },
+    {
+      "key": "salmon-brioche-1-landscape",
+      "name": "Бриошь с лососем, яйцом пашот и гуакамоле",
+      "image": "/menu-images/salmon-brioche-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/salmon-brioche-close.webp"
+      ],
+      "originalSha256": "440f352d9fc486e318a1fd01337f9f7a5bd8f301ad8e11db883a4627d270f1e3",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 133454,
+      "sha256": "8b76f5ef876dc5890a4c014f701590662296a87dc64086223f1347adb06cfd6e",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Image 1 is target: close angled photo of salmon brioche with guacamole, soft egg/sauce in salmon ring, chives and seeds. Image 2 SUPPORT ONLY shows complete plate and serving geometry. Outpaint target to exact 4:3 HORIZONTAL landscape. Retain the original close low camera angle and detailed serving, not the distant overhead framing of reference. Extend missing right bread edge and surrounding white ceramic plate naturally using reference; extend pale tabletop. The full one brioche serving must remain exactly the same shape, amount, ingredients, textures, lighting and colors. Do not add another egg, toast, garnish or utensil. Close food fills central frame with enough continuous plate/background at sides, no crop of food, no stretch/rotation, no text/watermark, no blur/solid padding, no collage. Exact 4:3 landscape photograph.",
+      "notes": "Visual QA passed: close angled serving preserved; complete brioche restored; landscape 4:3."
+    },
+    {
+      "key": "vanilla-pancakes-1-landscape",
+      "name": "Блины с ванильной сметаной, ягодами и маком",
+      "image": "/menu-images/vanilla-pancakes-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/vanilla-pancakes-close.webp"
+      ],
+      "originalSha256": "dcbd538fa6b24f8cc7f0840f2800f4b04b8d89d382a383d60a8f815b11cd7ab6",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 57616,
+      "sha256": "f4746f7ccd5877910fc5fa65b0712133c78048ebf0b36e4dad27f2447c0b29a0",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Input is the ORIGINAL photo to edit. Exactly three folded thin pancakes with white poppy-seed cream on a pale blue edged plate; do not add berries or garnishes. Make EXACT4:3 LANDSCAPE horizontal (1448x1086), slightly extend existing background at top and bottom to convert from3:2. Preserve original scene with extreme fidelity: same food, portions, vessel, textures, ingredient placement, perspective, colors and lighting. Keep close framing and every food element complete, do not crop, stretch, rotate or change camera angle. Extend real background seamlessly; no newfood, props, stylization, flat padding, blurred bands, text or borders. One photograph only.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "green-buckwheat-1-landscape",
+      "name": "Пророщеная гречка с трюфелем",
+      "image": "/menu-images/green-buckwheat-1-landscape.webp",
+      "previousImages": [
+        "/uploads/7a25d575-810a-4f42-abb1-0c3b92155741.jpg",
+        "menu-images/server-7a25d575-810a-4f42-abb1-0c3b92155741.jpg"
+      ],
+      "originalSha256": "4d2da87298f57c7b64d7d2e82554d7836c344d84e9305f333c359d88c47e80e0",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 267290,
+      "sha256": "91d02032331429134ea2334240610ae8077a29192178123ad785ff39adfc6894",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit this square food photograph into exact 4:3 horizontal landscape via natural outpainting, not cropping. Keep same close oblique camera angle, creamy buckwheat portion, its existing four visible browned mushroom pieces, grated cheese and herbs, original food texture/colors/lighting and ceramic white fine-blue-rim plate unchanged. Extend only the missing plate edge and matching wooden tabletop on the sides; show full existing serving, preserve its ingredient count and layout, close appetizing composition. No additional ingredients/props, no stretching or rotation, no collage, no text/watermark, no blurred or solid-color padding. Exact 4:3 landscape.",
+      "notes": "Visual QA passed: original four browned toppings retained, close serving and tabletop; landscape 4:3."
+    },
+    {
+      "key": "wheat-porridge-1-landscape",
+      "name": "Каша пшеничная",
+      "image": "/menu-images/wheat-porridge-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/wheat-porridge-close.webp"
+      ],
+      "originalSha256": "af1473f32bcee2364a03a06e9b4aa5bc565b482fbac5c9ac751221eebfd7b803",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 111686,
+      "sha256": "ea272b0881243a77eccd28a542f4e6061879248e5172ee93486f76547c005383",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint Image 1 close portrait of wheat porridge into exact 4:3 horizontal landscape. Image 2 is only supporting reference for full bowl shape. Preserve Image 1 close oblique view, porridge grains and creamy liquid, the single melting butter pat in its exact position, white bowl with pale blue rim, same light, shadows and colors. Naturally extend bowl sides and pale tabletop so the whole bowl and serving are visible, large in frame and closer than Image 2. Do not add food, utensils or props; no crop of serving, no stretch, no rotation, no collage, no text, no watermark, no blurred/solid padding. Seamless realistic photograph, exactly 4:3 landscape.",
+      "notes": "Visual QA passed: entire close bowl, original butter serving retained; landscape 4:3."
+    },
+    {
+      "key": "fried-eggs-1-landscape",
+      "name": "Глазунья",
+      "image": "/menu-images/fried-eggs-1-landscape.webp",
+      "previousImages": [
+        "/uploads/625dc15d-f317-469b-a66a-fcdb7e8566e3.png"
+      ],
+      "originalSha256": "570ea02a9f36eca8af94485d3c5a5cdec0d99200e8da830fc0da886d55f242c6",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 227198,
+      "sha256": "bb7b8e787645b3cfc623d19354d5fa7b3c2fd5577766586e591aebef9ba23fc3",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Expand/outpaint this square food photograph into exact 4:3 horizontal landscape. Preserve the two and only two sunny-side-up eggs, their glossy orange yolks, crispy whites, precise existing arrangement, the oval white scalloped blue-rim plate, camera angle, natural lighting and shadows. Complete cropped outer plate sides and extend the same beige lightly textured tabletop seamlessly left and right. Show the entire plate and two eggs prominently. No additional garnish, ingredients, utensils or other objects; no food cropping, stretching or rotation; no blur or solid padding; no text or watermark. Exact 4:3 landscape menu photo.",
+      "notes": "Visual QA passed: two eggs and oval plate intact; seamless textured table; landscape 4:3."
+    },
+    {
+      "key": "omelette-scramble-1-landscape",
+      "name": "Омлет / скрэмбл",
+      "image": "/menu-images/omelette-scramble-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/omelette-scramble-close.webp"
+      ],
+      "originalSha256": "08b25aa7fe83b9c8254fd37e3a3d53dff5ee950a1f40713077b085f83b2c0b7f",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 238404,
+      "sha256": "9111de1b7575c4f43ca9184b2afaa60b7054b16938a13d937f89d3077572a659",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Make Image 1, the close high-angle portrait of scrambled eggs, into exact 4:3 landscape using background outpainting. Image 2 is supporting reference only for full oval plate shape. Do NOT copy Image 2 camera/framing or its napkin holder. Keep the exact eggs serving, folds, black pepper, glossy texture, amount, white scalloped pale-blue-rim plate and close high-angle perspective of Image 1. Extend naturally the dark wooden tabletop and outer plate edges at sides. The one plate remains full and large in the frame; no cropping food or stretching/rotation. No new props, ingredients, marks, text or watermarks; no blurred or solid padding. Exactly 4:3 horizontal photograph, seamless natural light.",
+      "notes": "Visual QA: close scrambled eggs and blue-rimmed plate retained, natural wood continuation; framing recomposed slightly within landscape."
+    },
+    {
+      "key": "caramel-syrniki-1-landscape",
+      "name": "Сырники с карамелью и миндалём",
+      "image": "/menu-images/caramel-syrniki-1-landscape.webp",
+      "previousImages": [
+        "/uploads/a14bc2e7-6a3f-4baa-a932-37fe17d187ed.png",
+        "menu-images/server-a14bc2e7-6a3f-4baa-a932-37fe17d187ed.png"
+      ],
+      "originalSha256": "91ce55065386226c39ca9de63363eb5472f75f1de6a9b5eae674108a0b22c925",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 182778,
+      "sha256": "bac2dd679d322575d75d9555a60ee96a5b530a252021e0816e31c6bcc302f0a9",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Input is the ORIGINAL photo to edit. Exactly three caramel syrniki in a row with the same almond flakes on a scalloped white and pale blue platter on beige textured stone. Make EXACT4:3 LANDSCAPE horizontal (1448x1086), slightly extend existing background at top and bottom to convert from3:2. Preserve original scene with extreme fidelity: same food, portions, vessel, textures, ingredient placement, perspective, colors and lighting. Keep close framing and every food element complete, do not crop, stretch, rotate or change camera angle. Extend real background seamlessly; no newfood, props, stylization, flat padding, blurred bands, text or borders. One photograph only.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "cottage-casserole-1-landscape",
+      "name": "Творожная запеканка с солёной карамелью",
+      "image": "/menu-images/cottage-casserole-1-landscape.webp",
+      "previousImages": [
+        "/uploads/d3e9b2e5-8913-4242-aad4-4bb890fa2db2.png",
+        "menu-images/server-d3e9b2e5-8913-4242-aad4-4bb890fa2db2.png"
+      ],
+      "originalSha256": "84ec0651f14f44f578d799e34c05801a72f10942489aa74c7f88bd3199a2b3db",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 130170,
+      "sha256": "67d875e83559b2afb42c64d1f06d954dd21b467c02f56173b3f1f50cc46354b1",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint the attached portrait photograph of cottage-cheese casserole into exact 4:3 horizontal landscape. Keep the single long rectangular casserole slice, berry details, caramel and white sauce drizzles, baked texture, original oblique camera angle and lighting exactly as shown. Keep complete white oval scalloped blue-rim plate and its shadow. Extend only the same beige stone tabletop naturally left and right; do not crop food or plate. The serving remains large and centered, no other food/props, no garnish changes, no stretching or rotation, no text/watermark, no blurred or solid-color padding, no collage. Exact 4:3 landscape food photograph.",
+      "notes": "Visual QA passed: complete casserole, plate, sauce decoration, textured table and light; landscape 4:3."
+    },
+    {
+      "key": "sour-cream-pancakes-1-landscape",
+      "name": "Блины со сметаной",
+      "image": "/menu-images/sour-cream-pancakes-1-landscape.webp",
+      "previousImages": [
+        "/uploads/3eac59de-4f9b-481a-a357-d1ca151e07ed.png",
+        "menu-images/server-3eac59de-4f9b-481a-a357-d1ca151e07ed.png"
+      ],
+      "originalSha256": "c396920d533cad199999dffee0a83595a4f9db60e4e97a09ad1f54e67f73d031",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 235022,
+      "sha256": "d7572d079d8237356c9b39cce5f6bf0ba35bc45cf780181c5cddf1a0ddc463ed",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Extend this square menu food photo left/right by natural outpainting into exact 4:3 horizontal landscape. Preserve exactly three folded pancakes, their browned lace texture and overlap, the one metal sour cream ramekin with its white swirl, original oval white scalloped blue-rim plate, camera perspective, highlights and shadows. Complete only outer plate edge and extend the same beige textured tabletop. Entire serving and plate must fit, large centered close composition. No new garnish, food, utensils, text or watermark; no crop of food, no stretch/rotation, no blur or solid padding, no collage. Exactly 4:3 landscape.",
+      "notes": "Visual QA passed: exactly three folded pancakes, ramekin and full plate; landscape 4:3."
+    },
+    {
+      "key": "006c5f61-0eb0-45ba-9c98-7cdbb2e531ec-1-landscape",
+      "name": "Аля греческий",
+      "image": "/menu-images/006c5f61-0eb0-45ba-9c98-7cdbb2e531ec-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/006c5f61-0eb0-45ba-9c98-7cdbb2e531ec-close.webp"
+      ],
+      "originalSha256": "a33c8574b3671cebc8f23e15ccede56a110ae03c49f1d309ef7de5b323e3961c",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 146294,
+      "sha256": "9ac1a98a33bb754e6be4f7831dea1f0b40c9f98a797c24f7e7ce312a88775e8e",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Turn Image 1, the close portrait of Greek salad, into exact 4:3 HORIZONTAL landscape by natural outpainting. Image 2 is supporting reference only for completing the missing side of the same serving and plate. Preserve Image 1 close camera perspective, tomato and cucumber pieces, crumbled cheese, parsley leaves, onion rings, olives, colors, wet textures, lighting and portion. Expand the white plate with blue rim and pale tabletop seamlessly, revealing the full existing dish; salad and plate large in frame, closer than Image 2. Do not invent a different arrangement, add ingredients or props, crop the food, rotate/stretch, add text/watermarks or use blurred/solid padding. Exact 4:3 landscape realistic close food photo.",
+      "notes": "Visual QA passed: close Greek salad composition and plate completed from wide reference; landscape 4:3."
+    },
+    {
+      "key": "034a8e18-186c-4977-8cac-3c0509abfafe-1-landscape",
+      "name": "Стейк салат",
+      "image": "/menu-images/034a8e18-186c-4977-8cac-3c0509abfafe-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/034a8e18-186c-4977-8cac-3c0509abfafe-close.webp"
+      ],
+      "originalSha256": "b5e7865965f9556ceb2dfef79e31b631c4611b6ca145bcf34b41ab88c0fe1a4e",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 268368,
+      "sha256": "37fe45be5fc007db124f095d3b7e340bfb632e972b58129c5f0fccf9cfa0b4e0",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint Image 1 close portrait of steak salad to exact 4:3 horizontal landscape. Image 2 is SUPPORT ONLY for missing serving/plate edges: it is the same actual salad, do not copy its distant overhead framing. Keep close high-angle detail and all existing steak slices/doneness, salad greens, cucumber, tomato, onion and grated cheese, original lighting and colors unchanged. Complete the same serving using Image 2 where portrait crop cut edges, preserving quantity and ingredient arrangement. Extend the scalloped white blue-rim plate and pale tabletop seamlessly. Full plate/food large within horizontal frame, closer than reference2. No new toppings, utensils or props, no crop of serving, no stretch, no text/watermark, no blurred/solid padding. Exact 4:3 landscape photo.",
+      "notes": "Visual QA: full steak salad/plate, closer view than wide reference, 4:3. Camera becomes near-overhead while preserving serving layout from supplied support."
+    },
+    {
+      "key": "ea118d68-a633-4b66-ba37-c590ef510100-1-landscape",
+      "name": "Стейк из цветной капусты со спаржей и соусом кимчи",
+      "image": "/menu-images/ea118d68-a633-4b66-ba37-c590ef510100-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/ea118d68-a633-4b66-ba37-c590ef510100-close.webp"
+      ],
+      "originalSha256": "ce8d3237997eb568315eac893e7a5d27ec3fcae57ff881cfa3928696a489cbe1",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 136954,
+      "sha256": "b4a220d85430a72d59070d22393a3b5266a1a31664e1faf12fbd505a2c2791fa",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint Image 1 close portrait of cauliflower steak with asparagus and pink pickled onion into exact 4:3 horizontal landscape. Image 2 is SUPPORT ONLY to complete missing left cauliflower edge and plate; preserve the original close higher camera angle of Image 1, not distant framing. Keep exactly same single cauliflower portion with orange sauce, asparagus pieces and their crossed stack, pink onion rings, tiny sorrel leaves, oil drops, colors, light and shadows. Extend the scalloped white blue-rim plate and pale tabletop naturally left/right, show entire existing serving large in frame. No additional vegetables, garnish, utensils or props; no cropping food, stretching or rotation; no text/watermark; no blurred or solid padding, no collage. Exact 4:3 landscape.",
+      "notes": "Visual QA passed: entire cauliflower serving and original asparagus stack/onions retained, close view, landscape 4:3."
+    },
+    {
+      "key": "e113c15a-2bb5-45dd-b8e8-f7675a4b50e5-1-landscape",
+      "name": "Орзо с опаленным лососем",
+      "image": "/menu-images/e113c15a-2bb5-45dd-b8e8-f7675a4b50e5-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/e113c15a-2bb5-45dd-b8e8-f7675a4b50e5-close.webp"
+      ],
+      "originalSha256": "ee6aa5f360778b7b91332b53d4b9605bbe710ba7f581592d00115778b33e5155",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 180780,
+      "sha256": "42e64becca45740fa9a351146bca31e6ef29eb4738fc1dec51945ed4890b84a8",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit target Image 1 is the close photograph of seared salmon orzo. Image 2 is only supporting evidence of the plate shape and food arrangement; do not replace the close viewpoint with its distant viewpoint. Extend Image 1 naturally sideways into a LANDSCAPE 4:3 photograph, wider than tall, by outpainting the actual pale tabletop, white blue-rimmed plate edges and scene outside its existing crop. Preserve the exact salmon steak, avocado fan, orange roe, green orzo, grated cheese, portion, original camera angle, soft lighting and textures. Keep this a close food photograph with the whole original frame intact; complete cut off plate boundaries naturally using Image 2 only for geometry. No stretching, no cropping original content, no duplicate ingredients, no new garnish or props, no text, no border, no solid-colored padding or blurred mirrored fill. Final output horizontal 4:3, e.g. 1536x1152.",
+      "notes": "Visual review: food arrangement and close viewpoint preserved; landscape frame complete."
+    },
+    {
+      "key": "5e95df95-b45a-4edb-9a22-dbdbbb5d2e46-1-landscape",
+      "name": "Бефстроганов по-шефски",
+      "image": "/menu-images/5e95df95-b45a-4edb-9a22-dbdbbb5d2e46-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/5e95df95-b45a-4edb-9a22-dbdbbb5d2e46-close.webp"
+      ],
+      "originalSha256": "4159dd101cc47cf1efb3a1f6d3b2ee610a34abd5b3c969ba96d5ba0c97c7d29c",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 111048,
+      "sha256": "6530305a4befc28224216774cb7cd5e4a8ca990280f31ed3e8577a228748000c",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Image 1 is the EDIT TARGET: close photograph of beef stroganoff on creamy grain pasta with grated cheese, two small pickled cucumbers and parsley, on white blue-rimmed plate. Image 2 is supporting evidence of plate outline only, not the desired distant overhead viewpoint. Convert image 1 to horizontal LANDSCAPE 4:3 by naturally extending the photo at left and right with matching plate and pale table. Keep original close oblique angle, focal detail and all existing ingredients, portion, sauce and garnish unchanged. Complete only missing plate edge/background consistently. Keep whole original content; no cropping, stretching, replacing or enlarging food, no added objects or garnish. Match lighting, colors, material, shadows and focus. No borders, flat padding, mirrored or blur filler, no writing. Output 4:3 landscape such as 1536x1152.",
+      "notes": "Visual review: stroganoff, cucumbers, parsley and close oblique viewpoint preserved."
+    },
+    {
+      "key": "drink-espresso-1-landscape",
+      "name": "Эспрессо",
+      "image": "/menu-images/drink-espresso-1-landscape.webp",
+      "previousImages": [
+        "/uploads/140336bf-2406-4344-a869-1d146ef8711e.png",
+        "/uploads/af85e43b-0822-4a6b-aa63-0c3d850b0d74.png",
+        "menu-images/server-140336bf-2406-4344-a869-1d146ef8711e.png",
+        "menu-images/server-af85e43b-0822-4a6b-aa63-0c3d850b0d74.png"
+      ],
+      "originalSha256": "b5bfd9e800b7035d90c5f68fc3b440f0e57be45dfd0fc0f2cefd707afb478a7f",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 32900,
+      "sha256": "8c594ba85a4b8afa13c4bd3f59b8481afa2fc709b6f7906b19b0048f55ec6c1f",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit this existing square espresso photograph into a horizontal LANDSCAPE 4:3 photograph by expanding only its glossy pale-blue tabletop at left and right. Keep the exact brown glazed ceramic handleless cup with cream base, coffee amount and crema, cup size and proportions, position centered, original viewpoint, sunlight highlights and shadow direction completely unchanged. The entire original photo and cup remain visible; do not crop or stretch. Seamlessly continue real table reflections and shadow, no artificial padding, borders, mirrored areas or blurry bands. Add no objects, handles, saucers, decoration, labels or text. Final horizontal 4:3, e.g.1536x1152.",
+      "notes": "Visual review: exact cup, crema, sunlight and tabletop preserved; extra table on sides."
+    },
+    {
+      "key": "drink-filter-coffee-1-landscape",
+      "name": "Фильтр-кофе",
+      "image": "/menu-images/drink-filter-coffee-1-landscape.webp",
+      "previousImages": [
+        "/uploads/67ac28d0-5412-4268-a6b4-69cf9f69dd3e.png",
+        "menu-images/server-67ac28d0-5412-4268-a6b4-69cf9f69dd3e.png"
+      ],
+      "originalSha256": "d08738e82e382a44cff87ae1cf0bb054e6f0bbc71cec01aafb8c644cbec0fe87",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 120644,
+      "sha256": "264cb2c0e1c79eaaebdea560ec91e868b3959b084e0a7885b2d4f6781b7e1215",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. This original beverage photograph is the EDIT TARGET. Filter black coffee in the EXACT speckled beige white partly-glazed tall ceramic mug with the handle on the right, same coffee surface and bubbles. Change ONLY canvas proportions from3:2 to EXACT4:3 LANDSCAPE,1448x1086, by naturally extending the existing beige tabletop background vertically a little. Keep the whole vessel including base and handle, drink details, proportions, shadows, reflections, light direction and camera angle untouched. No crop, stretch, rotation, retouching or additions; no newobjects or changedceramicdecor. Preserve current close-up scale. No border, UI, text, flat padding or blur bands. One photorealistic horizontal image.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "drink-cappuccino-1-landscape",
+      "name": "Капучино",
+      "image": "/menu-images/drink-cappuccino-1-landscape.webp",
+      "previousImages": [
+        "/uploads/ed9b483f-c631-43a3-a70e-1014f12b0752.png",
+        "menu-images/server-ed9b483f-c631-43a3-a70e-1014f12b0752.png"
+      ],
+      "originalSha256": "4f0c173f05c785c4ccb74736bf80b6c5073da1b8ede114c2cefca07258746a9f",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 91158,
+      "sha256": "2696d650ea3c3ee02a8fdb6ed5a6aa3840ee82bf35aaf7bb818ccecf014a9ac0",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. This original beverage photograph is the EDIT TARGET. Cappuccino in the EXACT tan and brown brushstroke rounded ceramic cup with left handle and same white leaf-shaped latte art. Change ONLY canvas proportions from3:2 to EXACT4:3 LANDSCAPE,1448x1086, by naturally extending the existing beige tabletop background vertically a little. Keep the whole vessel including base and handle, drink details, proportions, shadows, reflections, light direction and camera angle untouched. No crop, stretch, rotation, retouching or additions; no newobjects or changedceramicdecor. Preserve current close-up scale. No border, UI, text, flat padding or blur bands. One photorealistic horizontal image.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "drink-latte-1-landscape",
+      "name": "Латте",
+      "image": "/menu-images/drink-latte-1-landscape.webp",
+      "previousImages": [
+        "/uploads/4341d3b9-c272-455c-a675-13dcd57214f6.png",
+        "menu-images/server-4341d3b9-c272-455c-a675-13dcd57214f6.png"
+      ],
+      "originalSha256": "0f1f14dd8ee696794313283a9d8388edb439665839b8e765395bec49b2578828",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 97368,
+      "sha256": "d98d3e73cf75b35a9c0c494e87da5c3e95f24ab3c6f7e9c4de434e101d622ca2",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. The attached original cafe drink image is the edit target. Latte in the EXACT dark bronze/brown glazed ceramic mug with pale beige bottom and left handle, identical leaf-shaped latte art. Make exact4:3 LANDSCAPE (1448x1086) by extending the existing beige tabletop background top and bottom a little, preserving this exact complete mug, handle, surface art/toppings, colors, shadows, textures and camera angle. Only background outpainting. Preserve close-up framing, do not change drink, ingredients, serving amount or ceramic decoration. No cropping original subject, stretching, rotating, newobjects, additionalfood, blurredpadding, coloredstrips, text, border or watermark. Output one horizontal photo.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "drink-milk-chocolate-1-landscape",
+      "name": "Молочный шоколад",
+      "image": "/menu-images/drink-milk-chocolate-1-landscape.webp",
+      "previousImages": [
+        "/uploads/7d549d49-57a3-4cd1-a4dd-19286f012d42.png",
+        "menu-images/server-7d549d49-57a3-4cd1-a4dd-19286f012d42.png"
+      ],
+      "originalSha256": "d791ba3ccd2a10092756ec2b0617c369bb66e9ec68d36aefe28bec62cf9f543e",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 93224,
+      "sha256": "7800748e60622bec9bb3d200afb6ebab73ee90d7cd508dafe55f03a78952ee72",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. The attached original cafe drink image is the edit target. Milk chocolate topped with the SAME marshmallows and cocoa powder in the original cream mug with blue smiling flower drawings and left handle with blue dashes. Make exact4:3 LANDSCAPE (1448x1086) by extending the existing beige tabletop background top and bottom a little, preserving this exact complete mug, handle, surface art/toppings, colors, shadows, textures and camera angle. Only background outpainting. Preserve close-up framing, do not change drink, ingredients, serving amount or ceramic decoration. No cropping original subject, stretching, rotating, newobjects, additionalfood, blurredpadding, coloredstrips, text, border or watermark. Output one horizontal photo.",
+      "notes": "Reviewed source and generated image; dish, ingredients and photo identity retained."
+    },
+    {
+      "key": "drink-matcha-nut-foam-1-landscape",
+      "name": "Матча с ореховой пенкой",
+      "image": "/menu-images/drink-matcha-nut-foam-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-matcha-nut-foam-close.webp"
+      ],
+      "originalSha256": "61e5fc5f4cded9a0b50f18205dbc55cce054531b804e2670b1145e1faa953cd7",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 70524,
+      "sha256": "a992c5a2e89f8df256ef101895fd500730a7cdd1b57da80012040fe5590381b6",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit target is the supplied vertical top-down photo of a speckled cream ceramic mug, handle to the right, white nut foam sprinkled with brown powder. Make the photograph horizontal LANDSCAPE 4:3 by extending the existing pale tabletop naturally to the left and right. Preserve exactly this overhead viewpoint, mug shape/handle, foam pattern, powder positions, food/drink amount, color, light and soft shadow. Keep the entire mug and full original content, no cropping or distortion. Maintain the top-down close variant rather than inventing a side view. Only extend backdrop, no saucer, spoon, extra cups, props or words. No solid padding, borders, stretching, mirrored or blurred fill. Output horizontal4:3, e.g.1536x1152.",
+      "notes": "Visual review: whole overhead mug, powder pattern and shadows retained."
+    },
+    {
+      "key": "drink-matcha-nut-foam-2-landscape",
+      "name": "Матча с ореховой пенкой",
+      "image": "/menu-images/drink-matcha-nut-foam-2-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-matcha-nut-foam-wide-filled.webp"
+      ],
+      "originalSha256": "f7d3c375c132a0b891f7cd980dbcd847ddda0268ab8c76133c95dc16d1c7104b",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 54292,
+      "sha256": "b48d9b78bbf8cf690a7327a76da7e8c5668ee08433e3c7dfcfda1517ca5fcc48",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint this square beverage photograph into horizontal LANDSCAPE4:3 by extending the pale tabletop and brown upholstered background only on both sides. Preserve the entire exact cream/brown speckled ceramic mug with circular handle on right, scored surface, white nut foam with brown sprinkle, original side viewpoint and distant framing. Do not change cup proportions, contents, colors, lighting, shadows or focus. No crop, no stretching, no invented objects, saucers, spoons or writing. Scene extensions seamless and photorealistic; no borders, solid padding, mirror-fill or blurry bands. Output4:3 horizontal, e.g.1536x1152.",
+      "notes": "Visual review: side mug and foam preserved; full handle, extended seating/table backdrop."
+    },
+    {
+      "key": "drink-matcha-jasmine-baked-foam-1-landscape",
+      "name": "Матча с жасмином и топлёной пенкой",
+      "image": "/menu-images/drink-matcha-jasmine-baked-foam-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-matcha-jasmine-baked-foam-close.webp"
+      ],
+      "originalSha256": "0e82a6e08efd66da32f82ea9765ffe196c19f682b5c58aefd852d97cabeee37f",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 90140,
+      "sha256": "393a2cbb2ae13431d503fc9b3a07bef85441cca94971376e8110a8c0128b608b",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Convert the provided vertical close overhead beverage photo to horizontal LANDSCAPE4:3 through natural background outpainting on the left and right. Keep the exact cream speckled ceramic mug, diagonal handle pointing upper-right, cream foam peak dusted with GREEN matcha powder, rim details, original viewpoint, size/proportions, contents, portion and color unchanged. Preserve lighting, shadow and real tabletop texture. Entire original subject and handle visible, no crop, stretching or change to a side viewpoint. Only extend the pale tabletop naturally, no saucer, spoon, flowers, extra ingredients or props, no labels. No solidpadding, borders, mirror-fill or blurry strips. Final landscape4:3 e.g.1536x1152.",
+      "notes": "Visual review: same overhead angled mug and green matcha foam; all cup and handle visible."
+    },
+    {
+      "key": "drink-matcha-jasmine-baked-foam-2-landscape",
+      "name": "Матча с жасмином и топлёной пенкой",
+      "image": "/menu-images/drink-matcha-jasmine-baked-foam-2-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-matcha-jasmine-baked-foam-wide-filled.webp"
+      ],
+      "originalSha256": "d68d84834c17074555c593fd87dbf69e0e2cae193efc1cea5a4ae58b0ac4971b",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 62610,
+      "sha256": "2dfa01bb1fb119dd6bbcef1129d4d489ddb009a6fb4ebb7410f48641de5d9bda",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Extend this square photo naturally sideways into a horizontal LANDSCAPE4:3 photo. Edit only background: continue the pale table and warm brown upholstered seat behind, preserving their boundaries and photographic depth. Keep exact cream and tan speckled grid-textured mug, round handle at right, white foam peak dusted with GREEN matcha, original side viewpoint and wider framing unchanged. Preserve beverage portion, cup contours, surface pattern, highlights, shadow, colors. Show whole cup and full handle; no crop or stretching. Add no props, flowers, saucer, spoon, writing or logos. No padding bars, frames, mirrored or blurry fill. Final landscape4:3 such as1536x1152.",
+      "notes": "Visual review: full side mug and matcha foam peak, no new objects."
+    },
+    {
+      "key": "drink-raf-macadamia-1-landscape",
+      "name": "Раф макадамия",
+      "image": "/menu-images/drink-raf-macadamia-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-raf-macadamia-close.webp"
+      ],
+      "originalSha256": "1634f1a2ddc69595f067c8f3db2d345de69d80aed08392eb0ab7216075de6daf",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 82736,
+      "sha256": "0bbaba820b42e5ccbec50eaa3c59e06a1a477ba6863963480ba013a99726ce49",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Image1 is EDIT TARGET: vertical close overhead photograph of macadamia raf, cream ceramic mug with white foam and tan chopped nut crumbs; original mug is clipped at the right border. Image2 is supporting reference for the SAME mug's real shape and handle only, not its lower viewpoint. Extend Image1 naturally at left and right into horizontal LANDSCAPE4:3, completing the missing right rim and handle consistently and continuing pale tabletop. Keep the original close overhead camera angle and exact foam/nut pattern, beverage portion, cup glaze, shape, lighting, shadow, color and texture unchanged. Whole cup visible, no crop or stretch. No extra nuts, objects, spoons, saucers, text, borders, flatpadding, mirroring or blurry strips. Final horizontal4:3 such as1536x1152.",
+      "notes": "Visual review: overhead close variant preserved, clipped right rim/handle completed using same beverage wide photo."
+    },
+    {
+      "key": "drink-raf-macadamia-2-landscape",
+      "name": "Раф макадамия",
+      "image": "/menu-images/drink-raf-macadamia-2-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-raf-macadamia-wide-filled.webp"
+      ],
+      "originalSha256": "df1fcb23d2747fd5ada056ee181e87e6327c5cafd9f2f3e8ab5564061ec5662f",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 70766,
+      "sha256": "f519157e633e8f461c637ee1b3fa8c37e8e3eb0382734595f0cabfbb88b79e93",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Edit the supplied square three-quarter-view photograph of macadamia raf into horizontal LANDSCAPE4:3. Extend only its pale tabletop to both sides with realistic consistent texture and soft shadow. Preserve the complete exact cream/tan speckled scored ceramic mug, right-side handle, creamy foam and tan nut crumble pattern, original lower oblique camera viewpoint and wider framing, drink amount, cup proportions, color, light and focus. Whole cup stays visible; no crop, stretch or replacement. No new objects, extra nuts, saucers, spoon or text. No coloredpadding, border, blurred bands, mirror-fill. Output4:3 horizontal, e.g.1536x1152.",
+      "notes": "Visual review: original wider angled cup view maintained; entire handle visible."
+    },
+    {
+      "key": "drink-juice-orange-1-landscape",
+      "name": "Апельсин",
+      "image": "/menu-images/drink-juice-orange-1-landscape.webp",
+      "previousImages": [
+        "/uploads/97952884-c365-4850-a32f-632ada34e995.png",
+        "menu-images/server-97952884-c365-4850-a32f-632ada34e995.png"
+      ],
+      "originalSha256": "2a859059485946851586d592b4a3697c84bd8af16ec102e6b0c5ab75d071e91e",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 123454,
+      "sha256": "da9b51dc054244f06abd01a8ef8af117e588ae0e5a5ca1031df2372e00b4485d",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint this square orange-juice photograph at left and right into horizontal LANDSCAPE4:3. Preserve the entire exact tall stemmed wine glass from rim to circular foot, juice level/color/bubbles, glass geometry/reflections, existing orange half and whole orange with leaf at right, striped linen at left, original warm sunlight and leaf shadows. Naturally extend beige tabletop/background and complete only existing clipped fruit/linen boundaries. Do not add new fruit or other props. Keep full glass height visible, original proportions and content; no crop or stretch. No borders, solidpadding, blurred bands, mirrored fill, text or logos. Output horizontal4:3, e.g.1536x1152.",
+      "notes": "Visual review: complete tall glass stem and foot, existing orange/linen scene preserved."
+    },
+    {
+      "key": "drink-juice-grapefruit-1-landscape",
+      "name": "Грейпфрут",
+      "image": "/menu-images/drink-juice-grapefruit-1-landscape.webp",
+      "previousImages": [
+        "/uploads/5405b9dd-e621-4251-a482-f06fb4ee7790.png",
+        "menu-images/server-5405b9dd-e621-4251-a482-f06fb4ee7790.png"
+      ],
+      "originalSha256": "1dfba9c5666c068ef809b64787c313eaf9bbb3b39b55ffe8e9534eefa7dc2946",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 146174,
+      "sha256": "e9ae009dd6dbd00ce4d93673cafd3e25ae1fd014064f13ad2888b60926da9bd4",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Extend this square grapefruit-juice photograph naturally left and right into horizontal LANDSCAPE4:3. Keep the exact entire tall stemmed glass visible from rim through stem and foot, preserving grapefruit juice pink-red color, level, bubbles, glass geometry/reflections, existing grapefruit half and whole fruit/leaves at right, striped linen left, sunlight and leaf shadows. Only outpaint beige tabletop/background and continue existing cut-off scene edges. No new props or fruit; do not crop, stretch, alter drink portion or repaint it a different color. Seamless photographic extension, no borders, solidpadding, blur strips, mirror fill, text or logos. Output4:3 landscape such as1536x1152.",
+      "notes": "Visual review: whole glass retained, original grapefruit/linen arrangement extended."
+    },
+    {
+      "key": "drink-juice-carrot-1-landscape",
+      "name": "Морковь",
+      "image": "/menu-images/drink-juice-carrot-1-landscape.webp",
+      "previousImages": [
+        "/uploads/0993ea63-4bc8-45c4-a0c2-60fff61a841b.png",
+        "menu-images/server-0993ea63-4bc8-45c4-a0c2-60fff61a841b.png"
+      ],
+      "originalSha256": "62a0d3fdf360410bf737e487f1487f6cecc0483992e9a6690fb9399be4b25371",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 154548,
+      "sha256": "fcb5f4baa7505d53bd8c4e0fe53388329efb89cc2ecb5d107eaa5427464ff156",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Extend the supplied square carrot-juice photo sideways into horizontal LANDSCAPE4:3. Preserve exact tall stemmed glass complete from rim to base, orange carrot juice level and bubbles, all glass proportions/reflections, three existing carrots and greens at right, striped linen at left, sunlit beige table/wall and leaf shadows. Continue existing backdrop naturally at both sides, completing only cut-off boundaries of existing objects. No new carrots or props, no changes to drink amount, color, scene lighting or viewpoint. No crop, stretch, flatpadding, borders, mirrored or blurfill, no text. Final4:3 horizontal such as1536x1152.",
+      "notes": "Visual review: full glass and same three carrots, table extended horizontally."
+    },
+    {
+      "key": "drink-juice-celery-1-landscape",
+      "name": "Сельдерей",
+      "image": "/menu-images/drink-juice-celery-1-landscape.webp",
+      "previousImages": [
+        "/uploads/796bb85e-3a9b-4c7e-a915-3d200b23f68e.png",
+        "menu-images/server-796bb85e-3a9b-4c7e-a915-3d200b23f68e.png"
+      ],
+      "originalSha256": "187c38ed9bb1403cfbd875c72744172bd9449de84261c1579b765581807f67bd",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 147856,
+      "sha256": "b1b27537be2d5ba6a5a106482d5bfa9b6fb1cf2f4d669b82289a4f894baf3f45",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit. Outpaint this square celery-juice photograph to horizontal LANDSCAPE4:3, extending existing beige table and warm backdrop left/right. Preserve exact tall stemmed glass fully from top rim to foot, green juice color/level/bubbles, glass geometry and reflections, existing celery stalks/leaves on right and striped linen on left, sunlight/leaf shadows and original viewpoint. Naturally complete only cut-off boundaries of existing celery and linen; no added ingredients or objects. No crop or stretching, keep entire original glass and contents unchanged. No borders, flatpadding, mirrored or blurry bands, no writing or logo. Final landscape4:3, e.g.1536x1152.",
+      "notes": "Visual review: whole tall glass, original juice and celery arrangement preserved."
+    },
+    {
+      "key": "drink-milkshake-raspberry-coconut-1-landscape",
+      "name": "Молочный коктейль малина-кокос",
+      "image": "/menu-images/drink-milkshake-raspberry-coconut-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-milkshake-raspberry-coconut-close.webp"
+      ],
+      "originalSha256": "1cc417e10d94e93ff1b2d7a439d80964d940ea9f4e1d0540066cb895ded3550f",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 79728,
+      "sha256": "9e71a27c37c65b0c4e4f9cddebff63e8b526d5444cfa2a290a56498debc9ef25",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, seamless background outpainting. Edit target: this original raspberry-coconut milkshake photograph. Deliver one EXACT 4:3 HORIZONTAL landscape restaurant photograph, 1448x1086, by extending the existing wooden tabletop and softly blurred pale textured wall sideways. Preserve the exact purple-pink milkshake, tall clear jar-shaped cylindrical glass, two black straws (one straight and one bent), mint leaves, foam, reflections, shape, proportions, amount, colors and camera viewpoint. The whole glass bottom and both complete straws must remain visible without any cropping. Keep a CLOSE hero view: full subject including straws about 90% of canvas height. Do not redraw the drink or alter any ingredient or vessel detail. No added objects, utensils, fruit, text, borders, collage, flat-color bands, blur padding or stretching. Extend real background seamlessly, preserve lighting and shadows. Photo alone.",
+      "notes": "Visually checked: complete glass, two original straws and mint retained; seamless landscape background."
+    },
+    {
+      "key": "drink-milkshake-raspberry-coconut-2-landscape",
+      "name": "Молочный коктейль малина-кокос",
+      "image": "/menu-images/drink-milkshake-raspberry-coconut-2-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-milkshake-raspberry-coconut-wide-filled.webp"
+      ],
+      "originalSha256": "5b317a729e8234fb095123967a35a5f1a2a209a5371915e4a998b541d1db03ca",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 114522,
+      "sha256": "dd1dc99e9657902ab02f7ba0e1d8252f22b189be2b1d6a676ec0d9fd6d54b5f7",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, seamless background outpainting. Edit target: this original raspberry-coconut milkshake photograph. Deliver one EXACT 4:3 HORIZONTAL landscape restaurant photograph, 1448x1086, by extending the existing wooden tabletop and softly blurred pale textured wall sideways. Preserve the exact purple-pink milkshake, tall clear jar-shaped cylindrical glass, two black straws (one straight and one bent), mint leaves, foam, reflections, shape, proportions, amount, colors and camera viewpoint. The whole glass bottom and both complete straws must remain visible without any cropping. Keep this WIDER second view: complete subject about 77% of canvas height, generous natural space around it. Do not redraw the drink or alter any ingredient or vessel detail. No added objects, utensils, fruit, text, borders, collage, flat-color bands, blur padding or stretching. Extend real background seamlessly, preserve lighting and shadows. Photo alone.",
+      "notes": "Visually checked: complete glass, two original straws and mint retained; seamless landscape background."
+    },
+    {
+      "key": "drink-smoothie-mango-pineapple-1-landscape",
+      "name": "Смузи манго-ананас",
+      "image": "/menu-images/drink-smoothie-mango-pineapple-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-smoothie-mango-pineapple-close.webp"
+      ],
+      "originalSha256": "c7ff3af3ed6995b880e5f0d7805cc498fc39df6367a025ce3acc5fc4902a2d1d",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 85692,
+      "sha256": "4a4ac5046ef373a4ccdd2c3346d4069f094024b596916b3e9d38b71e0dc9d612",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, seamless background outpainting. Edit target: the attached original golden-yellow mango-pineapple smoothie photograph. Deliver one EXACT 4:3 HORIZONTAL landscape restaurant photograph, 1448x1086, by extending the existing wooden tabletop and softly blurred pale wall sideways. Preserve the exact yellow smoothie, tall clear jar-shaped glass, original TWO black straws (one straight and one bent), mint garnish, bubbles and foam, glass reflections, shape, proportions, amount, colors, camera viewpoint and focus. The whole glass bottom and both complete straws must stay visible. Keep the original elevated CLOSE viewpoint: full subject including straws about 90% of canvas height. Do not redraw, re-angle or beautify the drink, do not alter ingredients or vessel. No extra objects, utensils, fruit, text, border, collage, solid padding, blur bands, cropping or stretching. Extend only real background naturally with matching daylight and shadows. Photo alone.",
+      "notes": "Visually checked: complete glass, two black straws, mint and original viewpoint retained; seamless background."
+    },
+    {
+      "key": "drink-smoothie-mango-pineapple-2-landscape",
+      "name": "Смузи манго-ананас",
+      "image": "/menu-images/drink-smoothie-mango-pineapple-2-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-smoothie-mango-pineapple-wide-filled.webp"
+      ],
+      "originalSha256": "6c7807b7220ba40a39655c706b198f152e5eaa71411bdfa775e08f6ad5ab5ec1",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 62720,
+      "sha256": "b37d5da53e4da4a12cbc37e91d37580cfce1a88cf94eea7dbdda083f47bef922",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, seamless background outpainting. Edit target: the attached original golden-yellow mango-pineapple smoothie photograph. Deliver one EXACT 4:3 HORIZONTAL landscape restaurant photograph, 1448x1086, by extending the existing wooden tabletop and softly blurred pale wall sideways. Preserve the exact yellow smoothie, tall clear jar-shaped glass, original TWO black straws (one straight and one bent), mint garnish, bubbles and foam, glass reflections, shape, proportions, amount, colors, camera viewpoint and focus. The whole glass bottom and both complete straws must stay visible. Keep this original frontal WIDER viewpoint: complete subject about 77% of canvas height, natural space all around. Do not redraw, re-angle or beautify the drink, do not alter ingredients or vessel. No extra objects, utensils, fruit, text, border, collage, solid padding, blur bands, cropping or stretching. Extend only real background naturally with matching daylight and shadows. Photo alone.",
+      "notes": "Visually checked: complete glass, two black straws, mint and original viewpoint retained; seamless background."
+    },
+    {
+      "key": "drink-smoothie-blackcurrant-mint-1-landscape",
+      "name": "Смузи чёрная смородина-мята",
+      "image": "/menu-images/drink-smoothie-blackcurrant-mint-1-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-smoothie-blackcurrant-mint-close.webp"
+      ],
+      "originalSha256": "3e183e7b158fb7f5993a12f6efeef38549a1e20aa2d678601e5e2feae7ca2212",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 80646,
+      "sha256": "757b7b9a5af04bc11a0a2d06f5255c1c4e500f1f968c8b1e3ab2d07568fdf40a",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, seamless background outpainting. Edit target: the attached original pale pink blackcurrant-mint smoothie photograph. Deliver one EXACT 4:3 HORIZONTAL landscape restaurant photo at 1448x1086 by extending the existing dark wooden tabletop and softly blurred pale wall naturally left and right. Preserve the exact pale pink creamy drink, tall clear jar-shaped glass, TWO original black straws (one straight, one bent), mint sprig with original leaves, bubbles, foam, reflections, colors, portion, texture and camera viewpoint. Whole glass bottom and both full straws must be visible. Preserve this elevated CLOSE view: complete subject including straws about 88-90% of canvas height. Do not alter shape or redraw the beverage or garnish, do not invent ingredients. No new objects, fruit, utensils, text, UI, borders, collage, blur bands, flat padding, crop or stretch. Extend only the background with identical daylight, depth of field and wood grain perspective. Output photo alone.",
+      "notes": "Visually checked: complete glass, original two straws and mint retained; close/wide viewpoints distinct."
+    },
+    {
+      "key": "drink-smoothie-blackcurrant-mint-2-landscape",
+      "name": "Смузи чёрная смородина-мята",
+      "image": "/menu-images/drink-smoothie-blackcurrant-mint-2-landscape.webp",
+      "previousImages": [
+        "/menu-images/drink-smoothie-blackcurrant-mint-wide-filled.webp"
+      ],
+      "originalSha256": "218acaf518e2b31371fe6c8a08122881d6ce535a741c34a351ea7dde3078dd72",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 78628,
+      "sha256": "d8899fb2025abb805b7ee501a9763c1883ffc6e27c48c02365e38f85075a90bd",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, seamless background outpainting. Edit target: the attached original pale pink blackcurrant-mint smoothie photograph. Deliver one EXACT 4:3 HORIZONTAL landscape restaurant photo at 1448x1086 by extending the existing dark wooden tabletop and softly blurred pale wall naturally left and right. Preserve the exact pale pink creamy drink, tall clear jar-shaped glass, TWO original black straws (one straight, one bent), mint sprig with original leaves, bubbles, foam, reflections, colors, portion, texture and camera viewpoint. Whole glass bottom and both full straws must be visible. Preserve this frontal WIDER view: complete subject about 77% of canvas height with more space around it. Do not alter shape or redraw the beverage or garnish, do not invent ingredients. No new objects, fruit, utensils, text, UI, borders, collage, blur bands, flat padding, crop or stretch. Extend only the background with identical daylight, depth of field and wood grain perspective. Output photo alone.",
+      "notes": "Visually checked: complete glass, original two straws and mint retained; close/wide viewpoints distinct."
+    },
+    {
+      "key": "drink-fruit-tea-seabuckthorn-mango-1-landscape",
+      "name": "Облепиховый Чай",
+      "image": "/menu-images/drink-fruit-tea-seabuckthorn-mango-1-landscape.webp",
+      "previousImages": [
+        "/uploads/463fda79-ba6d-436f-a12a-4a1f1b8f8efb.jpg",
+        "menu-images/server-463fda79-ba6d-436f-a12a-4a1f1b8f8efb.jpg"
+      ],
+      "originalSha256": "06e6e799b48f92db182d982ac8dc3b642b8bc09dfa6329897ceb2c27f963ecf8",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 128386,
+      "sha256": "3b724ed4c1d1d7e0e46bcaa09c9caba4cd0296be6eacdf5317948aa26bddbc81",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, background outpainting only. Edit target is the attached real cafe photo of golden orange sea-buckthorn tea in a glass pitcher beside an olive-brown ceramic cup on a wooden table by a window. Expand this square photograph into EXACT 4:3 horizontal landscape 1448x1086. Keep the identical pitcher, metallic lid, black handle, tea color, fill level and reflections, the same ceramic cup, original table, right-hand plant/vase and softly blurred window scene. Preserve camera angle and light. Extend natural wood and window background at sides and enough at bottom to show the cup bottom and pitcher handle entirely. Keep both vessels large and close, no change to beverage ingredients, vessel shapes or proportions. No new props, extra cups, fruit, spoons, text, borders, flat padding, blur bands, collage, stretching or cropping. Seamless natural photograph alone.",
+      "notes": "Visually checked: original food/drink and props retained, full vessels and plate visible, seamless expanded scene."
+    },
+    {
+      "key": "38977528-a562-4194-945a-2e701588961b-1-landscape",
+      "name": "Тыквенный суп с креветками",
+      "image": "/menu-images/38977528-a562-4194-945a-2e701588961b-1-landscape.webp",
+      "previousImages": [
+        "/uploads/649dd65b-7650-4161-ab9d-e150f0f4812c.png",
+        "menu-images/server-649dd65b-7650-4161-ab9d-e150f0f4812c.png"
+      ],
+      "originalSha256": "db77ab3672bdb66a37f9751a3cfbfe6b7ef1835a558d644622c92367a92e49fa",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 267042,
+      "sha256": "93d429ac0cb06fb0cc5ec681e4cc7a84e182ecc43142283bac9b0eeb0c936915",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, background outpainting only. Edit target is the attached pumpkin soup photograph. Extend to EXACT 4:3 horizontal landscape 1448x1086 by extending existing neutral stone tabletop and linen at sides. Preserve the identical white blue-rimmed scalloped soup plate, exact yellow-orange soup, shrimp arrangement and count, pumpkin seeds, red pepper crumbs, oil droplets, and the EXACT three overlapping bread slices. Preserve existing upper-left small white flowers in glass and lower-right striped cloth without adding new props. Keep the entire plate, rim and bread fully visible in the frame, large close hero view approximately 85% of image height. Match original elevated camera angle, daylight, shadows, texture and focus. Do not redraw ingredients, alter plating or portion, invent garnish, crop, stretch, add text, UI, borders, blur bands, flat-color padding or collage. Output one seamless photo only.",
+      "notes": "Visually checked: original food/drink and props retained, full vessels and plate visible, seamless expanded scene."
+    },
+    {
+      "key": "bea2a42c-4113-464d-9267-1d5a1ddfd283-1-landscape",
+      "name": "Куриный бульон",
+      "image": "/menu-images/bea2a42c-4113-464d-9267-1d5a1ddfd283-1-landscape.webp",
+      "previousImages": [
+        "/uploads/0f963d38-383a-43cb-af1b-3e9b7d688470.png",
+        "menu-images/server-0f963d38-383a-43cb-af1b-3e9b7d688470.png"
+      ],
+      "originalSha256": "20f586d464d5b3b6da8491875ae3ff740d62deca6c8920b11c3fbe746daecf1e",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 229456,
+      "sha256": "21ffced18e9a51519a973988321638e55f7aba9913ec3ea1d220d9350566e467",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, background outpainting only. Edit target: the attached original restaurant photograph of clear golden chicken broth in the same scalloped white soup plate with a thin blue rim, identical overlapping chicken slices, orange carrot rounds, green herbs and small oil droplets. Extend the square photograph to EXACT 4:3 HORIZONTAL landscape 1448x1086. Preserve all original food and vessel details, shapes, serving size, arrangement, colors, textures and camera angle; do not redraw food, invent garnish or add ingredients. Extend the existing neutral stone tabletop and striped linen naturally sideways; retain original small flowers in upper-left glass and cloth lower-right. Whole blue-rimmed plate must be fully visible, large close view about 85% of picture height. Preserve natural light, shadows, depth of field. No cropping, stretching, extra utensils, text, border, artificial padding, blur bands, collage or new objects. One full-bleed seamless photograph alone.",
+      "notes": "Visually checked: original ingredients, plating and viewpoint retained; entire plate visible, no added props."
+    },
+    {
+      "key": "4e020acc-da8a-4cf3-9e71-9a5c38e9e8ea-1-landscape",
+      "name": "Финский суп",
+      "image": "/menu-images/4e020acc-da8a-4cf3-9e71-9a5c38e9e8ea-1-landscape.webp",
+      "previousImages": [
+        "/uploads/a68ae21e-6c6d-4205-afa1-d52dfa0c2e25.png",
+        "menu-images/server-a68ae21e-6c6d-4205-afa1-d52dfa0c2e25.png"
+      ],
+      "originalSha256": "57bef6d1738429344b394bca2091111420ec7fef2cfdc0e54ed207a68a4ed27b",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 256850,
+      "sha256": "afcad4ebb9ae6075b775b4eb6db2558464dca03d55984ee3841315c7d8238926",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, background outpainting only. Edit target: the attached original restaurant photograph of Finnish creamy salmon soup in the same scalloped white soup plate with a thin blue rim, identical salmon chunks, yellow potato pieces, dill sprigs and orange oil droplets. Extend the square photograph to EXACT 4:3 HORIZONTAL landscape 1448x1086. Preserve all original food and vessel details, shapes, serving size, arrangement, colors, textures and camera angle; do not redraw food, invent garnish or add ingredients. Extend the existing neutral stone tabletop and striped linen naturally sideways; retain original small flowers in upper-left glass and cloth lower-right. Whole blue-rimmed plate must be fully visible, large close view about 85% of picture height. Preserve natural light, shadows, depth of field. No cropping, stretching, extra utensils, text, border, artificial padding, blur bands, collage or new objects. One full-bleed seamless photograph alone.",
+      "notes": "Visually checked: original ingredients, plating and viewpoint retained; entire plate visible, no added props."
+    },
+    {
+      "key": "c3521337-2cc0-4252-a3c3-912f150fad14-1-landscape",
+      "name": "Сэндвич с ростбиф",
+      "image": "/menu-images/c3521337-2cc0-4252-a3c3-912f150fad14-1-landscape.webp",
+      "previousImages": [
+        "/uploads/47f95ccf-427e-45a8-a81c-36994db1b097.jpg",
+        "menu-images/server-47f95ccf-427e-45a8-a81c-36994db1b097.jpg"
+      ],
+      "originalSha256": "806495aa2425667740e262bbc8a7ed2d3cfca3c26f7295f9893fbd6cbf6d6fad",
+      "width": 1448,
+      "height": 1086,
+      "bytes": 156826,
+      "sha256": "1ec65124ebf830cd6ec7b72025487ef870888cbb88dfcd53651a463c68d757d9",
+      "tool": "image_gen",
+      "prompt": "Use case: precise-object-edit, background outpainting only. Edit target: the attached original restaurant photograph of roast beef sandwich in pale flour-dusted ciabatta bread on the same white scalloped plate, with the exact slices of beef, red onion rings, tomato, cucumber and abundant leafy greens. Extend the square photograph to EXACT 4:3 HORIZONTAL landscape 1448x1086. Preserve all original food and vessel details, shapes, serving size, arrangement, colors, textures and camera angle; do not redraw food, invent garnish or add ingredients. Extend the real dark wooden table and softly blurred cafe background naturally sideways and just enough below to reveal the whole existing white plate. Preserve the close side viewpoint, sandwich large in frame, same bread and filling. Keep original softly blurred background object indistinct; add no new props. Preserve natural light, shadows, depth of field. No cropping, stretching, extra utensils, text, border, artificial padding, blur bands, collage or new objects. One full-bleed seamless photograph alone.",
+      "notes": "Visually checked: original ingredients, plating and viewpoint retained; entire plate visible, no added props."
+    }
+  ]
+}

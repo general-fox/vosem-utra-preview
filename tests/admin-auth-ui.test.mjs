@@ -7,6 +7,8 @@ import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
 import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from '../menu-categories.js';
 import { orderedDrinkSections } from '../menu-drinks-model.js';
+import { MAX_MENU_IMAGES, menuImages } from '../menu-images.js';
+import { setupTouchPhotoSort } from '../admin-photo-sort.js';
 import { createDrinkSectionManager, drinkSectionOrderForItem } from '../admin-drink-sections.js';
 
 const source = await readFile(new URL('../admin.js', import.meta.url), 'utf8');
@@ -72,7 +74,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
   nodes.get('site-profile').setAttribute('content', profile);
   const context = vm.createContext({
     document, Intl, URL, AbortController, normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories,
-    orderedDrinkSections, createDrinkSectionManager, drinkSectionOrderForItem,
+    orderedDrinkSections, createDrinkSectionManager, drinkSectionOrderForItem, MAX_MENU_IMAGES, menuImages, setupTouchPhotoSort,
     crypto: { randomUUID: () => 'new-dish-test-id' },
     Date: class extends Date { static now() { return now; } },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) },
@@ -97,7 +99,7 @@ async function page(session = { authenticated: false, configured: true, mfaRequi
       return { ok: status >= 200 && status < 300, status, headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json' : response.headers?.[name.toLowerCase()] ?? null }, json: async () => body };
     },
   });
-  const runtimeSource = source.replace(/^import .* from '\.\/(?:menu-categories|menu-drinks-model|admin-drink-sections)\.js';\r?\n/gm, '').replace("await import('qrcode')", 'await __loadLocalQr()');
+  const runtimeSource = source.replace(/^import .* from '\.\/(?:menu-categories|menu-drinks-model|admin-drink-sections|menu-images|admin-photo-sort)\.js';\r?\n/gm, '').replace("await import('qrcode')", 'await __loadLocalQr()');
   const runtime = await new vm.Script(`(async () => {\n${runtimeSource}\nreturn { state, auth, draft, categoryDraft, drinkSectionManager, idle, sessionExpired, validUsername, validateMenu, openEditor, openCategoryManager, openCashGroup, setMenuMode, itemCard, render, loadMenu, lockSession, checkSession };\n})()`, { filename: 'admin.js' }).runInContext(context);
   async function settle() { for (let index = 0; index < 20; index += 1) await Promise.resolve(); }
   return {
@@ -1647,7 +1649,7 @@ test('catalog profile creates a manual dish, retains existing dishes and offers 
   app.node('item-name').value = 'Новый завтрак'; app.node('description').value = 'Яйцо и авокадо'; app.node('price').value = '550';
   const category = app.node('category').value;
   const added = { id: 'new-dish-test-id', name: 'Новый завтрак', description: 'Яйцо и авокадо', price: 550,
-    category, image: '', order: Math.max(0, ...original.map(item => item.order)) + 1, published: true, availableForOrder: true, hiddenOnSite: false };
+    category, image: '', images: [], order: Math.max(0, ...original.map(item => item.order)) + 1, published: true, availableForOrder: true, hiddenOnSite: false };
   app.responses.push({ body: { categories: app.state.categories, sourceCategories: app.state.sourceCategories,
     items: [...original, added], revision: app.state.revision + 1 } });
   await app.trigger('item-form', 'submit');

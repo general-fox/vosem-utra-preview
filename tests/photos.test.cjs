@@ -29,10 +29,9 @@ for (const [file, width, height] of [
   assert.deepEqual(webpSize('assets/' + file), [width, height]);
   assert.ok(fs.statSync(path.join(root, 'assets', file)).size < 450 * 1024, 'Photo weight is bounded');
 }
-const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/(?:coffee-soft|syrniki|breakfast-wide|cafe-barista-large)[^>]+>/g)].map(m => m[0]);
-assert.equal(updatedImages.length, 4);
-assert.match(html, /data-depth="breakfast" data-depth-framing="full" src="assets\/breakfast-wide-1254.webp"/, 'Breakfast uses the wider framing');
-assert.match(html, /data-depth="pastry" data-depth-framing="full" src="assets\/syrniki-wide-1254.webp"/, 'Tea card uses wider syrniki framing');
+// The former coffee/breakfast/pastry cards were replaced by the workshop.
+const updatedImages = [...html.matchAll(/<img[^>]+src="assets\/cafe-barista-large[^>]+>/g)].map(m => m[0]);
+assert.equal(updatedImages.length, 1);
 assert.doesNotMatch(html, /src="assets\/brand-pastry.jpg"/, 'Former pastry image is no longer displayed');
 for (const img of updatedImages) {
   assert.match(img, /loading="lazy"/);
@@ -60,30 +59,25 @@ assert.doesNotMatch(css, /\.hero-visual \.hours-note/, 'Original overlaid hours 
 const preload = html.match(/<link rel="preload" as="image"[^>]+>/)[0];
 assert.equal(preload.match(/imagesrcset="([^"]+)"/)[1], hero.match(/srcset="([^"]+)"/)[1]);
 assert.equal(preload.match(/imagesizes="([^"]+)"/)[1], hero.match(/sizes="([^"]+)"/)[1]);
-assert.match(css, /\.coffee-image img\{object-position:50% 78%\}/);
-assert.match(css, /\.menu-image img\[data-depth-framing="full"\]\{scale:1\.4\}/,
-  'Only the two dish photos use the closer, fixed 40% framing');
-
-// Measured vertical bounds of both cups in the 853 x 1280 portrait.
-// Test the two scroll extremes while the whole card is visible, plus reduced motion.
-for (const viewport of [320, 375, 390, 430, 650, 768, 900, 1024, 1150, 1280, 1440]) {
-  const mobile = viewport <= 650, viewportHeight = mobile ? 844 : 900;
-  const width = mobile ? viewport - 40 : viewport <= 900 ? (viewport - 96) / 3 :
-    viewport <= 1150 ? (viewport - 112) / 3 : (Math.min(1200, viewport - 96) - 48) / 3;
-  const height = mobile ? Math.min(480, Math.max(310, viewport * .8)) : viewport <= 900 ? 265 : viewport <= 1150 ? 300 : 344;
-  for (const motion of [false, true]) {
-    const travel = motion ? Math.min(12, height * .18) : 0;
-    const bleed = motion ? Math.ceil(travel + 3) : 0;
-    const boxHeight = height + bleed * 2;
-    const scale = Math.max(width / 853, boxHeight / 1280);
-    const cropTop = (1280 * scale - boxHeight) * .78;
-    for (const top of [0, viewportHeight - height]) {
-      const offset = travel * (viewportHeight / 2 - top - height / 2) / ((viewportHeight + height) / 2);
-      const cupsTop = 650 * scale - cropTop - bleed + offset;
-      const cupsBottom = 1055 * scale - cropTop - bleed + offset;
-      assert.ok(cupsTop >= 8 && cupsBottom < height - 8,
-        `Both cups remain inside the photo: ${viewport}px, motion=${motion}, top=${top}`);
-    }
+// Workshop art now occupies the former intro cards; validate its actual image sources.
+const workshop = html.match(/<section[^>]+id="morning"[\s\S]*?<\/section>/)[0];
+const workshopCss = fs.readFileSync(path.join(root, 'workshop.css'), 'utf8');
+assert.match(workshop, /class="workshop-section section wrap"/);
+assert.doesNotMatch(workshop, /coffee-soft|breakfast-wide|syrniki-wide/);
+assert.match(workshopCss, /url\(['"]?\.\/assets\/workshop-gingerbread\.png['"]?\)/);
+const gift = workshop.match(/<img[^>]+src="assets\/workshop-gift\.png"[^>]+>/)[0];
+assert.match(gift, /loading="lazy"/);
+assert.match(gift, /decoding="async"/);
+for (const [file, width, height] of [
+  ['workshop-gingerbread.png', 1774, 887], ['workshop-gift.png', 1536, 1024],
+]) {
+  const png = fs.readFileSync(path.join(root, 'assets', file));
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(png.toString('ascii', 12, 16), 'IHDR');
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [width, height]);
+  if (file === 'workshop-gift.png') {
+    assert.equal(Number(gift.match(/width="(\d+)"/)[1]), width);
+    assert.equal(Number(gift.match(/height="(\d+)"/)[1]), height);
   }
 }
-console.log('PASS: responsive photo assets, dimensions/weights, single high-resolution barista, prioritized hero/preload, and two-cup portrait crop through visible scroll range.');
+console.log('PASS: photo asset dimensions/weights, responsive barista, prioritized hero/preload, and current workshop artwork.');

@@ -24,12 +24,22 @@ function cafe_published(array $items): array {
     usort($published, static fn(array $a, array $b): int => $a['order'] <=> $b['order']);
     return $published;
 }
+/** Match dishInformation() for old descriptions and explicitly cleared fields. */
+function cafe_dish_information(array $item): array {
+    $description = trim((string)($item['description'] ?? ''));
+    $hasLegacy = preg_match('~\s*к\s*б\s*ж\s*у\s*[:：]?\s*([0-9][\s\S]*)$~iu', $description, $legacy, PREG_OFFSET_CAPTURE) === 1;
+    $nutrition = array_key_exists('nutrition', $item) ? $item['nutrition'] : ($hasLegacy ? $legacy[1][0] : '');
+    return ['composition'=>trim($hasLegacy ? substr($description, 0, $legacy[0][1]) : $description),
+        'nutrition'=>trim(preg_replace('~^\s*к\s*б\s*ж\s*у\s*[:：]?\s*~iu', '', (string)($nutrition ?? ''))),
+        'allergens'=>trim((string)($item['allergens'] ?? ''))];
+}
 function cafe_dish_html(array $item, ?array $categories = null, bool $delivery = true): string {
     $categories ??= cafe_default_categories();
     $categoryNames = array_column($categories, 'name', 'id');
     $categoryId = !isset($categoryNames[$item['category']]) && in_array($item['category'], ['signature','eggs','porridge','sweet'], true) ? 'breakfast' : $item['category'];
     $name = cafe_html($item['name']);
-    $visual = $item['image'] !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($item['image']).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async"></div>'
+    $cover = cafe_menu_images($item)[0] ?? '';
+    $visual = $cover !== '' ? '<div class="dish-visual"><img class="dish-photo" src="'.cafe_html($cover).'" width="600" height="450" alt="'.$name.'" loading="lazy" decoding="async"></div>'
         : '<div class="dish-visual dish-placeholder" aria-hidden="true"><span class="dish-placeholder-mark" aria-hidden="true"></span></div>';
     $available = ($item['availableForOrder'] ?? true) !== false;
     $testOnly = ($item['source']['testOnly'] ?? false) === true;
@@ -39,7 +49,12 @@ function cafe_dish_html(array $item, ?array $categories = null, bool $delivery =
     $categoryLabel = ($testOnly ? 'Тестовое блюдо · ' : '').($categoryNames[$categoryId] ?? 'Меню');
     $label = $available ? 'В корзину' : 'Временно недоступно';
     $action = '<button class="dish-order-button'.($available ? '' : ' is-unavailable').'" type="button" data-cart-add="'.cafe_html($item['id']).'" aria-label="'.$label.': '.$name.'"'.($available ? '' : ' disabled').'>'.$label.'</button>';
-    return '<article class="dish-card" data-menu-category="'.cafe_html($categoryId).'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body"><p class="dish-category">'.cafe_html($categoryLabel).'</p><div class="dish-heading"><h3>'.$name.'</h3><span class="dish-price'.($priceUnset ? ' is-unset' : '').'">'.cafe_html($priceLabel).'</span></div><p class="dish-description">'.cafe_html($item['description']).'</p>'.($delivery ? '<div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div>' : '').'</div></article>';
+    $info = cafe_dish_information($item);
+    $allergenLabel = cafe_html('Аллергены: '.$info['allergens']);
+    $allergen = $info['allergens'] !== '' ? '<span class="dish-allergen"><span class="dish-allergen-button" role="img" aria-label="'.$allergenLabel.'" title="'.$allergenLabel.'">А</span></span>' : '';
+    $fallback = '';
+    foreach (['nutrition'=>'КБЖУ', 'allergens'=>'Аллергены'] as $key=>$title) if ($info[$key] !== '') $fallback .= '<p class="dish-details-text"><strong>'.$title.':</strong> '.cafe_html($info[$key]).'</p>';
+    return '<article class="dish-card" data-menu-category="'.cafe_html($categoryId).'" data-reveal="visual" data-reveal-key="dish:'.cafe_html($item['id']).'">'.$visual.'<div class="dish-body">'.($testOnly ? '<p class="dish-category">'.cafe_html($categoryLabel).'</p>' : '').'<div class="dish-heading"><h3>'.$name.'</h3></div><p class="dish-description">'.cafe_html($info['composition']).'</p>'.($fallback !== '' ? '<noscript>'.$fallback.'</noscript>' : '').'<div class="dish-card-footer"><span class="dish-price'.($priceUnset ? ' is-unset' : '').'">'.cafe_html($priceLabel).'</span>'.$allergen.'</div>'.($delivery ? '<div class="dish-cart-actions" data-cart-item="'.cafe_html($item['id']).'">'.$action.'</div>' : '').'</div></article>';
 }
 function cafe_schema(array $items, ?array $categories = null): array {
     $categories ??= cafe_default_categories();
@@ -56,7 +71,8 @@ function cafe_schema(array $items, ?array $categories = null): array {
         foreach ($published as $item) {
             if ($item['category'] !== $category['id']) continue;
             $dish = ['@type'=>'MenuItem', 'name'=>$item['name'], 'description'=>$item['description'], 'offers'=>['@type'=>'Offer', 'price'=>$item['price'], 'priceCurrency'=>'RUB']];
-            if ($item['image'] !== '') $dish['image'] = CAFE_SITE_URL.ltrim($item['image'], '/');
+            $images = array_map(static fn(string $image): string => CAFE_SITE_URL.ltrim($image, '/'), cafe_menu_images($item));
+            if ($images) $dish['image'] = count($images) === 1 ? $images[0] : $images;
             $dishes[] = $dish;
         }
         $nested = $sectionTree($category['id']);

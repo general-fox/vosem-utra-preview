@@ -62,7 +62,7 @@ function cafe_snapshot(string $directory, bool $includeOrders): array {
                 if (!preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpg|jpeg|png|webp)\z/i', basename($file))) throw new RuntimeException('Unexpected upload filename.');
                 $add('admin-data/uploads/'.basename($file), $file);
             }
-            foreach ($menu['items'] as $item) if (str_starts_with($item['image'], '/uploads/') && !isset($files['admin-data'.$item['image']])) throw new RuntimeException('A menu photograph is missing.');
+            foreach ($menu['items'] as $item) foreach (cafe_menu_images($item) as $image) if (str_starts_with($image, '/uploads/') && !isset($files['admin-data'.$image])) throw new RuntimeException('A menu photograph is missing.');
             $ordersConfig = null;
             if ($includeOrders && is_file($directory.'/orders-config.php')) {
                 $ordersConfig = require $directory.'/orders-config.php';
@@ -158,7 +158,7 @@ function cafe_import_private(string $bundle, string $keyFile, string $destinatio
         // Phone hashes include the origin; silently changing it would disable duplicate protection.
         if (($snapshot['config']['publicOrigin'] ?? '') !== $origin) throw new RuntimeException('Registration history can only be restored to its original site origin. Transfer admin/menu data separately for a different site.');
     }
-    foreach ($menu['items'] as $item) if (str_starts_with($item['image'], '/uploads/') && !isset($decoded['admin-data'.$item['image']])) throw new RuntimeException('Missing menu photograph.');
+    foreach ($menu['items'] as $item) foreach (cafe_menu_images($item) as $image) if (str_starts_with($image, '/uploads/') && !isset($decoded['admin-data'.$image])) throw new RuntimeException('Missing menu photograph.');
     $parent = realpath(dirname($destination));
     if ($parent === false || in_array(basename($destination), ['.', '..', ''], true)) throw new RuntimeException('Create the destination parent first.');
     $staging = $parent.'/.cafe-restore-'.bin2hex(random_bytes(12));

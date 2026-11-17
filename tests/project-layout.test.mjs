@@ -30,14 +30,18 @@ test('tracked source files contain no unresolved merge markers', async () => {
 
 test('all stable image and font references resolve after cleanup', async () => {
   const references = new Set([...sources.matchAll(/\bassets\/([A-Za-z0-9_.-]+\.(?:svg|webp|png|jpg|woff2|ttf))/g)].map(match => match[1]));
-  assert.ok(references.size >= 18, 'Check actual source references, not an empty list');
+  for (const name of ['logo.svg', 'hero-two-cups-1254.webp', 'workshop-gift.png', 'workshop-gingerbread.png', 'VosemSans-Regular.woff2']) {
+    assert.ok(references.has(name), 'Current homepage resource must be covered: ' + name);
+  }
   for (const name of references) assert.ok((await stat(path.join(root, 'assets', name))).isFile(), name);
 });
 
-test('assets contains used web resources, reproducible font sources and license notices only', async () => {
+test('assets contains used web resources, retained intro photos and documented font sources', async () => {
   const fontSources = new Set(['Lato-Regular.ttf', 'Lato-Medium.ttf', 'Lato-Italic.ttf', 'Lato-Regular.woff2', 'Lato-Medium.woff2', 'Lato-Italic.woff2', 'Lato-OFL.txt', 'Lato-WOFF2.txt', 'VosemSans-WOFF2.txt']);
+  // The seasonal workshop replaced #morning; keep its six source photos available for reuse.
+  const retainedIntroPhotos = new Set(['breakfast-wide-1254.webp', 'breakfast-wide-720.webp', 'coffee-soft-720.webp', 'coffee-soft-853.webp', 'syrniki-wide-1254.webp', 'syrniki-wide-720.webp']);
   for (const name of await readdir(path.join(root, 'assets'))) {
-    assert.ok(fontSources.has(name) || sources.includes(name), `Unused asset: ${name}`);
+    assert.ok(fontSources.has(name) || retainedIntroPhotos.has(name) || sources.includes(name), `Unused asset: ${name}`);
   }
 });
 

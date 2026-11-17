@@ -13,6 +13,31 @@ const schema = (html) => JSON.parse(html.match(/<script type="application\/ld\+j
 const slot = (html, name) => html.match(new RegExp(`<!-- SEO:${name}:START -->([\\s\\S]*?)<!-- SEO:${name}:END -->`))[1];
 const renderedNames = (html) => [...slot(html, 'DISH-GRID').matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map((match) => match[1]);
 
+test('initial food cards use the composition and price footer, with escaped optional details available without JavaScript', () => {
+  const dish = item({ description: 'Яйцо, хлеб. КБЖУ: 400/15/20/30', nutrition: 'На 100 г: 150 ккал', allergens: 'Яйца, молоко <сыр> "сливки"' });
+  const before = structuredClone(dish);
+  const { grid } = renderMenu([dish], undefined, { delivery: false });
+  assert.match(grid, /<div class="dish-heading"><h3>Тост с яйцом<\/h3><\/div>/);
+  assert.match(grid, /<p class="dish-description">Яйцо, хлеб\.<\/p>/);
+  assert.match(grid, /<div class="dish-card-footer"><span class="dish-price">450/);
+  assert.match(grid, /class="dish-allergen-button" role="img" aria-label="Аллергены: Яйца, молоко &lt;сыр&gt; &quot;сливки&quot;"/);
+  assert.match(grid, /<noscript><p class="dish-details-text"><strong>КБЖУ:<\/strong> На 100 г: 150 ккал<\/p><p class="dish-details-text"><strong>Аллергены:<\/strong>/);
+  assert.doesNotMatch(grid, /<button|data-cart-add|dish-category|400\/15\/20\/30|<сыр>/);
+  assert.deepEqual(dish, before, 'Rendering never changes stored composition or detail fields');
+});
+
+test('initial cards separate legacy nutrition and respect explicit empty optional fields', () => {
+  const legacy = item({ description: 'Хлеб и зелень\n\nкБЖУ: 210/8/10/22' });
+  const legacyHtml = renderMenu([legacy], undefined, { delivery: false }).grid;
+  assert.match(legacyHtml, /<p class="dish-description">Хлеб и зелень<\/p>/);
+  assert.match(legacyHtml, /<noscript><p class="dish-details-text"><strong>КБЖУ:<\/strong> 210\/8\/10\/22<\/p><\/noscript>/);
+  assert.doesNotMatch(legacyHtml, /dish-allergen/);
+  const clearedHtml = renderMenu([{ ...legacy, nutrition: '', allergens: '  ' }], undefined, { delivery: false }).grid;
+  assert.doesNotMatch(clearedHtml, /dish-allergen|<noscript>|210\/8\/10\/22|data-cart-add/);
+  assert.match(clearedHtml, /dish-card-footer/);
+  assert.match(renderMenu([legacy], undefined, { delivery: true }).grid, /data-cart-add="toast"/);
+});
+
 test('preview stays noindex while rendering real breakfast cards without JavaScript', () => {
   const html = transformPage(home, { items: seed.items, categories: seed.categories });
   assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
@@ -267,4 +292,21 @@ test('production JSON-LD excludes both source test branches and test dishes mapp
   assert.doesNotMatch(JSON.stringify(data), /Тестовые суши|Тестовый кофе|REDBOX|"price":0/);
   assert.doesNotMatch(slot(html, 'DISH-GRID'), /Тестовые суши/);
   assert.match(slot(html, 'DISH-GRID'), /Тестовый кофе/);
+});
+
+
+test('ordered galleries select the cover for initial HTML and expose safe images in structured data', () => {
+  const photos = ['/uploads/second.webp', '/menu-images/first.jpg'];
+  const items = [item({ images: photos })];
+  const before = structuredClone(items);
+  const html = transformPage(home, { production: true, items, delivery: false });
+  assert.match(slot(html, 'DISH-GRID'), /src="uploads\/second.webp"/);
+  assert.deepEqual(schema(html).hasMenu.hasMenuSection[0].hasMenuItem[0].image, photos.map(photo => SITE_URL + photo.slice(1)));
+  assert.deepEqual(items, before);
+  const cleared = transformPage(home, { production: true, items: [item({ images: [] })] });
+  assert.match(slot(cleared, 'DISH-GRID'), /dish-placeholder/);
+  assert.equal(schema(cleared).hasMenu.hasMenuSection[0].hasMenuItem[0].image, undefined);
+  const unsafe = transformPage(home, { production: true, items: [item({ images: ['javascript:alert(1)', '/uploads/../secret.webp', photos[1]] })] });
+  assert.doesNotMatch(unsafe, /javascript:alert|uploads\/\.\.\/secret/);
+  assert.equal(schema(unsafe).hasMenu.hasMenuSection[0].hasMenuItem[0].image, SITE_URL + photos[1].slice(1));
 });

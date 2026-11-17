@@ -86,6 +86,23 @@ function cafe_normalize_drink(mixed $value): ?array {
     return $drink;
 }
 
+/** Ordered image paths; an explicit gallery is authoritative over the legacy cover. */
+function cafe_menu_images(array $item): array {
+    $hasGallery = array_key_exists('images', $item);
+    $raw = $hasGallery ? $item['images'] : [$item['image'] ?? null];
+    if (!is_array($raw) || !array_is_list($raw) || count($raw) > 10) throw new CafeMenuException(400, 'Добавьте не более 10 фотографий блюда.', 'invalid_images');
+    $images = [];
+    foreach ($raw as $value) {
+        $image = cafe_text_field($value, 'фотография', 250);
+        if ($image === '' && !$hasGallery) continue;
+        if (!str_starts_with($image, '/')) $image = '/'.$image;
+        if (!preg_match('~^/(menu-images|uploads)/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$~iD', $image) || str_contains($image, '..')) throw new CafeMenuException(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
+        if (in_array($image, $images, true)) throw new CafeMenuException(400, 'Фотографии блюда не должны повторяться.', 'invalid_images');
+        $images[] = $image;
+    }
+    return $images;
+}
+
 /** Keep the JSON contract shared with the menu editor and public menu client. */
 function cafe_validate_items(mixed $items, ?array $categories = null, bool $migrateLegacy = false): array {
     if ($categories === null) { $categories = cafe_default_categories(); $migrateLegacy = true; }
@@ -109,12 +126,12 @@ function cafe_validate_items(mixed $items, ?array $categories = null, bool $migr
         $availableForOrder = array_key_exists('availableForOrder', $item) ? $item['availableForOrder'] : true;
         if (!is_bool($availableForOrder)) throw new CafeMenuException(400, 'Укажите доступность позиции для заказа.', 'invalid_availability');
         if (!is_int($item['order'] ?? null) || $item['order'] < 0 || $item['order'] > 100000) throw new CafeMenuException(400, 'Укажите корректный порядок позиции.', 'invalid_order');
-        $image = cafe_text_field($item['image'] ?? null, 'фотография', 250);
-        if ($image !== '') {
-            if (!str_starts_with($image, '/')) $image = '/'.$image;
-            if (!preg_match('~^/(menu-images|uploads)/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:jpe?g|png|webp)$~iD', $image) || str_contains($image, '..')) throw new CafeMenuException(400, 'Загрузите фотографию JPG, PNG или WebP.', 'invalid_image');
-        }
+        $images = cafe_menu_images($item);
+        $image = $images[0] ?? '';
         $entry = ['id'=>$id, 'name'=>cafe_text_field($item['name'] ?? null, 'название', 160, 1), 'description'=>cafe_text_field($item['description'] ?? null, 'описание', 2000), 'price'=>$price, 'category'=>$category, 'image'=>$image, 'published'=>$item['published'], 'availableForOrder'=>$availableForOrder, 'order'=>$item['order']];
+        if (array_key_exists('nutrition', $item)) $entry['nutrition'] = cafe_text_field($item['nutrition'], 'КБЖУ', 500);
+        if (array_key_exists('allergens', $item)) $entry['allergens'] = cafe_text_field($item['allergens'], 'аллергены', 1000);
+        if (array_key_exists('images', $item)) $entry['images'] = $images;
         if ($drink !== null) { $entry['drink'] = $drink; $entry['availableForOrder'] = false; }
         if (array_key_exists('hiddenOnSite', $item)) $entry['hiddenOnSite'] = $item['hiddenOnSite'];
         if (($item['hiddenOnSite'] ?? false) === true) { $entry['published'] = false; $entry['availableForOrder'] = false; }

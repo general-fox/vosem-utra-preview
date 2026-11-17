@@ -3,6 +3,9 @@ import { orderedDrinkSections } from './menu-drinks-model.js';
 import { setupMobileCategoryRail } from './menu-mobile-navigation.js';
 import { createDrinkAddonsDialog } from './drink-addons-dialog.js';
 import { setupMenuHeader } from './menu-header.js';
+import { menuImages } from './menu-images.js';
+import { createMenuGallery } from './menu-gallery.js';
+import { createDishDetails, dishInformation, bindDishCardDetails } from './dish-details.js';
 
 const root = document.querySelector('[data-breakfast-menu]');
 const deliveryEnabled = document.querySelector('meta[name="cafe-profile"]')?.content === 'delivery';
@@ -22,6 +25,8 @@ let drinkCategory = null;
 let drinkSignature = '';
 let activeDrinkPicker = null;
 let addonsDialog;
+let detailsDialog;
+let allergenSequence = 0;
 
 function closeDrinkPicker() {
   if (activeDrinkPicker) activeDrinkPicker.open = false;
@@ -92,29 +97,59 @@ function dishCard(item) {
   card.dataset.reveal = 'visual';
   card.dataset.revealKey = `dish:${item.id}`;
   card.dataset.menuCategory = item.category;
+  card.dataset.dishId = item.id;
   const visual = element('div', 'dish-visual');
-  if (item.image) {
-    const img = element('img', 'dish-photo');
-    img.src = new URL(item.image, pageBase).href;
-    img.alt = item.name;
-    img.loading = 'lazy';
-    img.decoding = 'async';
-    img.width = 600;
-    img.height = 450;
-    img.addEventListener('error', () => {
-      showDishPlaceholder(visual);
-    }, { once: true });
-    visual.append(img);
-  } else {
-    showDishPlaceholder(visual);
-  }
+  cached?.gallery.destroy();
+  const gallery = createMenuGallery({ visual, images:menuImages(item), name:item.name, pageBase, document, window, placeholder:showDishPlaceholder });
   card.append(visual);
   const body = element('div', 'dish-body');
-  body.append(element('p', 'dish-category', `${testOnly ? 'Тестовое блюдо · ' : ''}${category?.name || 'Меню'}`));
+  if (testOnly) body.append(element('p', 'dish-category', 'Тестовое блюдо'));
+  const info = dishInformation(item);
   const heading = element('div', 'dish-heading');
+  heading.append(element('h3', '', item.name));
+  body.append(heading, element('p', 'dish-description', info.composition));
+  const footer = element('div', 'dish-card-footer');
   const priceUnset = testOnly && item.price === 0;
-  heading.append(element('h3', '', item.name), element('span', `dish-price${priceUnset ? ' is-unset' : ''}`, priceUnset ? 'Цена уточняется' : money.format(item.price)));
-  body.append(heading, element('p', 'dish-description', item.description));
+  const priceText = priceUnset ? 'Цена уточняется' : money.format(item.price);
+  footer.append(element('span', 'dish-price' + (priceUnset ? ' is-unset' : ''), priceText));
+  const details = element('button', 'dish-details-button', 'Подробнее');
+  details.type = 'button';
+  details.setAttribute('aria-haspopup', 'dialog');
+  details.setAttribute('aria-label', 'Подробнее: ' + item.name);
+  const arrow = element('span', 'dish-details-arrow', '↗');
+  arrow.setAttribute('aria-hidden', 'true');
+  details.append(arrow);
+  footer.append(details);
+  if (info.allergens) {
+    const note = element('span', 'dish-allergen');
+    const badge = element('button', 'dish-allergen-button', 'А');
+    const tooltip = element('span', 'dish-allergen-tooltip', 'В этом блюде есть аллергены');
+    tooltip.id = 'dish-allergen-' + (++allergenSequence);
+    tooltip.setAttribute('role', 'tooltip');
+    badge.type = 'button';
+    badge.setAttribute('aria-label', 'Аллергены: ' + info.allergens);
+    badge.setAttribute('aria-describedby', tooltip.id);
+    badge.setAttribute('aria-expanded', 'false');
+    badge.addEventListener('click', () => {
+      const expanded = badge.getAttribute('aria-expanded') !== 'true';
+      note.classList.remove('is-dismissed');
+      badge.setAttribute('aria-expanded', String(expanded));
+      note.classList.toggle('is-open', expanded);
+    });
+    badge.addEventListener('focus', () => note.classList.remove('is-dismissed'));
+    badge.addEventListener('blur', () => { badge.setAttribute('aria-expanded', 'false'); note.classList.remove('is-open', 'is-dismissed'); });
+    badge.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { badge.setAttribute('aria-expanded', 'false'); note.classList.remove('is-open'); note.classList.add('is-dismissed'); }
+    });
+    note.append(badge, tooltip);
+    footer.append(note);
+  }
+  body.append(footer);
+  bindDishCardDetails(card, details, () => {
+    detailsDialog ||= createDishDetails({ document, window, pageBase });
+    detailsDialog.open(item, details, priceText);
+  });
+  detailsDialog?.update(item, details, priceText);
   if (deliveryEnabled) {
   const available = item.availableForOrder !== false && !testOnly;
   const add = element('button', `dish-order-button${available ? '' : ' is-unavailable'}`, available ? 'В корзину' : 'Временно недоступно');
@@ -128,7 +163,7 @@ function dishCard(item) {
   body.append(actions);
   }
   card.append(body);
-  cards.set(item.id, { signature, card });
+  cards.set(item.id, { signature, card, gallery });
   return card;
 }
 
@@ -159,21 +194,8 @@ function drinkCard(item) {
   const card = element('article', 'drink-card drink-card-with-photo');
   card.dataset.drinkId = item.id;
   const visual = element('div', 'drink-visual');
-  if (item.image) {
-    const photo = element('img', 'drink-photo');
-    photo.src = new URL(item.image, pageBase).href;
-    photo.alt = item.name;
-    photo.width = 600;
-    photo.height = 600;
-    photo.loading = 'lazy';
-    photo.decoding = 'async';
-    photo.addEventListener('error', () => {
-      showDishPlaceholder(visual, 'drink');
-    }, { once:true });
-    visual.append(photo);
-  } else {
-    showDishPlaceholder(visual, 'drink');
-  }
+  cached?.gallery.destroy();
+  const gallery = createMenuGallery({ visual, images:menuImages(item), name:item.name, kind:'drink', pageBase, document, window, placeholder:showDishPlaceholder });
   card.append(visual);
   const body = element('div', 'drink-body');
   const heading = element('div', 'drink-heading');
@@ -253,7 +275,7 @@ function drinkCard(item) {
   }
   card.append(body);
   updatePrice();
-  drinkCards.set(item.id, { signature, card, selection });
+  drinkCards.set(item.id, { signature, card, selection, gallery });
   if (addonConfig) addonsDialog?.update(addonConfig);
   else addonsDialog?.close(item.id);
   return card;
@@ -351,7 +373,6 @@ function renderDrinks(drinks, otherCount) {
   pickerSlot.replaceChildren(picker);
   activeDrinkPicker = picker;
   updateFilter();
-  for (const id of drinkCards.keys()) if (!items.some(item => item.id === id)) drinkCards.delete(id);
 }
 
 function countCategory(categoryId) {
@@ -426,6 +447,7 @@ function renderNavigation(visible) {
 }
 
 function render() {
+  detailsDialog?.retain(items.filter(item => !item.drink?.variants?.length).map(item => item.id));
   if (!categories.some(category => category.id === selected)) selected = categories[0]?.id || 'breakfast';
   const selectedRoot = categoryPath(categories, selected)[0];
   if (selectedRoot?.source && countCategory(selectedRoot.id) === 0) selected = categories.find(category => !category.parentId && (!category.source || countCategory(category.id)))?.id || selected;
@@ -442,8 +464,14 @@ function render() {
   empty.textContent = selected === 'dinner' ? 'Ужины скоро появятся в меню. А пока можно выбрать что-нибудь из завтраков.' : 'В этом разделе пока нет блюд. Посмотрите другие разделы меню.';
   root.querySelector('[data-menu-count]').textContent = dishCount(visible.length);
   renderDrinks(drinks, dishes.length);
-  for (const id of cards.keys()) if (!items.some(item => item.id === id)) cards.delete(id);
+  for (const id of cards.keys()) if (!items.some(item => item.id === id && !item.drink?.variants?.length)) { cards.get(id).gallery.destroy(); cards.delete(id); }
+  for (const id of drinkCards.keys()) if (!items.some(item => item.id === id && item.drink?.variants?.length)) { drinkCards.get(id).gallery.destroy(); drinkCards.delete(id); }
   if (typeof CustomEvent === 'function' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('cafe:menu-rendered'));
+}
+
+function mapMenuImages(item, resolve) {
+  const images = menuImages(item).map(resolve);
+  return { ...item, images, image:images[0] || '' };
 }
 
 async function fetchMenu() {
@@ -459,12 +487,12 @@ async function fetchMenu() {
     }
     if (!fallback.ok) throw new Error('Menu unavailable');
     const data = await fallback.json();
-    if (Array.isArray(data.items)) data.items = data.items.map(item => ({ ...item, image: item.image ? `${sourcePreview ? 'public/' : ''}${item.image.replace(/^\//, '')}` : '' }));
+    if (Array.isArray(data.items)) data.items = data.items.map(item => mapMenuImages(item, image => `${sourcePreview ? 'public/' : ''}${image.replace(/^\//, '')}`));
     return { ...data, live: false };
   }
   if (!response.ok) throw new Error('Menu unavailable');
   const data = await response.json();
-  if (Array.isArray(data.items)) data.items = data.items.map(item => ({ ...item, image: item.image ? new URL(item.image.replace(/^\//, ''), apiBase).href : '' }));
+  if (Array.isArray(data.items)) data.items = data.items.map(item => mapMenuImages(item, image => new URL(image.replace(/^\//, ''), apiBase).href));
   return { ...data, live: true };
 }
 

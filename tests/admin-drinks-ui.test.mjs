@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { normalizeMenuCategories, normalizeMenuData, categoryDescendantIds, categoryPath, orderedCategories } from '../menu-categories.js';
 import { normalizeDrink, orderedDrinkSections } from '../menu-drinks-model.js';
+import { MAX_MENU_IMAGES, menuImages } from '../menu-images.js';
+import { setupTouchPhotoSort } from '../admin-photo-sort.js';
 import { createDrinkSectionManager, applyDrinkSectionEdits, drinkSectionOrderForItem } from '../admin-drink-sections.js';
 
 const source = await readFile(new URL('../admin.js', import.meta.url), 'utf8');
@@ -56,7 +58,7 @@ async function page(profile = 'catalog', { preparePhoto = async file => file } =
         return !Object.hasOwn(element.dataset, key) || (expected !== undefined && element.dataset[key] !== expected);
       })) return false;
       const className = part.match(/\.([\w-]+)/)?.[1];
-      return !className || element.classList.contains(className);
+      return !className || element.classList.contains(className) || String(element.className || '').split(/\s+/).includes(className);
     });
     const walk = current => current.children.flatMap(child => [child, ...walk(child)]);
     return { attributes, handlers, children: [], dataset: {}, tagName: tag.toUpperCase(), parentElement: null,
@@ -80,9 +82,10 @@ async function page(profile = 'catalog', { preparePhoto = async file => file } =
     nodes.set(match[3], node(new Map([...match[2].matchAll(/([\w-]+)="([^"]*)"/g)].map(entry => [entry[1], entry[2]])), match[1]));
   }
   nodes.get('site-profile').setAttribute('content', profile);
-  class PreviewURL extends URL { static createObjectURL() { return 'blob:preview'; } static revokeObjectURL() {} }
+  const objectUrls = { created: [], revoked: [] };
+  class PreviewURL extends URL { static createObjectURL() { const url = `blob:preview-${objectUrls.created.length}`; objectUrls.created.push(url); return url; } static revokeObjectURL(url) { objectUrls.revoked.push(url); } }
   const context = vm.createContext({ document, Intl, URL: PreviewURL, AbortController, normalizeMenuCategories, normalizeMenuData,
-    categoryDescendantIds, categoryPath, orderedCategories, orderedDrinkSections, createDrinkSectionManager, drinkSectionOrderForItem, crypto: { randomUUID: () => 'new-drink' },
+    categoryDescendantIds, categoryPath, orderedCategories, orderedDrinkSections, createDrinkSectionManager, drinkSectionOrderForItem, MAX_MENU_IMAGES, menuImages, setupTouchPhotoSort, crypto: { randomUUID: () => 'new-drink' },
     setTimeout: () => 1, clearTimeout() {}, location: { href: 'https://example.test/admin.html', origin: 'https://example.test' },
     window: { addEventListener() {}, confirm(text) { confirmations.push(text); return true; } },
     __loadDrinkModel: async () => ({ normalizeDrink, orderedDrinkSections }),
@@ -93,12 +96,12 @@ async function page(profile = 'catalog', { preparePhoto = async file => file } =
       const status = response.status || 200;
       return { ok: status < 400, status, headers: { get: name => name === 'content-type' ? 'application/json' : null }, json: async () => response.body };
     } });
-  const code = source.replace(/^import .* from '\.\/(?:menu-categories|menu-drinks-model|admin-drink-sections)\.js';\r?\n/gm, '')
+  const code = source.replace(/^import .* from '\.\/(?:menu-categories|menu-drinks-model|admin-drink-sections|menu-images|admin-photo-sort)\.js';\r?\n/gm, '')
     .replace("await import('./menu-drinks-model.js')", 'await __loadDrinkModel()')
     .replace("await import('./admin-photo.js')", 'await __loadPhotoModel()');
   const app = await new vm.Script(`(async () => {${code}\nreturn {state,draft,idle,drinkEditor,categoryDraft,validateMenu,openEditor,openCategoryManager,render};})()`)
     .runInContext(context);
-  return { ...app, calls, responses, confirmations, document, node: id => document.getElementById(id),
+  return { ...app, calls, responses, confirmations, document, objectUrls, node: id => document.getElementById(id),
     async trigger(id, name = 'click', values = {}) { const handler = document.getElementById(id).handlers.get(name); assert.ok(handler); await handler({ preventDefault() {}, ...values }); },
     async rowEvent(input, name = 'input') { await input.handlers.get(name)?.({}); },
     reply(data) { responses.push({ body: data }); } };
@@ -199,21 +202,21 @@ test('the editor accepts a 100 MiB photo, prepares it while locked, and uploads 
   } });
   app.validateMenu(menu()); app.openEditor(app.state.items[0]);
   app.node('photo').files = [original]; await app.trigger('photo', 'change');
-  assert.equal(app.draft.file, original); assert.equal(app.node('editor-error').hidden, true);
+  assert.equal(app.draft.photos[0]?.file, original); assert.equal(app.node('editor-error').hidden, true);
   const before = app.calls.length;
   const saving = app.trigger('item-form', 'submit'); await started;
   assert.equal(app.state.busy, true); assert.equal(app.node('editor-fields').disabled, true);
-  assert.equal(app.node('close-editor').disabled, true); assert.equal(app.draft.file, original);
-  await app.trigger('remove-photo'); await app.trigger('close-editor');
+  assert.equal(app.node('close-editor').disabled, true); assert.equal(app.draft.photos[0]?.file, original);
+  await app.rowEvent(app.node('photo-list').children[0].querySelector('.photo-remove'), 'click'); await app.trigger('close-editor');
   app.node('photo').files = [{ type: 'image/png', size: 500 }]; await app.trigger('photo', 'change');
-  assert.equal(app.draft.file, original); assert.equal(app.node('editor-dialog').open, true); assert.equal(app.calls.length, before);
+  assert.equal(app.draft.photos[0]?.file, original); assert.equal(app.node('editor-dialog').open, true); assert.equal(app.calls.length, before);
   app.reply({ url: '/menu-images/prepared.webp' });
   const saved = menu(); saved.items[0].image = '/menu-images/prepared.webp'; app.reply(saved);
   finish(prepared); await saving;
   assert.equal(app.calls[before].url, '/api/admin/upload'); assert.equal(app.calls[before].body, prepared);
   assert.equal(app.calls[before].headers['Content-Type'], 'image/webp');
   assert.equal(app.calls.at(-1).body.items[0].image, '/menu-images/prepared.webp');
-  assert.equal(app.draft.file, null); assert.equal(app.state.busy, false); assert.equal(app.node('editor-dialog').open, false);
+  assert.equal(app.draft.photos.length, 0); assert.equal(app.state.busy, false); assert.equal(app.node('editor-dialog').open, false);
 });
 
 test('rejected sources and failed preparation retain the original photo for retry without uploading', async () => {
@@ -222,9 +225,9 @@ test('rejected sources and failed preparation retain the original photo for retr
   app.validateMenu(menu()); app.openEditor(app.state.items[0]);
   app.node('photo').files = [original]; await app.trigger('photo', 'change');
   app.node('photo').files = [{ type: 'image/png', size: 100 * 1024 * 1024 + 1 }]; await app.trigger('photo', 'change');
-  assert.match(app.node('editor-error').textContent, /до 100 МБ/); assert.equal(app.draft.file, original);
+  assert.match(app.node('editor-error').textContent, /до 100 МБ/); assert.equal(app.draft.photos[0]?.file, original);
   const before = app.calls.length; await app.trigger('item-form', 'submit');
-  assert.equal(app.calls.length, before); assert.equal(app.draft.file, original);
+  assert.equal(app.calls.length, before); assert.equal(app.draft.photos[0]?.file, original);
   assert.match(app.node('editor-error').textContent, /прочитать фотографию/);
   assert.equal(app.state.busy, false); assert.equal(app.node('editor-dialog').open, true);
 });
@@ -239,7 +242,7 @@ test('a logout during preparation prevents uploading or saving with the next ses
   const before = app.calls.length; const saving = app.trigger('item-form', 'submit'); await started;
   app.idle.generation++;
   finish({ type: 'image/webp', size: 500000 }); await saving;
-  assert.equal(app.calls.length, before); assert.equal(app.draft.file, original);
+  assert.equal(app.calls.length, before); assert.equal(app.draft.photos[0]?.file, original);
   assert.match(app.node('editor-error').textContent, /Сессия закрыта/);
 });
 
@@ -371,4 +374,183 @@ test('subgroups can be reordered with the drag handle and keyboard without an ac
   await app.trigger('drink-sections-list', 'keydown', { target: handle, key: 'Home' });
   assert.deepEqual(names(), ['Кофе', 'Чай', 'Соки']);
   assert.equal(app.calls.length, before, 'Changing order requires explicit save');
+});
+
+test('ordered existing photos can become the cover, survive save and be cleared completely', async () => {
+  const app = await page(); const data = menu();
+  data.items[1].images = ['menu-images/coffee.jpg', 'menu-images/coffee-side.jpg', 'menu-images/coffee-top.jpg'];
+  app.validateMenu(data); app.openEditor(app.state.items[1]);
+  const paths = () => plain(app.draft.photos.map(photo => photo.image));
+  assert.deepEqual(paths(), data.items[1].images);
+  let row = app.node('photo-list').children[2];
+  await row.querySelector('.photo-select').handlers.get('keydown')({ key: 'ArrowLeft', preventDefault() {} });
+  row = app.node('photo-list').children[1];
+  await row.querySelector('.photo-select').handlers.get('keydown')({ key: 'Home', preventDefault() {} });
+  assert.deepEqual(paths(), ['menu-images/coffee-top.jpg', 'menu-images/coffee.jpg', 'menu-images/coffee-side.jpg']);
+  assert.ok(app.node('photo-list').children[0].querySelector('img').src.endsWith('/menu-images/coffee-top.jpg'));
+  assert.deepEqual(app.node('photo-list').children.map(row => row.querySelector('.photo-position').textContent), ['1', '2', '3']);
+  const result = menu(); result.items[1].images = paths(); result.items[1].image = paths()[0];
+  app.reply(result); await app.trigger('item-form', 'submit');
+  assert.deepEqual(app.calls.at(-1).body.items[1].images, result.items[1].images);
+  assert.equal(app.calls.at(-1).body.items[1].image, result.items[1].image);
+  app.openEditor(app.state.items[1]);
+  while (app.draft.photos.length) await app.rowEvent(app.node('photo-list').children[0].querySelector('.photo-remove'), 'click');
+  const cleared = menu(); cleared.items[1].image = ''; cleared.items[1].images = [];
+  app.reply(cleared); await app.trigger('item-form', 'submit');
+  assert.deepEqual(app.calls.at(-1).body.items[1].images, []);
+  assert.equal(app.calls.at(-1).body.items[1].image, '');
+});
+
+test('multi-file selection appends in order and rejects an over-limit or invalid batch without losing earlier photos', async () => {
+  const app = await page(); app.validateMenu(menu()); app.openEditor(app.state.items[1]);
+  const files = Array.from({length: 9}, (_, index) => ({ name: `${index}.png`, type: 'image/png', size: 100 }));
+  app.node('photo').files = files; await app.trigger('photo', 'change');
+  assert.equal(app.draft.photos.length, 10); assert.equal(app.node('photo').disabled, true);
+  assert.equal(app.draft.photos[0].image, 'menu-images/coffee.jpg');
+  assert.deepEqual(app.draft.photos.slice(1).map(photo => photo.file), files);
+  assert.equal(app.objectUrls.created.length, 9);
+  app.node('photo').files = [{ type: 'image/png', size: 20 }]; await app.trigger('photo', 'change');
+  assert.equal(app.draft.photos.length, 10); assert.match(app.node('editor-error').textContent, /до 10/);
+  await app.rowEvent(app.node('photo-list').children[0].querySelector('.photo-remove'), 'click');
+  assert.equal(app.draft.photos.length, 9); assert.equal(app.node('photo').disabled, false);
+  app.node('photo').files = [{ type: 'application/pdf', size: 20 }]; await app.trigger('photo', 'change');
+  assert.equal(app.draft.photos.length, 9); assert.match(app.node('editor-error').textContent, /JPG, PNG/);
+  await app.trigger('cancel-editor');
+  assert.equal(app.objectUrls.revoked.length, 9);
+  assert.equal(new Set(app.objectUrls.revoked).size, 9);
+  assert.equal(app.draft.photos.length, 0);
+});
+
+test('a partial upload failure keeps photo order and successful uploads for retry, with no partial menu save', async () => {
+  const prepared = [];
+  const app = await page('catalog', {preparePhoto: async file => { prepared.push(file); return file; }});
+  app.validateMenu(menu()); app.openEditor(app.state.items[1]);
+  const files = [{ type: 'image/png', size: 21 }, { type: 'image/png', size: 22 }];
+  app.node('photo').files = files; await app.trigger('photo', 'change');
+  await app.node('photo-list').children[1].querySelector('.photo-select').handlers.get('keydown')({ key: 'ArrowLeft', preventDefault() {} });
+  app.reply({url: '/uploads/first.png'}); app.responses.push({status: 500, body: {message: 'Не удалось загрузить фотографию.'}});
+  const before = app.calls.length;
+  await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.length, before + 2); assert.ok(app.calls.slice(before).every(call => call.url === '/api/admin/upload'));
+  assert.equal(app.draft.photos[0].image, '/uploads/first.png'); assert.equal(app.draft.photos[0].file, null);
+  assert.equal(app.draft.photos[2].file, files[1]); assert.equal(app.node('editor-dialog').open, true);
+  assert.equal(app.state.busy, false); assert.equal(app.node('photo-progress').textContent, '');
+  app.reply({url: '/uploads/second.png'});
+  const saved = menu(); saved.items[1].images = ['/uploads/first.png', 'menu-images/coffee.jpg', '/uploads/second.png']; saved.items[1].image = saved.items[1].images[0];
+  app.reply(saved); await app.trigger('item-form', 'submit');
+  assert.deepEqual(prepared, [files[0], files[1], files[1]], 'A previously uploaded file is not uploaded again');
+  assert.deepEqual(app.calls.at(-1).body.items[1].images, saved.items[1].images);
+  assert.equal(app.calls.at(-1).body.items[1].image, '/uploads/first.png');
+  assert.equal(app.calls.filter(call => call.method === 'PUT').length, 1);
+});
+
+test('dragging photographs changes only the draft, and cancel restores the persisted order', async () => {
+  const app = await page(); const data = menu();
+  data.items[1].images = ['menu-images/coffee.jpg', 'menu-images/coffee-side.jpg', 'menu-images/coffee-top.jpg'];
+  app.validateMenu(data); app.openEditor(app.state.items[1]); const before = app.calls.length;
+  const first = app.node('photo-list').children[0], last = app.node('photo-list').children[2];
+  const transfer = {setData() {}};
+  await first.handlers.get('dragstart')({dataTransfer: transfer, preventDefault() {}});
+  await last.handlers.get('drop')({preventDefault() {}});
+  assert.deepEqual(plain(app.draft.photos.map(photo => photo.image)), ['menu-images/coffee-side.jpg', 'menu-images/coffee-top.jpg', 'menu-images/coffee.jpg']);
+  assert.equal(app.calls.length, before);
+  assert.deepEqual(plain(app.state.items[1].images), data.items[1].images);
+  await app.trigger('cancel-editor'); app.openEditor(app.state.items[1]);
+  assert.deepEqual(plain(app.draft.photos.map(photo => photo.image)), data.items[1].images);
+});
+
+test('a stale photo preparation cannot unlock or overwrite a newer save after login resumes', async () => {
+  const finish = [], started = [];
+  const app = await page('catalog', {preparePhoto: () => new Promise(resolve => { finish.push(resolve); started.shift()?.(); })});
+  app.validateMenu(menu()); app.openEditor(app.state.items[0]);
+  const file = {type: 'image/png', size: 100};
+  app.node('photo').files = [file]; await app.trigger('photo', 'change');
+  const firstStarted = new Promise(resolve => started.push(resolve));
+  const firstSave = app.trigger('item-form', 'submit'); await firstStarted;
+  app.idle.generation++; app.state.busy = false;
+  const secondStarted = new Promise(resolve => started.push(resolve));
+  const secondSave = app.trigger('item-form', 'submit'); await secondStarted;
+  const progress = app.node('photo-progress').textContent;
+  finish[0](file); await firstSave;
+  assert.equal(app.state.busy, true);
+  assert.equal(app.node('editor-fields').disabled, true);
+  assert.equal(app.node('photo-progress').textContent, progress);
+  assert.equal(app.node('editor-error').hidden, true);
+  app.reply({url: '/uploads/current.png'});
+  const saved = menu(); saved.items[0].images = ['/uploads/current.png']; saved.items[0].image = '/uploads/current.png';
+  app.reply(saved); finish[1](file); await secondSave;
+  assert.equal(app.state.busy, false);
+  assert.equal(app.calls.filter(call => call.url === '/api/admin/upload').length, 1);
+  assert.equal(app.calls.at(-1).body.items[0].image, '/uploads/current.png');
+});
+
+
+test('dish composition, nutrition and allergens edit independently, retain photographs and can be cleared', async () => {
+  const data = menu();
+  Object.assign(data.items[0], { nutrition: 'На порцию: 420 ккал; Б 15 г; Ж 22 г; У 40 г', allergens: 'Молоко, пшеница',
+    images: ['/menu-images/porridge-close.webp', '/menu-images/porridge-wide.webp'], image: '/menu-images/porridge-close.webp' });
+  const app = await page(); app.validateMenu(data); app.openEditor(app.state.items[0]);
+  assert.equal(app.node('description-label').textContent, 'Состав');
+  assert.equal(app.node('description').value, 'С ягодами');
+  assert.equal(app.node('nutrition').value, data.items[0].nutrition);
+  assert.equal(app.node('allergens').value, data.items[0].allergens);
+  assert.equal(app.node('nutrition').getAttribute('maxlength'), '500');
+  assert.equal(app.node('allergens').getAttribute('maxlength'), '1000');
+  app.node('description').value = 'Овсяные хлопья, молоко, ягоды';
+  app.node('nutrition').value = '  На 100 г: 150 ккал; Б 5 г; Ж 6 г; У 19 г  ';
+  app.node('allergens').value = '  Молоко, овёс  ';
+  const savedMenu = plain(data);
+  Object.assign(savedMenu.items[0], { description: app.node('description').value, nutrition: app.node('nutrition').value.trim(), allergens: app.node('allergens').value.trim() });
+  app.reply(savedMenu); await app.trigger('item-form', 'submit');
+  const saved = app.calls.at(-1).body.items[0];
+  assert.equal(saved.description, savedMenu.items[0].description);
+  assert.equal(saved.nutrition, savedMenu.items[0].nutrition); assert.equal(saved.allergens, 'Молоко, овёс');
+  assert.deepEqual(saved.images, data.items[0].images);
+  assert.equal(app.calls.at(-1).body.items[1].description, data.items[1].description);
+  app.openEditor(app.state.items[0]);
+  assert.equal(app.node('allergens').value, 'Молоко, овёс');
+  app.node('nutrition').value = ' '; app.node('allergens').value = '';
+  const cleared = plain(savedMenu); delete cleared.items[0].nutrition; delete cleared.items[0].allergens;
+  app.reply(cleared); await app.trigger('item-form', 'submit');
+  const clearRequest = app.calls.at(-1).body.items[0];
+  assert.equal(clearRequest.nutrition, ''); assert.equal(clearRequest.allergens, '');
+  assert.equal(clearRequest.description, saved.description); assert.deepEqual(clearRequest.images, data.items[0].images);
+  app.openEditor(app.state.items[0]);
+  assert.equal(app.node('nutrition').value, ''); assert.equal(app.node('allergens').value, '');
+});
+
+test('legacy items and new dishes do not inherit optional details or infer allergens from composition', async () => {
+  const data = menu(); data.items[1].nutrition = 'На порцию: 120 ккал'; data.items[1].allergens = 'Молоко';
+  data.items[0].description = 'Яйцо и молоко. КБЖУ: 420/15/22/40';
+  const app = await page(); app.validateMenu(data); app.openEditor(app.state.items[1]);
+  assert.equal(app.node('description-label').textContent, 'Описание');
+  assert.equal(app.node('allergens').value, 'Молоко');
+  app.openEditor(app.state.items[0]);
+  assert.equal(app.node('description').value, data.items[0].description);
+  assert.equal(app.node('nutrition').value, ''); assert.equal(app.node('allergens').value, '');
+  app.reply(data); await app.trigger('item-form', 'submit');
+  assert.equal(Object.hasOwn(app.calls.at(-1).body.items[0], 'nutrition'), false);
+  assert.equal(Object.hasOwn(app.calls.at(-1).body.items[0], 'allergens'), false);
+  assert.equal(app.calls.at(-1).body.items[1].allergens, 'Молоко');
+  app.openEditor(app.state.items[1]); app.openEditor();
+  assert.equal(app.node('nutrition').value, ''); assert.equal(app.node('allergens').value, '');
+  app.node('item-kind').value = 'drink'; await app.trigger('item-kind', 'change');
+  assert.equal(app.node('description-label').textContent, 'Описание');
+  app.node('item-kind').value = 'dish'; await app.trigger('item-kind', 'change');
+  assert.equal(app.node('description-label').textContent, 'Состав');
+});
+
+test('overlong nutrition or allergen text stays in the editor without sending a menu request', async () => {
+  const app = await page(); app.validateMenu(menu()); app.openEditor(app.state.items[0]);
+  const before = app.calls.length;
+  app.node('nutrition').value = 'а'.repeat(501); await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.length, before); assert.equal(app.document.activeElement, app.node('nutrition'));
+  assert.match(app.node('editor-error').textContent, /КБЖУ.*500/);
+  app.node('nutrition').value = 'а'.repeat(500); app.node('allergens').value = 'я'.repeat(1001);
+  await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.length, before); assert.equal(app.document.activeElement, app.node('allergens'));
+  assert.match(app.node('editor-error').textContent, /Аллергены.*1000/);
+  app.node('allergens').value = 'я'.repeat(1000); app.reply(menu()); await app.trigger('item-form', 'submit');
+  assert.equal(app.calls.at(-1).body.items[0].nutrition.length, 500);
+  assert.equal(app.calls.at(-1).body.items[0].allergens.length, 1000);
 });

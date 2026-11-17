@@ -7,6 +7,9 @@ import { orderedDrinkSections } from '../menu-drinks-model.js';
 import { setupMobileCategoryRail } from '../menu-mobile-navigation.js';
 import { createDrinkAddonsDialog } from '../drink-addons-dialog.js';
 import { setupMenuHeader } from '../menu-header.js';
+import { menuImages } from '../menu-images.js';
+import { createMenuGallery } from '../menu-gallery.js';
+import { createDishDetails, dishInformation, bindDishCardDetails } from '../dish-details.js';
 
 const script = readFileSync(new URL('../menu.js', import.meta.url), 'utf8').replace(/^import .*?;\r?\n/gm, '');
 
@@ -66,6 +69,8 @@ class Element {
     listeners.push({ listener, once: options.once });
     this.listeners.set(type, listeners);
   }
+  removeEventListener(type, listener) { this.listeners.set(type, (this.listeners.get(type) || []).filter(entry => entry.listener !== listener)); }
+  scrollTo(options) { this.scrollOptions = options; this.scrollLeft = options.left; void this.dispatch('scroll'); }
   focus(options) {
     this.focused = true;
     this.focusOptions = options;
@@ -144,7 +149,7 @@ function assertDrinkPlaceholder(card) {
   const visual = visuals[0];
   assert.equal(visual.hidden, false);
   assert.equal(visual.classList.contains('drink-placeholder'), true);
-  assert.equal(visual.classList.contains('dish-visual'), false, 'Drinks must not inherit the 4:3 food visual');
+  assert.equal(visual.classList.contains('dish-visual'), false, 'Drinks keep their own card styles');
   assert.equal(visual.getAttribute('aria-hidden'), 'true');
   const marks = byClass(visual, 'dish-placeholder-mark');
   assert.equal(marks.length, 1);
@@ -172,7 +177,7 @@ const dish = (patch = {}) => ({
   order: 1, published: true, ...patch,
 });
 
-async function browser(replies, href = 'https://cafe.example/index.html', device = null) {
+async function browser(replies, href = 'https://cafe.example/index.html', device = null, profile = 'delivery') {
   const root = new Element('section');
   const parts = Object.fromEntries([
     'dish-grid', 'dish-extras', 'extra-section', 'menu-empty', 'menu-count', 'menu-roots', 'menu-subcategories',
@@ -182,7 +187,7 @@ async function browser(replies, href = 'https://cafe.example/index.html', device
   for (const name of ['extra-section', 'menu-empty', 'menu-retry', 'menu-filters', 'menu-breadcrumbs', 'menu-subcategories', 'menu-test-notice', 'menu-drink-nav']) parts[name].hidden = true;
   parts['menu-filters'].append(parts['menu-roots'], parts['menu-subcategories'], parts['menu-drink-nav']);
   parts['menu-nav-shell'].append(parts['menu-filters']);
-  root.append(parts['menu-nav-shell'], parts['drinks-menu']);
+  root.append(parts['menu-nav-shell'], parts['drinks-menu'], parts['dish-grid'], parts['dish-extras']);
   const filters = () => [...parts['menu-roots'].children, ...parts['menu-subcategories'].children];
   root.querySelector = (selector) => {
     const name = selector.match(/^\[data-(.+)\]$/)?.[1];
@@ -203,6 +208,7 @@ async function browser(replies, href = 'https://cafe.example/index.html', device
   if (device) {
     media.matches = device.mobile;
     window.matchMedia = query => {
+      if (query.includes('prefers-reduced-motion')) return { matches:false };
       assert.match(query, /max-width:\s*650px/);
       return media;
     };
@@ -217,7 +223,7 @@ async function browser(replies, href = 'https://cafe.example/index.html', device
   document.document = document;
   document.documentElement = new Element('html');
   document.body = new Element('body');
-  document.querySelector = (selector) => selector === '[data-breakfast-menu]' ? root : null;
+  document.querySelector = (selector) => selector === '[data-breakfast-menu]' ? root : selector === 'meta[name="cafe-profile"]' && profile ? { content:profile } : null;
   document.createElement = (tag) => {
     const element = Object.assign(new Element(tag), { document });
     if (tag === 'dialog') element.getBoundingClientRect = () => ({ left:40, right:360, top:80, bottom:600 });
@@ -229,7 +235,7 @@ async function browser(replies, href = 'https://cafe.example/index.html', device
   const context = vm.createContext({
     document, window, location: new URL(href), URL, Intl, AbortSignal, ...menuCategories, orderedDrinkSections,
     setupMobileCategoryRail: menuRoot => setupMobileCategoryRail(menuRoot, window),
-    createDrinkAddonsDialog,
+    createDrinkAddonsDialog, menuImages, createMenuGallery, createDishDetails, dishInformation, bindDishCardDetails,
     setupMenuHeader: menuRoot => setupMenuHeader(menuRoot, window),
     CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
     fetch: async (url, options) => {
@@ -521,7 +527,7 @@ test('live menu availability disables cart controls independently of publication
     dish({ id: 'test-only', availableForOrder: true, source: { provider: 'kds', organizationId: 'baa06e7a-b091-4296-97bc-275bc22d9af9', externalId: '100', testOnly: true } }),
     dish({ id: 'hidden-dish', published: false, availableForOrder: true }),
   ] })]);
-  const buttons = app.cards().flatMap(card => byTag(card, 'button'));
+  const buttons = app.cards().flatMap(card => byClass(card, 'dish-order-button'));
   assert.equal(buttons.length, 5);
   for (const id of ['legacy-photo', 'available-text']) {
     const button = buttons.find(button => button.dataset.cartAdd === id);
@@ -581,7 +587,7 @@ test('manually created nested website groups expose descendants, siblings and br
   await app.filter('seared');
   assert.deepEqual(app.names(), ['Опалённый лосось']);
   assert.equal(app.parts['menu-category-title'].textContent, 'Суши Опаленнные');
-  assert.equal(byTag(app.cards()[0], 'button')[0].disabled, true, 'A manually placed test dish remains unavailable for ordering');
+  assert.equal(byClass(app.cards()[0], 'dish-order-button')[0].disabled, true, 'A manually placed test dish remains unavailable for ordering');
   assert.deepEqual(app.parts['menu-subcategories'].children.map(button => button.dataset.menuFilter), ['sushi', 'seared']);
   assert.equal(app.parts['menu-subcategories'].children[1].getAttribute('aria-pressed'), 'true');
   await app.parts['menu-breadcrumbs'].children[0].dispatch('click');
@@ -629,7 +635,7 @@ test('published imported dishes load without the private cash tree and retain ru
   const app = await browser([response(200,payload)]);
   assert.deepEqual(app.names(),['Тост с яйцом']);
   assert.equal(app.parts['menu-retry'].hidden,true);
-  assert.equal(byTag(app.cards()[0],'button')[0].disabled,true);
+  assert.equal(byClass(app.cards()[0],'dish-order-button')[0].disabled,true);
   assert.throws(()=>menuCategories.normalizeMenuData(payload),'Private catalog validation still requires its source tree');
   assert.throws(()=>menuCategories.normalizeMenuData({...payload,sourceCategories:[]},{allowOmittedSourceTree:true}),'Explicitly provided broken source trees remain invalid');
 });
@@ -1193,7 +1199,7 @@ test('static preview resolves drink photos inside the hosted repository director
   assert.equal(byClass(app.parts['drinks-menu'],'drink-list').length,0);
 });
 
-test('a drink section containing only missing photos still renders complete square-placeholder cards', async () => {
+test('a drink section containing only missing photos still renders complete landscape-placeholder cards', async () => {
   const items=[
     drinkDish({id:'last',name:'Последний напиток',order:3}),
     drinkDish({id:'first',name:'Первый напиток',order:1}),
@@ -1217,6 +1223,193 @@ test('a drink section containing only missing photos still renders complete squa
   for(let index=0;index<cards.length;index++) assert.equal(assertDrinkPlaceholder(cards[index]).mark,marks[index]);
   assert.equal(normalizedText(byClass(cards[1],'drink-price')[0]),'370 ₽');
   const css=readFileSync(new URL('../menu.css',import.meta.url),'utf8');
-  assert.match(css,/\.drink-visual\s*\{[^}]*aspect-ratio:\s*1(?:;|\})/);
+  assert.match(css,/\.drink-visual\s*\{[^}]*aspect-ratio:\s*4\/3(?:;|\})/);
   assert.match(css,/\.drink-placeholder\s*\{[^}]*place-items:\s*center/);
+});
+
+test('gallery photos resolve in order for live, built and source-folder catalogs', async () => {
+  const item=dish({images:['/menu-images/second.webp','/uploads/first.webp'],image:'/menu-images/old.webp'});
+  for(const mode of ['live','built','source']) {
+    const replies=[...(mode!=='live'?[response(404)]:[]),...(mode==='source'?[response(404)]:[]),response(200,{items:[item]})];
+    const app=await browser(replies,'https://cafe.example/preview/',null,'catalog');
+    const card=app.cards()[0];
+    const prefix=`https://cafe.example/preview/${mode==='source'?'public/':''}`;
+    assert.deepEqual(byTag(card,'img').map(image=>image.src),[prefix+'menu-images/second.webp',prefix+'uploads/first.webp']);
+    assert.equal(byClass(card,'menu-gallery-dot').length,2);
+    assert.equal(byClass(card,'dish-cart-actions').length,0,'Gallery does not enable ordering');
+    assert.equal(byClass(card,'menu-gallery-dot')[0].getAttribute('aria-pressed'),'true');
+  }
+});
+
+test('card gallery keeps dots, native scrolling and keyboard without arrow buttons', async () => {
+  const app=await browser([response(200,{items:[dish({images:['/menu-images/a.webp','/menu-images/b.webp','/menu-images/c.webp']})]})]);
+  const card=app.cards()[0], track=byClass(card,'menu-gallery-track')[0];track.clientWidth=300;
+  const dots=byClass(card,'menu-gallery-dot');
+  assert.equal(byClass(card,'menu-gallery-arrow').length,0,'Desktop card navigation uses hover and dots');
+  await dots[1].dispatch('click');assert.equal(track.scrollLeft,300);assert.equal(dots[1].getAttribute('aria-pressed'),'true');
+  await dots[2].dispatch('click');assert.equal(track.scrollLeft,600);
+  track.scrollLeft=0;await track.dispatch('scroll');assert.equal(dots[0].getAttribute('aria-pressed'),'true');
+  await track.dispatch('keydown',{key:'End'});assert.equal(track.scrollLeft,600);
+  await track.dispatch('keydown',{key:'ArrowLeft'});assert.equal(track.scrollLeft,300);
+  app.window.matchMedia=()=>({matches:true});
+  await track.dispatch('keydown',{key:'Home'});assert.equal(track.scrollOptions.behavior,'instant');
+  assert.equal(track.scrollLeft,0);
+});
+
+test('desktop hover selects horizontal photo zones instantly and resets only a hovered preview', async () => {
+  const app=await browser([response(200,{items:[dish({images:['/menu-images/a.webp','/menu-images/b.webp','/menu-images/c.webp']})]})]);
+  app.window.matchMedia=query=>({matches:query.includes('hover')});
+  const card=app.cards()[0], visual=byClass(card,'dish-visual')[0],track=byClass(card,'menu-gallery-track')[0];track.clientWidth=300;
+  visual.getBoundingClientRect=()=>({left:100,width:300});
+  const hover=x=>visual.dispatch('pointermove',{pointerType:'mouse',clientX:x,buttons:0,target:track});
+  await hover(350);assert.equal(track.scrollLeft,600);assert.equal(track.scrollOptions.behavior,'instant');
+  assert.equal(visual.dataset.galleryIndex,'2');
+  await hover(200);assert.equal(track.scrollLeft,300,'Zone boundary selects the next image');
+  await hover(90);assert.equal(visual.dataset.galleryIndex,'0','Out-of-range coordinates clamp');
+  await hover(410);assert.equal(visual.dataset.galleryIndex,'2');
+  assert.equal(byClass(app.document,'dish-details-dialog').length,0,'Hover never opens the modal');
+  await visual.dispatch('pointerleave');assert.equal(track.scrollLeft,0);
+  await byClass(card,'menu-gallery-dot')[2].dispatch('click');await visual.dispatch('pointerleave');
+  assert.equal(track.scrollLeft,600,'Leaving after a deliberate dot selection preserves it');
+  await track.dispatch('keydown',{key:'ArrowLeft'});await hover(390);await visual.dispatch('pointerleave');
+  assert.equal(track.scrollLeft,300,'Keyboard navigation takes precedence over a stationary mouse');
+});
+
+test('touch and coarse pointers keep native gallery scrolling, never hover or reset on leave', async () => {
+  const app=await browser([response(200,{items:[dish({images:['/menu-images/a.webp','/menu-images/b.webp']})]})]);
+  const card=app.cards()[0], visual=byClass(card,'dish-visual')[0],track=byClass(card,'menu-gallery-track')[0];track.clientWidth=300;
+  visual.getBoundingClientRect=()=>({left:0,width:300});app.window.matchMedia=()=>({matches:true});
+  await visual.dispatch('pointermove',{pointerType:'touch',clientX:290});assert.equal(visual.dataset.galleryIndex,'0');
+  await visual.dispatch('pointermove',{pointerType:'pen',clientX:290});assert.equal(visual.dataset.galleryIndex,'0');
+  app.window.matchMedia=()=>({matches:false});await visual.dispatch('pointermove',{pointerType:'mouse',clientX:290});assert.equal(visual.dataset.galleryIndex,'0');
+  await track.dispatch('pointerdown',{pointerType:'touch'});track.scrollLeft=300;await track.dispatch('scroll');await visual.dispatch('pointerleave');
+  assert.equal(visual.dataset.galleryIndex,'1');assert.equal(track.scrollLeft,300);
+});
+
+test('dish detail photos load eagerly and keep hover, dots and real slide positions without arrows', async () => {
+  const app=await browser([response(200,{items:[dish({images:['/menu-images/a.webp','/menu-images/b.webp']})]})]);
+  app.window.matchMedia=query=>({matches:query.includes('hover')});
+  const trigger=byClass(app.cards()[0],'dish-details-button')[0];await trigger.dispatch('click');
+  const dialog=byClass(app.document,'dish-details-dialog')[0],visual=byClass(dialog,'dish-details-photos')[0];
+  const track=byClass(dialog,'menu-gallery-track')[0];track.clientWidth=300;
+  track.children[0].offsetLeft=0;track.children[1].offsetLeft=301;
+  visual.getBoundingClientRect=()=>({left:0,width:300});
+  const photos=byTag(visual,'img');assert.ok(photos.every(photo=>photo.loading==='eager'));
+  assert.equal(byClass(dialog,'menu-gallery-arrow').length,0);
+  await visual.dispatch('pointermove',{pointerType:'mouse',clientX:290,buttons:0,target:track});
+  assert.equal(track.scrollLeft,301,'Use the real slide position including its gap');
+  await visual.dispatch('pointerleave');assert.equal(track.scrollLeft,0);
+  await byClass(dialog,'menu-gallery-dot')[1].dispatch('click');assert.equal(track.scrollLeft,301,'Use the real slide position including its gap');
+  await byClass(dialog,'dish-details-close')[0].dispatch('click');
+  assert.equal(track.listeners.get('scroll').length,0,'Closing releases the old gallery listeners');
+  await trigger.dispatch('click');const current=byTag(visual,'img');
+  assert.ok(current.every(photo=>photo.loading==='eager'));
+  await current[1].dispatch('error');
+  assert.equal(byTag(visual,'img').length,1,'A failed photo keeps the other photo available');
+  assert.equal(byClass(dialog,'menu-gallery-dot').length,2);
+});
+
+test('only prepared wide images receive the filled-background display marker', async () => {
+  const app=await browser([response(200,{items:[dish({images:['/menu-images/a.webp','/menu-images/a-wide-filled.webp']})]})]);
+  const photos=byTag(app.cards()[0],'img');
+  assert.equal(photos[0].classList.contains('menu-photo-filled'),false);
+  assert.equal(photos[1].classList.contains('menu-photo-filled'),true);
+});
+
+test('gallery preserves order on refresh, updates reordered photos, and clears to a placeholder', async () => {
+  const images=['/menu-images/a.webp','/menu-images/b.webp'];
+  const original={items:[dish({images})]};
+  const app=await browser([response(200,original),response(200,original),response(200,{items:[dish({images:[...images].reverse()})]}),response(200,{items:[dish({images:[]})]})]);
+  const card=app.cards()[0], track=byClass(card,'menu-gallery-track')[0];track.clientWidth=300;
+  await byClass(card,'menu-gallery-dot')[1].dispatch('click');
+  await app.window.dispatch('focus');assert.equal(app.cards()[0],card);assert.equal(track.scrollLeft,300);
+  await app.window.dispatch('focus');assert.notEqual(app.cards()[0],card);assert.equal(byTag(app.cards()[0],'img')[0].src,'https://cafe.example/menu-images/b.webp');
+  assert.equal(track.listeners.get('scroll').length,0,'Replaced gallery disposes its listeners');
+  await app.window.dispatch('focus');assertDishPlaceholder(app.cards()[0]);
+});
+
+test('one missing gallery image does not hide other photographs or shift the card', async () => {
+  const app=await browser([response(200,{items:[dish({images:['/menu-images/a.webp','/menu-images/b.webp']})]})]);
+  const card=app.cards()[0], visual=byClass(card,'dish-visual')[0], images=byTag(card,'img');
+  await images[0].dispatch('error');
+  assert.equal(byClass(card,'dish-visual')[0],visual);
+  assert.deepEqual(byTag(card,'img'),[images[1]]);
+  assert.equal(byClass(card,'menu-gallery-dot').length,2);
+  assert.equal(byClass(card,'dish-placeholder-mark').length,1);
+});
+
+test('drink galleries retain square visuals and additions when images are reordered', async () => {
+  const images=['/menu-images/a.webp','/menu-images/b.webp'];
+  const app=await browser([response(200,withDrinks([drinkDish({images})])),response(200,withDrinks([drinkDish({images:[...images].reverse()})]))],undefined,null,'catalog');
+  await app.filter('drinks');
+  let card=byClass(app.parts['drinks-menu'],'drink-card')[0];
+  assert.equal(byClass(card,'drink-visual').length,1);assert.equal(byClass(card,'dish-visual').length,0);
+  assert.equal(byClass(card,'menu-gallery-dot').length,2);
+  const volume=byClass(card,'drink-volume')[1];if(volume)await volume.dispatch('click');
+  await app.window.dispatch('focus');
+  card=byClass(app.parts['drinks-menu'],'drink-card')[0];
+  assert.equal(byTag(card,'img')[0].src,'https://cafe.example/menu-images/b.webp');
+  if(volume)assert.equal(byClass(card,'drink-volume')[1].getAttribute('aria-pressed'),'true');
+  assert.ok(byClass(card,'drink-addons-title').length);
+});
+
+
+test('catalog dish details separate composition, nutrition and confirmed allergens without enabling ordering', async () => {
+  const info = dish({ images:['/menu-images/eggs.webp','/menu-images/eggs-wide.webp'], description:'Яйцо, хлеб и зелень.\nКБЖУ: 450/20/15/40', allergens:'Яйца, пшеница' });
+  const app = await browser([response(200, {items:[info]})], 'https://cafe.example/', null, 'catalog');
+  const card = app.cards()[0];
+  assert.equal(byClass(card, 'dish-description')[0].textContent, 'Яйцо, хлеб и зелень.');
+  assert.equal(byClass(card, 'dish-order-button').length, 0);
+  const trigger = byClass(card, 'dish-details-button')[0];
+  trigger.focus(); await trigger.dispatch('click');
+  const dialog = byClass(app.document, 'dish-details-dialog')[0];
+  assert.equal(dialog.open, true);
+  assert.equal(byClass(dialog, 'dish-details-title')[0].textContent, info.name);
+  assert.equal(byClass(dialog, 'dish-details-nutrition')[0].textContent, 'КБЖУ450/20/15/40');
+  assert.equal(byClass(dialog, 'dish-details-allergens')[0].textContent, 'АллергеныЯйца, пшеница');
+  assert.equal(byTag(dialog, 'img').length, 2);
+  assert.equal(app.document.body.style.position, 'fixed');
+  await dialog.dispatch('cancel');
+  assert.equal(dialog.open, false);
+  assert.ok(app.document.activeElement === trigger, 'Focus returns to the details button');
+  assert.notEqual(app.document.body.style.position, 'fixed');
+  const allergen = byClass(card, 'dish-allergen-button')[0];
+  await allergen.dispatch('click');
+  assert.equal(allergen.getAttribute('aria-expanded'), 'true');
+  assert.equal(dialog.open, false, 'Allergen tap only shows the tooltip');
+  await allergen.dispatch('blur');
+  assert.equal(allergen.getAttribute('aria-expanded'), 'false');
+});
+
+test('dish cards do not invent allergens or nutrition and exclude swipes and gallery controls from modal opening', async () => {
+  const app = await browser([response(200, {items:[dish({images:['/menu-images/eggs.webp','/menu-images/eggs-wide.webp']})]})]);
+  const card = app.cards()[0];
+  assert.equal(byClass(card,'dish-allergen-button').length,0);
+  const track = byClass(card,'menu-gallery-track')[0];
+  await card.dispatch('pointerdown',{clientX:200,clientY:150});
+  await card.dispatch('pointermove',{clientX:80,clientY:153});
+  await card.dispatch('pointerup',{clientX:80,clientY:153});
+  await card.dispatch('click',{target:track});
+  assert.equal(byClass(app.document,'dish-details-dialog').length,0);
+  await card.dispatch('click',{target:byClass(card,'menu-gallery-dot')[0]});
+  assert.equal(byClass(app.document,'dish-details-dialog').length,0);
+  await byClass(card,'dish-details-button')[0].dispatch('click');
+  const dialog=byClass(app.document,'dish-details-dialog')[0];
+  assert.equal(dialog.open,true,'Explicit details remains usable after a swipe');
+  assert.equal(byClass(dialog,'dish-details-allergens').length,0);
+  assert.equal(byClass(dialog,'dish-details-nutrition').length,0);
+  await dialog.dispatch('pointerdown',{clientX:1,clientY:1});
+  await dialog.dispatch('click',{clientX:1,clientY:1});
+  assert.equal(dialog.open,false,'Only a click beginning and ending on the backdrop closes it');
+});
+
+test('dish details use separate nutrition in preference to a legacy description tail', () => {
+  assert.deepEqual(dishInformation({description:'Творог. кБЖУ: 500/10/20/30',nutrition:'КБЖУ: 450/20/15/40'}), {
+    composition:'Творог.', nutrition:'450/20/15/40',allergens:''
+  });
+});
+
+
+test('explicitly cleared nutrition does not return from the legacy description tail', () => {
+  assert.deepEqual(dishInformation({description:'Творог. КБЖУ: 500/10/20/30',nutrition:''}), {composition:'Творог.',nutrition:'',allergens:''});
 });
