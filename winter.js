@@ -4,14 +4,18 @@ function addSnowflakes(documentRoot, layer) {
   if (layer.querySelector('.winter-flake')) return [];
   layer.setAttribute('aria-hidden', 'true');
   const flakes = [];
-  for (let index = 0; index < 18; index += 1) {
-    const crystal = index % 5 === 1;
+  const crystalLanes = [3, 49, 93, 56, 85, 97, 45];
+  for (let index = 0; index < 28; index += 1) {
+    const crystal = index % 4 === 1;
     const flake = documentRoot.createElement('span');
     flake.className = `winter-flake${crystal ? ' winter-flake--crystal' : ''}`;
-    flake.style.setProperty('--snow-x', `${3 + ((index * 37) % 94)}%`);
+    const lane = crystal ? crystalLanes[Math.floor(index / 4)] : 3 + ((index * 37) % 94);
+    flake.style.setProperty('--snow-x', `${lane}%`);
+    // On a narrow screen, the larger crystals fall along the outer margins.
+    if (crystal) flake.style.setProperty('--snow-mobile-x', `${index % 8 === 1 ? 2 : 93}%`);
     flake.style.setProperty('--snow-delay', `${-((index * 7) % 19)}s`);
-    flake.style.setProperty('--snow-duration', `${12 + ((index * 3) % 11)}s`);
-    flake.style.setProperty('--snow-size', `${crystal ? 11 + index % 5 : 2 + index % 4}px`);
+    flake.style.setProperty('--snow-duration', `${14 + ((index * 3) % 11)}s`);
+    flake.style.setProperty('--snow-size', `${crystal ? 16 + (index % 3) * 3 : 3 + index % 4}px`);
     flake.style.setProperty('--snow-drift', `${-28 + ((index * 13) % 61)}px`);
     layer.appendChild(flake);
     flakes.push(flake);

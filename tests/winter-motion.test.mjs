@@ -89,13 +89,13 @@ test('winter decorations run only for visible scenes with motion allowed', () =>
 
 test('snow stays bounded and reinitialization cannot duplicate particles or listeners', () => {
   const h = harness({ reduced: true });
-  assert.equal(h.snow.children.length, 18);
+  assert.equal(h.snow.children.length, 28);
   assert.equal(h.snow.attributes.get('aria-hidden'), 'true');
-  assert.equal(h.snow.children.filter(flake => flake.className.includes('--crystal')).length, 4);
+  assert.equal(h.snow.children.filter(flake => flake.className.includes('--crystal')).length, 7);
   h.observers[0].enter(h.hero);
   assert.equal(h.active(h.hero), false);
   assert.equal(initWinterScenes(h.documentRoot, h.view), h.cleanup);
-  assert.equal(h.snow.children.length, 18);
+  assert.equal(h.snow.children.length, 28);
   assert.equal(h.observers.length, 1);
 
   h.cleanup();
@@ -106,7 +106,7 @@ test('snow stays bounded and reinitialization cannot duplicate particles or list
   assert.equal(h.preference.listenerCount(), 0);
   assert.equal(h.observers[0].targets.size, 0);
   const cleanupAgain = initWinterScenes(h.documentRoot, h.view);
-  assert.equal(h.snow.children.length, 18);
+  assert.equal(h.snow.children.length, 28);
   cleanupAgain();
 });
 
