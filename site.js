@@ -285,6 +285,7 @@ function initReveals() {
   let observer;
   let menuObserver;
   let stopped = false;
+  let refreshTimer;
 
   const finish = (element) => {
     clearTimeout(timers.get(element));
@@ -296,6 +297,7 @@ function initReveals() {
   };
   const disable = () => {
     stopped = true;
+    clearTimeout(refreshTimer);
     observer?.disconnect();
     menuObserver?.disconnect();
     targets.forEach(finish);
@@ -384,17 +386,28 @@ function initReveals() {
           return false;
         });
         for (const element of document.querySelectorAll('[data-reveal]')) {
-          if (targets.includes(element)) continue;
-          targets.push(element);
-          if (stopped || element.dataset.revealState || shownKeys.has(element.dataset.revealKey)) finish(element);
-          else if (root.dataset.motion === 'ready') {
-            observer.observe(element);
-            // Newly mounted cards can already occupy the viewport after a
-            // category switch. Do not wait for another scroll intersection.
-            if (onScreen(element)) void reveal(element, 0);
+          if (!targets.includes(element)) {
+            targets.push(element);
+            if (stopped || element.dataset.revealState || shownKeys.has(element.dataset.revealKey)) finish(element);
+            else if (root.dataset.motion === 'ready') observer.observe(element);
+          }
+          // Reconcile existing cards too: an intersection may have happened
+          // during a smooth anchor jump, background tab or replaced SSR grid.
+          if (!stopped && root.dataset.motion === 'ready' && !element.dataset.revealState && onScreen(element)) {
+            void reveal(element, 0);
           }
         }
       } catch { disable(); }
+    };
+    const refreshVisible = () => {
+      clearTimeout(refreshTimer);
+      if (stopped || document.hidden) return;
+      // IntersectionObserver handles the animation itself. This recovery pass
+      // waits until scrolling settles, rather than measuring cards each frame.
+      refreshTimer = setTimeout(() => {
+        refreshTimer = undefined;
+        if (!stopped && !document.hidden) registerMenuCards();
+      }, 100);
     };
     window.addEventListener('cafe:menu-rendered', registerMenuCards);
     // Register actual grid replacements too: hydration or a preview refresh
@@ -423,9 +436,14 @@ function initReveals() {
       });
     }));
 
-    document.addEventListener('focusin', (event) => showWithin(event.target));
-    document.addEventListener('pointerdown', (event) => showWithin(event.target), { passive: true });
+    const showInteraction = (event) => {
+      registerMenuCards();
+      showWithin(event.target);
+    };
+    document.addEventListener('focusin', showInteraction, { capture: true });
+    document.addEventListener('pointerdown', showInteraction, { passive: true, capture: true });
     document.addEventListener('click', (event) => {
+      showInteraction(event);
       const link = event.target.closest('a[href]');
       if (!link) return;
       const url = new URL(link.href, location.href);
@@ -433,11 +451,14 @@ function initReveals() {
         showHash(url.hash);
       }
     });
-    window.addEventListener('hashchange', () => showHash(location.hash));
+    window.addEventListener('hashchange', () => { showHash(location.hash); refreshVisible(); });
+    window.addEventListener('scroll', refreshVisible, { passive: true });
+    window.addEventListener('resize', refreshVisible, { passive: true });
     window.addEventListener('pageshow', (event) => { if (event.persisted) disable(); });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) targets.filter((element) => element.dataset.revealState === 'revealing')
         .forEach(finish);
+      else refreshVisible();
     });
     preference.addEventListener('change', (event) => { if (event.matches) disable(); });
   } catch {

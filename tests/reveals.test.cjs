@@ -35,7 +35,7 @@ function harness(options = {}) {
   }
   const location = new URL('http://127.0.0.1:5173/index.html' + (options.hash || ''));
   const document = { documentElement: root, hidden: false, activeElement: null,
-    querySelectorAll: selector => selector.includes('data-dish-grid') ? [menuGrid] : elements, getElementById: () => group,
+    querySelectorAll: selector => selector.includes('data-dish-grid') ? [menuGrid] : elements.filter(element => element.isConnected !== false), getElementById: () => group,
     addEventListener: (name, callback) => { listeners[name] = callback; } };
   const window = { innerHeight: 800, scrollY: options.scrollY || 0,
     addEventListener: (name, callback) => { listeners[name] = callback; } };
@@ -56,6 +56,9 @@ function harness(options = {}) {
   return { root, elements, observed, listeners, timers, preference, document, boot,
     enter: (...targets) => observerCallback(targets.map(target => ({ target, isIntersecting: true }))),
     replaceMenu: () => mutationCallback?.(),
+    frames,
+    flushFrames: () => { while (frames.length) frames.shift()(); },
+    flushRefresh: () => { for (const [id, timer] of [...timers]) if (timer.delay === 100) { timers.delete(id); timer.callback(); } },
   };
 }
 async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
@@ -126,5 +129,38 @@ async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
   assert(h.observed.has(laterCard));
   h.listeners.focusin({ target: { parent: laterCard, contains: () => false } });
   assert.equal(laterCard.dataset.revealState, 'shown', 'Dynamically registered cards are immediately visible on keyboard focus');
+  h = harness();
+  const missedIntersection = { ...h.elements[1], dataset: { reveal: 'visual', revealKey: 'dish:missed' }, top: 1800, isConnected: true };
+  h.elements.push(missedIntersection); h.replaceMenu(); await flush();
+  missedIntersection.top = 100;
+  h.listeners['cafe:menu-rendered'](); await flush();
+  assert.equal(missedIntersection.dataset.revealState, 'revealing', 'A repeated menu render also recovers an already registered card without a fresh intersection');
+
+  h = harness();
+  const replacedGridCard = { ...h.elements[1], dataset: { reveal: 'visual', revealKey: 'dish:new-grid' }, top: 1500, isConnected: true };
+  h.elements.push(replacedGridCard); // A replacement grid missed both the old grid observer and the menu event.
+  replacedGridCard.top = 100;
+  h.listeners.scroll(); h.listeners.scroll(); h.listeners.resize();
+  assert.equal([...h.timers.values()].filter(timer => timer.delay === 100).length, 1, 'Viewport recovery uses one trailing timer after scrolling settles');
+  assert.equal(h.frames.length, 0, 'Normal scrolling does not add a layout-measuring frame loop');
+  assert.equal(replacedGridCard.dataset.revealState, undefined, 'Recovery does not measure and reveal cards while scrolling is ongoing');
+  h.flushRefresh(); await flush();
+  assert.equal(replacedGridCard.dataset.revealState, 'revealing', 'Scrolling to a replacement grid cannot leave visible dishes transparent');
+  assert.equal(h.frames.length, 0);
+
+  h = harness();
+  const hiddenCard = { ...h.elements[1], dataset: { reveal: 'visual', revealKey: 'dish:hidden-tab' }, top: 100, isConnected: true };
+  h.elements.push(hiddenCard); h.document.hidden = true; h.listeners.scroll();
+  assert.equal(h.frames.length, 0, 'Hidden tabs do no viewport work');
+  h.document.hidden = false; h.listeners.visibilitychange(); h.flushRefresh(); await flush();
+  assert.equal(hiddenCard.dataset.revealState, 'revealing', 'Returning to a tab reconciles visible cards even if an observer entry was missed');
+
+  h = harness();
+  const clickedCard = { ...h.elements[1], dataset: { reveal: 'visual', revealKey: 'dish:clicked' }, top: 100, isConnected: true };
+  h.elements[1].isConnected = false;
+  h.elements.push(clickedCard);
+  h.listeners.click({ target: { parent: clickedCard, contains: () => false, closest: () => null } });
+  assert.equal(clickedCard.dataset.revealState, 'shown', 'Gallery activation discovers and reveals an unregistered replacement card immediately');
+  assert(!h.observed.has(h.elements[1]), 'Interaction reconciliation removes stale detached targets');
   console.log('PASS: pre-paint bootstrap, once-only entry, rhythm, focus, pointer, reduced motion, fail-open watchdog, deep links, history, restored scroll, broken/slow images, fast-scroll exit, dynamic menu cards.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

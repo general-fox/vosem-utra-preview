@@ -1,0 +1,288 @@
+/* Seasonal decorations are confined to the homepage; every control stays in reach. */
+.hero-winter {
+  isolation: isolate;
+  gap: 42px;
+  padding: 30px 30px 30px 64px;
+  background: radial-gradient(ellipse at 18% 12%, #fff8ec 0, transparent 65%), #f2eadc;
+}
+.hero-winter .hero-copy { z-index: 2; padding-block: 48px; }
+.hero-winter h1 { font-size: clamp(48px, 5.5vw, 78px); }
+.hero-winter .hero-lead { color: #625d54; }
+.hero-winter .hero-visual {
+  min-height: 470px;
+  margin-top: 215px;
+  overflow: visible;
+  z-index: 3;
+}
+.winter-photo-window { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; background: var(--cream); }
+.hero-winter .hero-photo { object-position: 50% 70%; }
+.hero-winter .hero-stamp { z-index: 2; }
+.hero-winter .hours-note { z-index: 3; right: 54px; }
+.winter-fir {
+  position: absolute;
+  top: -6px;
+  right: -12px;
+  width: clamp(240px, 31vw, 440px);
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+}
+.winter-fir > img { width: 100%; height: auto; }
+.winter-bulb {
+  position: absolute;
+  width: 13%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff8ccdd 0, #ffde8c55 24%, #ffdb6d00 68%);
+  mix-blend-mode: screen;
+  opacity: .35;
+  animation: winter-light 5.8s ease-in-out var(--light-delay, 0s) infinite;
+  animation-play-state: paused;
+}
+.winter-bulb-1 { left: 37%; top: 25%; --light-delay: -1.4s; }
+.winter-bulb-2 { left: 52%; top: 33%; --light-delay: -3.2s; }
+.winter-bulb-3 { left: 66.5%; top: 46.8%; --light-delay: -.5s; }
+.winter-bulb-4 { left: 89.3%; top: 35.4%; --light-delay: -4s; }
+.winter-bulb-5 { left: 78.4%; top: 61%; --light-delay: -2.2s; }
+.winter-bulb-6 { left: 92%; top: 69.5%; --light-delay: -4.7s; }
+.winter-hero-guest {
+  position: absolute;
+  left: 22px;
+  bottom: 100%;
+  width: 190px;
+  z-index: 4;
+  pointer-events: none;
+}
+.winter-character > img {
+  width: 100%; height: auto;
+  transform-origin: 50% 94%;
+  animation: winter-breathe 8s ease-in-out infinite;
+  animation-play-state: paused;
+  user-select: none;
+}
+.winter-hero-guest > img {
+  transform-origin: 50% 90.5%;
+  animation-name: winter-seated-breathe;
+}
+.winter-steam {
+  position: absolute;
+  width: 20%; height: auto;
+  left: 33%; top: 31%;
+  color: #a19988;
+  overflow: visible;
+}
+.winter-steam path {
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: .5;
+  animation: winter-steam 5.2s ease-out infinite;
+  animation-play-state: paused;
+}
+.winter-steam path + path { animation-delay: -2.6s; }
+.winter-photo-bough {
+  position: absolute;
+  width: 185px;
+  max-width: none;
+  bottom: 0;
+  right: -50px;
+  transform: rotate(85deg);
+  transform-origin: 70% 60%;
+  pointer-events: none;
+  z-index: 2;
+}
+/* Snow sits above the edge. Only its soft contact seam overlaps the photograph. */
+.winter-season { --winter-snow-texture: url('./assets/winter/snow-pillow.webp'); }
+.winter-hero-drifts { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.winter-hero-drifts::before,
+.winter-hero-drifts::after,
+.winter-season :is(.dish-grid > .dish-card:has(> .dish-visual:not(.dish-placeholder)), .drink-photo-list > .drink-card-with-photo:has(> .drink-visual:not(.drink-placeholder)))::before,
+.winter-season :is(.dish-grid > .dish-card:has(> .dish-visual:not(.dish-placeholder)), .drink-photo-list > .drink-card-with-photo:has(> .drink-visual:not(.drink-placeholder)))::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  aspect-ratio: 2000 / 362;
+  background-image: var(--winter-snow-texture);
+  /* Crop x88..2088 / y200..562 at the dense contact edge, not at the transparent
+     canvas bottom. Every drift now has the same baseline at any rendered width. */
+  background-size: 108.6% 200%;
+  background-position: 51.1628% 55.248619%;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 .5px .35px #625f5924);
+  pointer-events: none;
+  z-index: 4;
+}
+.winter-hero-drifts::before {
+  left: 26px;
+  width: min(45%, 236px);
+}
+.winter-hero-drifts::after { right: 30px; width: 23%; max-width: 125px; scale: -1 1; }
+/* Five arrangements leave stretches of the original edge visible between the drifts. */
+.winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo) {
+  position: relative;
+  --snow-left-width: 46%;
+  --snow-right-width: 25%;
+  --snow-direction: 1;
+}
+.winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo):nth-child(5n + 2) {
+  --snow-left-width: 26%;
+  --snow-right-width: 47%;
+}
+.winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo):nth-child(5n + 3) {
+  --snow-left-width: 60%;
+  --snow-right-width: 0%;
+  --snow-direction: -1;
+}
+.winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo):nth-child(5n + 4) {
+  --snow-left-width: 34%;
+  --snow-right-width: 35%;
+}
+.winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo):nth-child(5n) {
+  --snow-left-width: 24%;
+  --snow-right-width: 49%;
+  --snow-direction: -1;
+}
+.winter-season :is(.dish-grid > .dish-card:has(> .dish-visual:not(.dish-placeholder)), .drink-photo-list > .drink-card-with-photo:has(> .drink-visual:not(.drink-placeholder)))::before {
+  left: 30px;
+  width: var(--snow-left-width);
+  max-width: 210px;
+  scale: var(--snow-direction) 1;
+}
+.winter-season :is(.dish-grid > .dish-card:has(> .dish-visual:not(.dish-placeholder)), .drink-photo-list > .drink-card-with-photo:has(> .drink-visual:not(.drink-placeholder)))::after {
+  right: 30px;
+  width: var(--snow-right-width);
+  max-width: 190px;
+  scale: calc(var(--snow-direction) * -1) 1;
+}
+.winter-season .dish-grid { row-gap: 58px; }
+.winter-season .menu-category-heading { margin-bottom: 42px; }
+.winter-season .drink-photo-list { --drink-photo-gap: 48px; column-gap: 24px; margin-top: 40px; }
+.winter-season .drink-photo-list > .drink-card-with-photo { overflow: visible; }
+.winter-season .drink-photo-list > .drink-card-with-photo > .drink-visual { border-radius: 21px 21px 0 0; }
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 651px) {
+    /* Subgrid cards already reserve the gap above each row. */
+    .winter-season .drink-photo-list { margin-top: 0; }
+  }
+}
+.winter-snow {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+  mask-image: linear-gradient(transparent, #000 8%, #000 76%, transparent 99%);
+}
+/* Full-height tracks let transform cover the hero at every responsive height. */
+.winter-flake {
+  position: absolute;
+  top: -18px;
+  left: var(--snow-x);
+  width: var(--snow-size);
+  height: 100%;
+  opacity: 0;
+  animation: winter-snowfall var(--snow-duration) linear var(--snow-delay) infinite;
+  animation-play-state: paused;
+}
+.winter-flake::before {
+  content: '';
+  display: block;
+  width: var(--snow-size);
+  height: var(--snow-size);
+  border-radius: 50%;
+  background: #fffdf8;
+  box-shadow: 0 0 4px #fff, 0 1px 2px #819aa340;
+}
+.winter-flake--crystal::before {
+  border-radius: 0;
+  box-shadow: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none' stroke='%23798d9e' stroke-width='1.2' stroke-linecap='round'%3E%3Cpath d='M16 2v28M4 9l24 14M4 23L28 9M12 5l4 4 4-4M12 27l4-4 4 4M5 14l5-1-1-5M23 24l-1-5 5-1M5 18l5 1-1 5M23 8l-1 5 5 1'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.winter-club .club-visual { padding-top: 160px; }
+.winter-club-guest { position: absolute; width: 158px; top: -64px; right: 30px; z-index: 2; pointer-events: none; }
+.winter-club-guest .winter-character > img { animation-delay: -3s; }
+[data-winter-active] .winter-flake,
+[data-winter-active] .winter-bulb,
+[data-winter-active] .winter-character > img,
+[data-winter-active] .winter-steam path { animation-play-state: running; }
+@keyframes winter-snowfall {
+  0% { opacity: 0; transform: translate3d(0, -2%, 0); }
+  10% { opacity: .72; }
+  76% { opacity: .65; }
+  100% { opacity: 0; transform: translate3d(var(--snow-drift), 102%, 0); }
+}
+@keyframes winter-light { 0%, 100% { opacity: .18; scale: .9; } 50% { opacity: .78; scale: 1.15; } }
+@keyframes winter-breathe { 0%, 100% { transform: translateY(0) rotate(-.4deg); } 50% { transform: translateY(-3px) rotate(.5deg); } }
+@keyframes winter-seated-breathe { 0%, 100% { transform: rotate(-.25deg) scaleY(1); } 50% { transform: rotate(.25deg) scaleY(1.008); } }
+@keyframes winter-steam { 0% { opacity: 0; transform: translateY(4px); } 25% { opacity: .55; } 100% { opacity: 0; transform: translateY(-13px); } }
+@media (min-width: 1051px) {
+  .hero-winter .hero-copy { padding-bottom: 42px; }
+}
+@media (min-width: 651px) and (max-width: 1050px) {
+  .hero-winter { padding: 28px; gap: 24px; grid-template-columns: 1fr 1fr; }
+  .hero-winter h1 { font-size: clamp(43px, 6.1vw, 62px); }
+  .hero-winter .hero-copy { padding-block: 30px; }
+  .hero-winter .hero-lead { font-size: 16px; }
+  .hero-winter .hero-actions { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .hero-winter .hero-location { margin-top: 26px; }
+  .hero-winter .hero-visual { min-height: 440px; margin-top: 185px; }
+  .winter-hero-guest { width: 166px; left: 8px; bottom: calc(100% - 6px); }
+  .winter-fir { width: 280px; }
+  .hero-winter .hours-note { left: 12px; right: 12px; padding-inline: 12px; gap: 9px; }
+  .hero-winter .hours-note strong { font-size: 20px; }
+  .winter-photo-bough { width: 140px; right: -45px; }
+  .winter-club .club-visual { padding-top: 145px; }
+  .winter-club-guest { width: 142px; top: -50px; right: 5px; }
+}
+@media (max-width: 650px) {
+  .hero-winter { gap: 12px; padding: 34px 18px 18px; background: radial-gradient(ellipse at 20% 4%, #fff9f0, transparent 67%), #f3ecdf; }
+  .hero-winter .hero-copy { padding: 0 4px; }
+  .hero-winter .eyebrow { position: relative; z-index: 6; font-size: 9px; letter-spacing: .065em; gap: 6px; }
+  .hero-winter .little-sun { font-size: 23px; }
+  .hero-winter h1 { position: relative; z-index: 6; font-size: clamp(40px, 10.7vw, 65px); margin: 30px 0 20px; line-height: 1.07; letter-spacing: -.048em; }
+  .hero-winter .hero-lead { font-size: 17px; line-height: 1.55; }
+  .hero-winter .hero-actions { margin-top: 26px; flex-direction: column; align-items: flex-start; gap: 5px; width: calc(100% - 120px); }
+  .hero-winter .hero-actions .button { width: 100%; padding: 13px 14px; gap: 12px; min-height: 48px; font-size: 12px; white-space: nowrap; }
+  .hero-winter .hero-actions .text-link { min-height: 44px; font-size: 12px; gap: 10px; }
+  .hero-winter .hero-location { max-width: calc(100% - 125px); margin-top: 15px; font-size: 10px; line-height: 1.5; gap: 5px; }
+  .hero-winter .hero-location svg { width: 14px; height: 18px; }
+  .hero-winter .hero-visual { margin-top: 4px; min-height: 0; height: auto; aspect-ratio: 1 / 1.04; border-radius: 23px; }
+  .hero-winter .hero-photo { object-position: 50% 70%; }
+  .winter-hero-guest { width: clamp(143px, 35vw, 190px); left: auto; right: -8px; bottom: calc(100% - 5px); }
+  .winter-fir { width: 220px; top: -3px; right: -52px; opacity: .98; }
+  .hero-winter .hero-stamp { top: 20px; right: 17px; width: 91px; height: 91px; font-size: 12px; }
+  .hero-winter .hero-stamp > span { font-size: 10px; }
+  .hero-winter .hours-note { left: 12px; right: 35px; bottom: 16px; max-width: 280px; padding: 13px 14px; gap: 10px; font-size: 11px; }
+  .hero-winter .hours-note strong { font-size: 22px; }
+  .winter-hero-drifts::before {
+    left: auto; right: 18px; width: clamp(140px, 48%, 180px);
+  }
+  .winter-hero-drifts::after { left: 25px; right: auto; width: 25%; max-width: 82px; }
+  .winter-season .dish-grid { row-gap: 52px; }
+  .winter-season .drink-photo-list { gap: 46px 24px; margin-top: 36px; }
+  .winter-photo-bough { width: 150px; right: -47px; bottom: -4px; }
+  .winter-flake:nth-child(n+13) { display: none; }
+  .winter-club .club-visual { padding-top: 142px; margin-top: -8px; }
+  .winter-club-guest { width: 142px; top: -51px; right: 22px; }
+}
+@media (max-width: 360px) {
+  .hero-winter { padding-inline: 15px; }
+  .hero-winter h1 { font-size: 38px; }
+  .hero-winter .hero-lead { font-size: 16px; }
+  .hero-winter .hero-actions { width: calc(100% - 104px); }
+  .hero-winter .hero-actions .button { font-size: 11px; padding-inline: 10px; gap: 8px; }
+  .hero-winter .hero-location { max-width: calc(100% - 112px); }
+  .winter-hero-guest { width: 135px; right: -10px; }
+  .winter-fir { width: 205px; right: -55px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .winter-snow, .winter-steam { display: none; }
+  .winter-character > img, .winter-bulb { animation: none !important; transform: none; }
+}
+@media print {
+  .winter-snow, .winter-fir, .winter-hero-guest, .winter-photo-bough, .winter-club-guest, .winter-hero-drifts { display: none; }
+  .winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo)::before,
+  .winter-season :is(.dish-grid > .dish-card, .drink-photo-list > .drink-card-with-photo)::after { display: none; }
+}

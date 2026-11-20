@@ -301,7 +301,7 @@ function harness(options = {}) {
   assert.match(html, /class="intro-curtain" aria-hidden="true"/);
   assert.equal(clubBootstrap, bootstrap, 'Both pages share the same pre-paint and fail-open logic');
   assert.equal(clubHtml.match(/<style>[\s\S]*?<\/style>/)[0], html.match(/<style>[\s\S]*?<\/style>/)[0]);
-  assert.equal(clubHtml.match(/<body>\n([\s\S]*?)(?=  <a class="skip-link")/)[1], html.match(/<body>\n([\s\S]*?)(?=  <a class="skip-link")/)[1], 'Curtain artwork stays consistent between home and club');
+  assert.equal(clubHtml.match(/<body\b[^>]*>\n([\s\S]*?)(?=  <a class="skip-link")/)[1], html.match(/<body\b[^>]*>\n([\s\S]*?)(?=  <a class="skip-link")/)[1], 'Curtain artwork stays consistent between home and club');
   assert.match(clubHtml, /data-intro-entry="club"/);
   assert.match(clubHtml, /data-preview="true"/);
   assert.match(clubHtml, /id="submit-button"[^>]*disabled/);

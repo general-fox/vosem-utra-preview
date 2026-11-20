@@ -1,0 +1,107 @@
+/* A warm winter frame for the club, with the artwork clear of the reading area. */
+.winter-club {
+  position: relative;
+  isolation: isolate;
+}
+.winter-club::before {
+  content: "";
+  position: absolute;
+  inset: 46px -36px 30px;
+  z-index: -1;
+  border: 1px solid #e4dccb;
+  border-radius: 44px;
+  background: radial-gradient(ellipse at 90% 18%, #f9edc657, transparent 57%),
+    linear-gradient(135deg, #f5f0e5, #f8f5ed 65%, #f1ecdf);
+  pointer-events: none;
+}
+.winter-club::after {
+  content: "";
+  position: absolute;
+  width: 218px;
+  height: 109px;
+  top: 37px;
+  right: -34px;
+  z-index: -1;
+  background: url("assets/winter/fir-lights.webp") right top / contain no-repeat;
+  pointer-events: none;
+}
+.winter-club .loyalty-card {
+  border: 1px solid #dcd2bd;
+  box-shadow: 0 23px 42px -28px #75644380;
+}
+.winter-club .bonus-note { border-color: #f6f2e9; }
+.winter-club .club-steps li > span { background: #fffaf1a8; }
+
+/* Registration keeps all form controls and benefit text in their original layout. */
+.winter-registration .brand-panel {
+  background: linear-gradient(145deg, #f4eedf, #f5f1e7 52%, #eee5cf);
+  border: 1px solid #dfd5c1;
+}
+.winter-registration .brand-rays { opacity: .62; }
+.winter-brand-decoration {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  user-select: none;
+}
+.winter-brand-fir {
+  position: absolute;
+  width: 210px;
+  height: auto;
+  top: -18px;
+  right: -43px;
+}
+.winter-brand-guest {
+  position: absolute;
+  width: 122px;
+  height: auto;
+  bottom: 18px;
+  right: 6px;
+  transform-origin: 50% 95%;
+  animation: winter-club-breathe 9s ease-in-out infinite paused;
+}
+.winter-registration [data-winter-active] .winter-brand-guest { animation-play-state: running; }
+.winter-registration .brand-quote {
+  min-height: 106px;
+  margin-top: 20px;
+  padding-right: 100px;
+}
+.winter-registration .loyalty-summary > div { border: 1px solid #e3d9c58c; }
+.winter-registration .loyalty-summary > .loyalty-welcome { border-color: #e8d7a3; }
+@keyframes winter-club-breathe {
+  0%, 100% { transform: rotate(-1deg) translateY(0); }
+  50% { transform: rotate(1deg) translateY(-3px); }
+}
+
+@media (max-width: 1100px) and (min-width: 801px) {
+  .winter-brand-fir { width: 170px; right: -38px; }
+  .winter-registration .brand-logo { width: 180px; }
+  .winter-brand-guest { width: 109px; right: 0; bottom: 16px; }
+  .winter-registration .brand-quote { min-height: 106px; padding-right: 78px; font-size: 11px; }
+}
+@media (max-width: 1050px) {
+  .winter-club::before { inset: 34px -18px 24px; border-radius: 34px; }
+  .winter-club::after { top: 29px; right: -17px; width: 164px; height: 82px; }
+}
+@media (max-width: 800px) {
+  .winter-registration .brand-panel { background: linear-gradient(140deg, #f7f1e4, #f1ead7); }
+  .winter-brand-fir { width: 134px; top: -19px; right: -40px; opacity: .58; }
+  .winter-brand-guest { display: none; }
+  .winter-registration .brand-message { position: relative; z-index: 1; }
+  .winter-registration .brand-message .eyebrow { padding: 5px 7px; border-radius: 8px; background: #f5efdfde; }
+  .winter-registration .brand-quote { display: none; }
+}
+@media (max-width: 650px) {
+  .winter-club { padding-block: 76px 60px; }
+  .winter-club::before { inset: 24px -12px 16px; border-radius: 30px; }
+  .winter-club::after { top: 20px; right: -11px; width: 124px; height: 62px; }
+  .winter-club .club-copy > .eyebrow { max-width: calc(100% - 40px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .winter-brand-guest { animation: none; }
+}
+@media print {
+  .winter-club::before, .winter-club::after, .winter-brand-decoration { display: none; }
+  .winter-registration .brand-quote { min-height: 0; padding-right: 0; }
+}

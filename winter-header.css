@@ -1,0 +1,52 @@
+/* A light strand sits outside the header; navigation keeps its own clear layer. */
+.winter-season .site-header {
+  --garland-width: 400px;
+  --garland-height: 34px;
+  --garland-inset: 14px;
+}
+.winter-season .site-header::before,
+.winter-season .site-header::after {
+  content: '';
+  position: absolute;
+  top: calc(100% - var(--garland-inset));
+  left: 0;
+  right: 0;
+  height: var(--garland-height);
+  background-repeat: repeat-x;
+  background-position: center top;
+  background-size: var(--garland-width) var(--garland-height);
+  pointer-events: none;
+  z-index: -1;
+}
+.winter-season .site-header::before {
+  background-image: url('./assets/winter/header-garland.svg');
+}
+.winter-season .site-header::after {
+  background-image: url('./assets/winter/header-garland-glow.svg');
+  opacity: .4;
+  animation: winter-garland-glow 7.2s ease-in-out -2s infinite;
+  animation-play-state: paused;
+}
+.winter-season .site-header[data-winter-active]::after { animation-play-state: running; }
+@keyframes winter-garland-glow {
+  0%, 100% { opacity: .2; }
+  50% { opacity: .75; }
+}
+@media (min-width: 651px) {
+  /* Keep the hanging bulbs above the sticky category buttons. */
+  .winter-season .breakfast-toolbar { padding-top: 20px; }
+}
+@media (max-width: 650px) {
+  .winter-season .site-header {
+    --garland-width: 300px;
+    --garland-height: 25.5px;
+    --garland-inset: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .winter-season .site-header::after { animation: none; opacity: .4; }
+}
+@media print {
+  .winter-season .site-header::before,
+  .winter-season .site-header::after { display: none; }
+}

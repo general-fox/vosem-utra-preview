@@ -1,0 +1,35 @@
+/* Fixed seasonal accents live in the page gutters, outside the reading area. */
+.winter-page-edges {
+  position: fixed;
+  inset: 0;
+  /* Above the full-width menu background (20), below the site header (30). */
+  z-index: 21;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+.winter-page-edge {
+  position: absolute;
+  width: clamp(56px, calc(100vw - 1360px), 380px);
+  aspect-ratio: 1 / 3;
+  background: url('./assets/winter/fir-berries-edge.webp') left top / 100% 100% no-repeat;
+}
+.winter-page-edge-left { left: -10px; top: max(120px, 16svh); }
+.winter-page-edge-right { right: -10px; bottom: -110px; transform: scaleX(-1); }
+
+/* The form uses a wider layout, so its foliage stays closer to the window edge. */
+.winter-registration .winter-page-edge {
+  width: clamp(42px, calc(100vw - 1450px), 300px);
+}
+@media (max-width: 1360px) {
+  .winter-page-edge { width: 64px; }
+  .winter-page-edge-left { left: -14px; top: 22svh; }
+  .winter-page-edge-right { right: -14px; bottom: 24svh; }
+}
+@media (max-width: 650px) {
+  .winter-page-edge,
+  .winter-registration .winter-page-edge { width: 56px; }
+  .winter-page-edge-left { left: -19px; top: 27svh; }
+  .winter-page-edge-right { right: -19px; bottom: 28svh; }
+}
+@media print { .winter-page-edges { display: none; } }

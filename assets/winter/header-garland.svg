@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="34" viewBox="0 0 400 34" fill="none">
+  <defs>
+    <radialGradient id="halo"><stop stop-color="#FFE2A0" stop-opacity=".52"/><stop offset=".5" stop-color="#F8CF79" stop-opacity=".18"/><stop offset="1" stop-color="#F8CF79" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bulb" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFF7D5"/><stop offset="1" stop-color="#F3C978"/></linearGradient>
+    <g id="lamp">
+      <circle cy="4.8" r="7" fill="url(#halo)"/>
+      <path d="M0 0v2.2" stroke="#96896C" stroke-width=".85"/>
+      <rect x="-1.8" y="1.4" width="3.6" height="2" rx=".6" fill="#AA9870"/>
+      <ellipse cy="5" rx="2.6" ry="3.4" fill="url(#bulb)" stroke="#D6B777" stroke-width=".45"/>
+      <ellipse cx="-.7" cy="4.1" rx=".65" ry="1.3" fill="#FFFEEC" opacity=".9"/>
+    </g>
+  </defs>
+  <path d="M0 2Q200 38 400 2" stroke="#9C937D" stroke-width=".9"/>
+  <use href="#lamp" transform="translate(50 9.875) rotate(-13)"/>
+  <use href="#lamp" transform="translate(100 15.5) rotate(-8)"/>
+  <use href="#lamp" transform="translate(150 18.875) rotate(-4)"/>
+  <use href="#lamp" transform="translate(200 20)"/>
+  <use href="#lamp" transform="translate(250 18.875) rotate(4)"/>
+  <use href="#lamp" transform="translate(300 15.5) rotate(8)"/>
+  <use href="#lamp" transform="translate(350 9.875) rotate(13)"/>
+</svg>
